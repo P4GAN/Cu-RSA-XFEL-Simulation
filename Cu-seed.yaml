@@ -1,0 +1,109 @@
+#units: nm, fs
+
+#photoionization crosssections of Cu
+
+sigma1_pump_1s: 2.53e-6
+sigma1_pump_2p3: 1.04e-7
+sigma1_pump_other: 3.23e-7
+
+
+sigma1_Ka1_2p3: 1.52e-7
+sigma1_Ka1_other: 4.34e-7
+
+#sigma1_Ka1_2p3: 5.00e-7
+#sigma1_Ka1_other: 0.86e-7
+
+
+sigma2_pump_1s: 4.75e-7
+sigma2_pump_2p3: 3.02e-7
+sigma2_pump_other: 3.27e-7
+
+sigma2_Ka1_1s: 6.53e-7
+sigma2_Ka1_2p3: 4.15e-7
+sigma2_Ka1_other: 4.58e-7
+
+
+#Chemical composition of the sample
+#Cu
+compound:
+  O:
+    N_atoms: 0
+    sigma_compound_pump: 0
+    sigma_compound_Ka1: 0
+
+    
+#sample concentration in atoms per cubic nm
+#solid copper:  84, nitrate 4M solution: 2.509
+n: 82.509
+
+#number of atomic levels in the calculation
+nlevel: 6
+
+#radiative rates
+GammaKeVN: 1.49
+GammaL2eVN: 1.04
+GammaL3eVN: 0.61
+GammarKalpha1eVN: 0.39375
+GammarKalpha2eVN: 0.202668
+
+
+#K alpha atomic transitions photon energy
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+
+#simulation domain and padding parameters
+tgrid: 200
+zgrid: 15
+xgrid: 16
+ygrid: 16
+
+tmax: 8.
+
+zmax: 20.0e+3
+xmax: 1000.0
+ymax: 1000.0
+
+xpad: 20
+ypad: 20
+tpad: 0
+
+auto_grid: False
+
+
+#pump parameters
+pump_pulse_format: 'Ocelot_SASE_pulse_pump_txy'
+E_pump_uJ: 0.001
+pump_duration_FWHM_t: 3.
+pump_width_FWHM_x: 180
+pump_width_FWHM_y: 220
+FEL_bandwidth: 1.5e-3
+
+
+#seed parameters
+seed_pulse_format: 'Gaussian_pulse_aniso_seed_shifted'
+E_seed_uJ: 40
+seed_duration_FWHM_t: 0.5
+t_peak: 1.5
+seed_width_FWHM_x: 480
+seed_width_FWHM_y: 640
+
+
+#calculation regime
+is_spontaneous_only: False
+is_use_stochastic: False
+random_seed: -1
+enable_noise_mask: True
+Esxy_noise_cutoff: 2.0e-3
+# run_mode: 'simultaneous', 'consecutive'
+run_mode: 'simultaneous'
+enable_pump_diffraction: True
+enable_pump_absorption: True
+enable_self_diffraction: True
+enable_self_absorption: True
+turn_off_coherences: False
+enable_kfilter: False
+is_Cartesian_pol: True
+
+#pump photon energy
+hwPump: 9000.0

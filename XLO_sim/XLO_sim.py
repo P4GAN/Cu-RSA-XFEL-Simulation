@@ -27,12 +27,6 @@ class XLO_sim:
         self.sigma_ground_pump = self.sigma1_pump_1s + self.sigma1_pump_2p3 + self.sigma1_pump_other
         self.sigma_compound_pump = np.sum(element['N_atoms'] * element['sigma_compound_pump'] for element in self.compound.values())
         self.sigma_compound_Ka1 = np.sum(element['N_atoms'] * element['sigma_compound_Ka1'] for element in self.compound.values())
-
-#         if self.is_spontaneous_only:
-#             print('Calculation with spontaneous radiation only')
-            
-#         if self.is_seeded_only:
-#             print('Calculation with seed radiation only')
             
         self.is_kfilter = self.config['enable_kfilter']
 
@@ -83,13 +77,8 @@ class XLO_sim:
 
         
         if self.pump_pulse_format == 'Gaussian':            
-            # if (self.lchirpGauss==True):
-                # self.pump_pulse_3D = tools.Gaussian_pulse_3D_with_q_chirp(self, self.chirp_bt, self.chirp_v0)
-            # else:
-            # self.pump_pulse_3D = tools.Gaussian_pulse_3D_with_q(self)
             self.pump_pulse_3D = tools.Gaussian_pulse_3D(self)                
             print('Using Gaussian pump profile')
-            # print("2W0 beam size: ", 4.0 * self.sigma_r, "nm")
             print("FWHM beam size: ", 2.355 * self.sigma_r, "nm")
             
         if self.pump_pulse_format == 'Gaussian_pulse_aniso_pump':            
@@ -116,8 +105,6 @@ class XLO_sim:
             self.pump_pulse_3D = tools.Ocelot_SASE_pulse_pump_txy(self)                
             print('Ocelot_SASE_pulse_pump_txy')
             self.t_pump_max = self.tmax / 2
-            # print("FWHM beam size: ", 2.355 * self.sigma_r, "nm")
-            # print("FWHM beam length: ", 2.355 * self.sigma_t, "fs")
             
         if self.pump_pulse_format == 'SASE':
             self.N_modes = self.config['N_modes']
@@ -284,7 +271,6 @@ class XLO_sim:
         self.transform_matrix = np.asarray([[1, 1], [1j, -1j]]) / np.sqrt(2.0) # transformation matrix from circular polarization vectors to Cartesian
 
         
-
             
     def configure(self, seed_field=None):
         """
@@ -301,27 +287,10 @@ class XLO_sim:
         """
 
         sample = XLO_sample.XLO_sample(self, seed_field)
-        
-#         if (self.N_pump_photons != 0.0) and (np.sum(self.pump_pulse_3D * np.conj(self.pump_pulse_3D)) * self.dt * self.dx * self.dy / (self.N_pump_photons + np.finfo(float).eps) < 0.9):
-#             print("Warning: Pump pulse normalization accuracy is less than 90%. Please consider different grid/pump parameters")
-
-#         print("Pump intensity: ", self.N_pump_photons * self.hwPump * 1.6e-19 / 1.0e-6, "uJ")
-        
-        if self.run_mode == 'simultaneous':
-            self.sample = sample
-            print("Configured XLO simulation in simultaneous mode")
-            return 
-
-        sample.configure(self)
-
-        self.rho_0_3D = sample.rho_0_3D
-        self.rho_i_3D = sample.rho_i_3D
-        self.j_3D =  sample.j_3D
-        self.pump_itxyz = sample.pump_itxyz        
         self.sample = sample
-        print("Configured XLO simulation in consecutive mode")
+        print("Configured XLO simulation in simultaneous mode")
 
-        
+
 
     def run_3D(self):
         """
@@ -332,14 +301,10 @@ class XLO_sim:
 
         """
 
-        if self.run_mode == 'simultaneous':
-            self.sample.evaluate_n_level_3D(self)
-            self.rho_0_3D = self.sample.rho_0_3D
-            self.j_3D = self.sample.j_3D
-            self.nphoton_pump_z = tools.nphoton_pump_z(self)
-
-        if self.run_mode == 'consecutive':
-            self.sample.evaluate_n_level_3D(self)
+        self.sample.evaluate_n_level_3D(self)
+        self.rho_0_3D = self.sample.rho_0_3D
+        self.j_3D = self.sample.j_3D
+        self.nphoton_pump_z = tools.nphoton_pump_z(self)
 
         self.rho_ijtxyz = self.sample.rho_ijtxyz
         self.Omega_pstxyz = self.sample.Omega_pstxyz
@@ -355,12 +320,6 @@ class XLO_sim:
         self.P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', self.Tijs_minus, self.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', self.rho_ijtxyz, self.Tijs_plus) ])
         
         if self.is_Cartesian_pol:
-            #field_stxyz = (self.Omega_pstxyz[0, :, :, :, :, :] + np.conj(self.Omega_pstxyz[1, :, :, :, :, :])) / 2.0
-            #self.Omega_qtxyz = np.einsum('stxyz,sq->qtxyz', field_stxyz, self.transform_matrix) #???
-            
-            # Omega_pqtxyz = np.einsum('pstxyz,qs->pqtxyz', self.Omega_pstxyz, self.transform_matrix)
-            # self.Omega_qtxyz = (Omega_pqtxyz[0, :, :, :, :, :] + np.conj(Omega_pqtxyz[1, :, :, :, :, :])) / 2.0
-
             Omega_pqtxy = tools.circular_to_linear(self, self.Omega_pstxyz[:, :, :, :, :, -1])
             self.Omega_qtxy = (Omega_pqtxy[0, :, :, :, :] + np.conj(Omega_pqtxy[1, :, :, :, :])) / 2.0
             

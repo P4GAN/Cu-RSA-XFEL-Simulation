@@ -13,11 +13,7 @@ class XLO_optics:
         domains_xy, meshes_xy, step_sizes_xy = self.nd_space((-X.xmax, -X.ymax), (X.xmax, X.ymax), (X.xgrid, X.ygrid))
         self.xx, self.yy = meshes_xy
         self.dx, self.dy = step_sizes_xy
-        
-        # print('check', self.dx - X.dx)
-        # self.dx = X.dx
-        # self.dy = X.dy
-        
+
         self.xgrid = X.xgrid
         self.ygrid = X.ygrid
         self.xmax = X.xmax

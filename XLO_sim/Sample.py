@@ -170,60 +170,35 @@ class XLO_sample:
         -------
 
         """
-#         if X.run_mode == 'consecutive':
-            
-#             if X.enable_self_absorption == True:
-#                 rho_ijtxyz, rho_other_txyz, Omega_pstxyz = self.init_n_level_3D(X)
-#                 print('ASE field absorption: enabled')
-
-#             if X.enable_self_absorption == False:
-#                 rho_ijtxyz, Omega_pstxyz = self.init_n_level_3D(X)
-#                 print('ASE field absorption: disabled')
-                
-                
-        if X.run_mode == 'simultaneous':
-            
-            rho_ground_txyz, rho_other_txyz, Pfield_txyz, J_P_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txyz, J_Omega_plus_txyz = self.init_n_level_3D(X)
-
-            # print("rho_ground_txyz",rho_ground_txyz)
-            
-            Pfield_txy = Pfield_txyz[:, :, :, 0].copy()
-            J_P_txy = J_P_txyz[:, :, :, 0].copy()
-            J_Omega_minus_txy = J_Omega_minus_txyz[:, :, :, 0].copy()
-            J_Omega_plus_txy = J_Omega_plus_txyz[:, :, :, 0].copy()
+             
+        rho_ground_txyz, rho_other_txyz, Pfield_txyz, J_P_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txyz, J_Omega_plus_txyz = self.init_n_level_3D(X)
+        
+        Pfield_txy = Pfield_txyz[:, :, :, 0].copy()
+        J_P_txy = J_P_txyz[:, :, :, 0].copy()
+        J_Omega_minus_txy = J_Omega_minus_txyz[:, :, :, 0].copy()
+        J_Omega_plus_txy = J_Omega_plus_txyz[:, :, :, 0].copy()
 
        
         Omega_pstxy = Omega_pstxyz[:, :, :, :, :, 0].copy()
         
         
-# Main loop begins. Iterate over longitudinal coordinate        
+        # Main loop begins. Iterate over longitudinal coordinate        
         for iz in range(0, X.zgrid):
 
             rho_ijxy = rho_ijtxyz[:, :, 0, :, :, iz].copy()
             
-            if X.run_mode == 'simultaneous':
-                rho_ground_xy = rho_ground_txyz[0, :, :, iz].copy()
-                # print("rho_ground_xy",rho_ground_xy)
-                rho_other_xy = rho_other_txyz[0, :, :, iz].copy()
-           
-            
-            if X.enable_self_absorption == True:
-                rho_other_xy = rho_other_txyz[0, :, :, iz].copy()
-
+            rho_ground_xy = rho_ground_txyz[0, :, :, iz].copy()
+            rho_other_xy = rho_other_txyz[0, :, :, iz].copy()
+        
             print ("Slice: ", iz)
-            
-######################
-# Loop over simulation time window begins      
-
+                        
+            ######################
+            # Loop over simulation time window begins      
             for it in range(0, X.tgrid):
                 d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :], it, iz])
-                # print("rho_ground_xy",rho_ground_xy)
-                # print("J_P_txy[it, :, :]",J_P_txy[it, :, :])
-                # print("J_Omega_minus_txy[it, :, :]",J_Omega_minus_txy[it, :, :])
-                # print("J_Omega_plus_txy[it, :, :]",J_Omega_plus_txy[it, :, :])
-                
+
                 rho_ijxy += d_rho_it_reg #+ d_rho_it_noise 
                 rho_other_xy += d_rho_other_it
                 rho_ground_xy += d_rho_ground_it
@@ -253,8 +228,9 @@ class XLO_sample:
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
 
-# ######################    
-# Loop over simulation time window ends    
+            # ######################    
+            # Loop over simulation time window ends    
+            
             if (iz != X.zgrid-1):
                 Omega_pstxyz[:, :, :, :, :, iz + 1] = Omega_pstxy
 
@@ -263,8 +239,8 @@ class XLO_sample:
             J_Omega_minus_txyz[:, :, :, iz] = J_Omega_minus_txy
             J_Omega_plus_txyz[:, :, :, iz] = J_Omega_plus_txy
                 
-######################            
-# Main loop ends     
+        ######################            
+        # Main loop ends     
 
         self.rho_ijtxyz = rho_ijtxyz
         self.Omega_pstxyz = Omega_pstxyz

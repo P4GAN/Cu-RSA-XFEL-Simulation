@@ -278,12 +278,6 @@ def Gaussian_pulse_aniso_seed_shifted(X):
     return Omega_seed_pstxy 
 
 
-
-
-
-
-
-
 def Ocelot_SASE_seed_pstxy(X):
     SASE = RadiationField()  # initialize RadiationField object
     
@@ -695,55 +689,6 @@ def RK45_step(f, y, x0, dx, params):
 
     return (k1 + 2.0 * k2 + 2.0 * k3 + k4) * dx / 6.0
 
-
-# def find_fwhm(x, y):
-#     max_value = np.max(y)
-#     max_index = np.argmax(y)
-#     half_max = max_value / 2
-#     idx_left = 0
-#     idx_right = len(y) - 1
-#     for i in range(0, max_index, 1):
-#         if y[i] > half_max:
-#             idx_left = i
-#             break
-#     for i in range(len(y)-1, max_index, -1):
-#         if y[i] > half_max:
-#             idx_right = i
-#             break
-#     return x[idx_right] - x[idx_left]
-
-# import numpy as np
-
-# def find_fwhm(x, y):
-#     """
-#     Find the Full Width at Half Maximum (FWHM) of an array `y` given an array of corresponding x-values `x`.
-    
-#     Parameters:
-#         x (array): Array of x-values.
-#         y (array): Array of y-values.
-    
-#     Returns:
-#         fwhm (float): Full Width at Half Maximum.
-#     """
-#     # Find maximum y-value and corresponding x-value
-#     max_y = np.max(y)
-#     max_x = x[np.argmax(y)]
-    
-#     # Calculate half maximum
-#     half_max = max_y / 2
-    
-#     # Find indices where y crosses half maximum
-#     idx_left = np.where(y[:np.argmax(y)] < half_max)[0][-1]
-#     idx_right = np.where(y[np.argmax(y):] < half_max)[0][0] + np.argmax(y)
-    
-#     # Interpolate to find precise crossing points
-#     left_interp = np.interp(half_max, y[idx_left:idx_left+2], x[idx_left:idx_left+2])
-#     right_interp = np.interp(half_max, y[idx_right-1:idx_right+1], x[idx_right-1:idx_right+1])
-    
-#     # Calculate FWHM
-#     fwhm = right_interp - left_interp
-    
-#     return fwhm
 
 def find_fwhm(x, y):
     max_value = np.max(y)

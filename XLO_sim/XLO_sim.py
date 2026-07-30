@@ -160,12 +160,9 @@ class XLO_sim:
         else:
             self.random_seed = self.config['random_seed']
             
-        # self.flux_factor = 3.0 * self.lambdaKalpha1N ** 2 * self.GammarKalpha1fsm1N / 8.0 / np.pi
         self.flux_factor = 3.0 * self.lambdaKalpha1N ** 2 * self.Gamma_sp_fsm1N / 8.0 / np.pi
         self.field_source_factor = 1j * 3.0 * self.lambdaKalpha1N**2 * self.Gamma_sp_fsm1N * self.n / 16.0 / np.pi 
         self.Gamma_ij = 0.5 * (self.GammaKfsm1N + self.GammaL3fsm1N)
-        #self.atom_noise_factor = np.sqrt(self.Gamma_ij * self.dt / (self.n * self.dx * self.dy * self.dz))
-        #self.field_noise_factor = 1j * 3.0 * self.lambdaKalpha1N**2 * self.Gamma_sp_fsm1N / (8.0 * np.pi) * np.sqrt(self.n * self.dz /(self.Gamma_ij * self.dt * self.dx * self.dy))
         self.convert_pump_phnm2fs_Wcm2 = (self.hwPump     * 1.602e-19 / (1e-9)**2 / 1e-15) / (1 / (1e-2)**2)
         self.convert_SF_phnm2fs_Wcm2   = (self.hwKalpha1N * 1.602e-19 / (1e-9)**2 / 1e-15) / (1 / (1e-2)**2)
         

@@ -58,8 +58,8 @@ def MB_other_regular(t, rho_other_xy, params):
       
     X, Omega_psxy, it, iz, rho_ground_xy, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
     
-    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[1:, -1], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
-    drho_ion = -np.einsum('f, fxy->xy', X.S_other_F[1:], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_other_xy
+    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -1], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    drho_ion = -np.einsum('f, fxy->xy', X.S_other_F[:], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_other_xy
 
     return drho_pump + drho_ion
 

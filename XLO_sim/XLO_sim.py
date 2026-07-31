@@ -144,11 +144,13 @@ class XLO_sim:
         if self.pump_pulse_format == 'GenesisV4':
             print('Imported pump')
 
-        self.GammaKfsm1N = 1.0 / (self.hbar / self.config['GammaKeVN'])
-        self.GammaL2fsm1N = 1.0 / (self.hbar / self.config['GammaL2eVN'])
-        self.GammaL3fsm1N = 1.0 / (self.hbar / self.config['GammaL3eVN'])
-        self.GammarKalpha1fsm1N = 1.0 / (self.hbar / self.config['GammarKalpha1eVN'])
-        self.GammarKalpha2fsm1N = 1.0 / (self.hbar / self.config['GammarKalpha2eVN'])
+        self.GammaKfsm1N = self.config['GammaKeVN'] / self.hbar
+        self.GammaL3fsm1N = self.config['GammaL3eVN'] / self.hbar
+        self.GammarKalpha1fsm1N = self.config['GammarKalpha1eVN'] / self.hbar
+        self.GammarKalpha2fsm1N = self.config['GammarKalpha2eVN'] / self.hbar
+        self.GammaL1fsm1N = self.config['GammaL1eVN'] / self.hbar
+        self.Gamma3M45fsm1N = self.config['GammaL3M45eVN'] / self.hbar
+        self.GammaA_L1_to_L3M45fs1N = self.config['GammaA_L1_to_L3M45eVN'] / self.hbar
         self.Gamma_sp_fsm1N = self.GammarKalpha1fsm1N + self.GammarKalpha2fsm1N
 
         self.f05Kalpha12A = self.config['GammarKalpha2eVN'] / self.config['GammarKalpha1eVN']
@@ -174,10 +176,12 @@ class XLO_sim:
         
         Tijs = np.zeros((self.nlevel, self.nlevel, 2), dtype=complex)
         Gij = np.zeros((self.nlevel, self.nlevel), dtype=complex)
-        S_ground_Fi = np.zeros((3, self.nlevel+1))
+        S_ground_Fi = np.zeros((3, self.nlevel+2)) # Includes transition to 2s hole and other
         S_ion_Fi = np.zeros((3, self.nlevel))
         S_other_F = np.zeros(3)
-        
+        S_2s_F = np.zeros(3)
+        S_2p3_3d5_F = np.zeros(3)
+
         if (self.nlevel)==6:
                         
             Tijs[0,4,0] = 1.0 / np.sqrt(3)
@@ -202,19 +206,22 @@ class XLO_sim:
             S_ground_Fi[0, 3] = self.sigma1_pump_2p3 * 0.27
             S_ground_Fi[0, 4] = self.sigma1_pump_1s * 0.5
             S_ground_Fi[0, 5] = self.sigma1_pump_1s * 0.5
-            S_ground_Fi[0, 6] = self.sigma1_pump_other
+            S_ground_Fi[0, 6] = self.sigma1_pump_2s
+            S_ground_Fi[0, 7] = self.sigma1_pump_other
 
             S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 * 0.12
             S_ground_Fi[1, 1] = self.sigma1_Ka1_2p3 * 0.18
             S_ground_Fi[1, 2] = self.sigma1_Ka1_2p3 * 0.28
             S_ground_Fi[1, 3] = self.sigma1_Ka1_2p3 * 0.42
-            S_ground_Fi[1, 6] = self.sigma1_Ka1_other
+            S_ground_Fi[1, 6] = self.sigma1_Ka1_2s
+            S_ground_Fi[1, 7] = self.sigma1_Ka1_other
 
             S_ground_Fi[2, 0] = self.sigma1_Ka1_2p3 * 0.42
             S_ground_Fi[2, 1] = self.sigma1_Ka1_2p3 * 0.28
             S_ground_Fi[2, 2] = self.sigma1_Ka1_2p3 * 0.18
             S_ground_Fi[2, 3] = self.sigma1_Ka1_2p3 * 0.12
-            S_ground_Fi[2, 6] = self.sigma1_Ka1_other
+            S_ground_Fi[2, 6] = self.sigma1_Ka1_2s
+            S_ground_Fi[2, 7] = self.sigma1_Ka1_other
 
             S_ion_Fi[0, 0] = self.sigma2_pump_2p3 * 1.05
             S_ion_Fi[0, 1] = self.sigma2_pump_2p3 * 0.95
@@ -240,6 +247,14 @@ class XLO_sim:
             S_other_F[0] = self.sigma2_pump_other
             S_other_F[1] = self.sigma2_Ka1_other
             S_other_F[2] = self.sigma2_Ka1_other
+
+            S_2s_F[0] = self.sigma2_pump_2s
+            S_2s_F[1] = self.sigma2_Ka1_2s
+            S_2s_F[2] = self.sigma2_Ka1_2s
+
+            S_2p3_3d5_F[0] = self.sigma2_pump_2p3_3d5
+            S_2p3_3d5_F[1] = self.sigma2_Ka1_2p3_3d5
+            S_2p3_3d5_F[2] = self.sigma2_Ka1_2p3_3d5
 
             self.ei_L3 = np.asarray([1, 1, 1, 1, 0, 0])
             self.ei_K = np.asarray([0, 0, 0, 0, 1, 1])

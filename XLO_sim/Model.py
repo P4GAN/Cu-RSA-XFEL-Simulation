@@ -90,7 +90,7 @@ def MB_2s_regular(t, rho_2s_xy, params):
     return drho_pump + drho_ion + drho_2s_decay
 
 
-def MB_2p3_3d5_regular(t, rho_2s_xy, rho_2p3_3d5_xy, params):
+def MB_2p3_3d5_regular(t, rho_2p3_3d5_xy, params):
     """
     Calculate the change of population of the 2p3_3d5 hole level due to auger decay from the 2s level, photoionization with the pump and seed fields and decay.
     Parameters
@@ -107,7 +107,7 @@ def MB_2p3_3d5_regular(t, rho_2s_xy, rho_2p3_3d5_xy, params):
 
     """
       
-    X, Omega_psxy, it, iz, rho_ground_xy, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
+    X, Omega_psxy, it, iz, rho_2s_xy, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
     
     drho_ion = -np.einsum('f, fxy->xy', X.S_2p3_3d5_F[:], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_2p3_3d5_xy
     drho_2p3_3d5_decay = -X.Gamma3M45fsm1N * rho_2p3_3d5_xy

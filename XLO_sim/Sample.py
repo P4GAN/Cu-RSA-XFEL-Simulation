@@ -149,8 +149,6 @@ class XLO_sample:
         self.rho_0_3D = rho_0_txyz
         self.rho_i_3D = rho_i_txyz
         self.j_3D = j_txyz 
-
-        self.pump_itxyz = np.einsum('i, txyz->itxyz', X.S_ground_Fi[0, : -1], j_txyz * rho_0_txyz)
     
         if X.enable_pump_diffraction: 
             print('Pump field diffraction: enabled')
@@ -202,7 +200,7 @@ class XLO_sample:
                 d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_2p3_3d5_it = tools.RK45_step(Model.MB_2p3_3d5_regular, rho_2p3_3d5_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                d_rho_2p3_3d5_it = tools.RK45_step(Model.MB_2p3_3d5_regular, rho_2p3_3d5_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_2s_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :], it, iz])
 
                 rho_ijxy += d_rho_it_reg #+ d_rho_it_noise 
@@ -262,4 +260,8 @@ class XLO_sample:
         self.rho_0_3D = np.real(rho_ground_txyz)
         self.j_3D = J_P_txyz
         self.Pfield_txyz = Pfield_txyz
+
+        self.rho_2s_txyz = np.real(rho_2s_txyz)
+        self.rho_2p3_3d5_txyz = np.real(rho_2p3_3d5_txyz)
+        self.rho_other_txyz = np.real(rho_other_txyz)
         

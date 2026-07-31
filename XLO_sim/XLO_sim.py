@@ -277,6 +277,8 @@ class XLO_sim:
         self.S_ground_Fi = S_ground_Fi
         self.S_other_F = S_other_F
         self.S_ion_Fi = S_ion_Fi
+        self.S_2s_F = S_2s_F
+        self.S_2p3_3d5_F = S_2p3_3d5_F
         self.Tijs_plus = np.einsum('ijs, ij->ijs', self.Tijs, self.Hij)
         self.Tijs_minus = np.einsum('ijs, ji->ijs', self.Tijs, self.Hij)
         self.Mij = self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) + self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) + (self.GammaKfsm1N + self.GammaL3fsm1N) * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)) / 2.0

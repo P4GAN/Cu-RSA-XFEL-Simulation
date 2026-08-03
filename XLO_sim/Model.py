@@ -1,5 +1,5 @@
 import numpy as np
-import tools
+from . import tools
 
 
 def MB_nlevel_regular(t, rho_ijxy, params):

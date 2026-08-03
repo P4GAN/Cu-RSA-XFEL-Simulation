@@ -2,10 +2,10 @@ import yaml
 import numpy as np
 import scipy.constants as sp_const
 import matplotlib.pyplot as plt
-import tools
-import Model
-import Sample as XLO_sample
-import Optics as XLO_optics
+from . import tools
+from . import Model
+from . import Sample as XLO_sample
+from . import Optics as XLO_optics
 import h5py
 
 

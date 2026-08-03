@@ -1,8 +1,8 @@
 import numpy as np
-from new_wave import *
 import scipy.constants as sp_const
 from scipy.interpolate import RegularGridInterpolator
 
+from mini_ocelot.new_wave import *
 
 def gaussian_pulse(X):
     """

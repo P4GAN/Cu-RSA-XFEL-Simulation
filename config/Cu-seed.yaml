@@ -16,13 +16,11 @@ sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
 sigma2_pump_1s: 4.75e-7
 sigma2_pump_2s: 2.91e-7
 sigma2_pump_2p3: 3.02e-7
-sigma2_pump_2p3_3d5: 3.67e-7
 sigma2_pump_other: 0.36e-7 # 3.27e-7 - 2.91e-7
 
 sigma2_Ka1_1s: 6.53e-7
 sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 4.15e-7
-sigma2_Ka1_2p3_3d5: 5.01e-7
 sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
 
 
@@ -49,7 +47,7 @@ GammaL3eVN: 0.61
 # GammaL3M45eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
-GammaA_L1_to_L3M45eVN: 1.57
+GammaA_L1_to_L3M45eVN: 5.07 # 1.57
 
 
 #K alpha atomic transitions photon energy

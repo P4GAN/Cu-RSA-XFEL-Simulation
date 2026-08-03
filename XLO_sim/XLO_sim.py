@@ -42,19 +42,8 @@ class XLO_sim:
         self.dz = self.zmax / (self.zgrid - 1.0)
         self.z = np.linspace(0, self.zmax, self.zgrid)
         
-        # self.sigma_r = self.config['pump_width_FWHM'] / (2 * np.sqrt(2*np.log(2)))
-        # self.sigma_rx = self.sigma_r
-        # self.sigma_ry = self.sigma_r 
-        # self.sigma_t = self.config['pulse_duration_FWHM_t'] / (2 * np.sqrt(2*np.log(2)))
-        
-        # self.zR = 4 * np.pi * self.sigma_r**2 / self.lambdaPump 
         self.t0 = self.tmax / 2.0
-        
-        # self.theta_geom = np.arctan(4.0 * self.sigma_r / self.zmax)
-        # self.theta_pump = self.lambdaPump / np.pi / 2.0 / self.sigma_r * self.M2
-        # self.theta_max = np.max((self.theta_geom, self.theta_pump))
-        
-        
+
         self.optics = XLO_optics.XLO_optics(self)
 
         if self.auto_grid == True:
@@ -149,7 +138,6 @@ class XLO_sim:
         self.GammarKalpha1fsm1N = self.config['GammarKalpha1eVN'] / self.hbar
         self.GammarKalpha2fsm1N = self.config['GammarKalpha2eVN'] / self.hbar
         self.GammaL1fsm1N = self.config['GammaL1eVN'] / self.hbar
-        self.Gamma3M45fsm1N = self.config['GammaL3M45eVN'] / self.hbar
         self.GammaA_L1_to_L3M45fs1N = self.config['GammaA_L1_to_L3M45eVN'] / self.hbar
         self.Gamma_sp_fsm1N = self.GammarKalpha1fsm1N + self.GammarKalpha2fsm1N
 
@@ -180,7 +168,6 @@ class XLO_sim:
         S_ion_Fi = np.zeros((3, self.nlevel))
         S_other_F = np.zeros(3)
         S_2s_F = np.zeros(3)
-        S_2p3_3d5_F = np.zeros(3)
 
         if (self.nlevel)==6:
                         
@@ -252,9 +239,6 @@ class XLO_sim:
             S_2s_F[1] = self.sigma2_Ka1_2s
             S_2s_F[2] = self.sigma2_Ka1_2s
 
-            S_2p3_3d5_F[0] = self.sigma2_pump_2p3_3d5
-            S_2p3_3d5_F[1] = self.sigma2_Ka1_2p3_3d5
-            S_2p3_3d5_F[2] = self.sigma2_Ka1_2p3_3d5
 
             self.ei_L3 = np.asarray([1, 1, 1, 1, 0, 0])
             self.ei_K = np.asarray([0, 0, 0, 0, 1, 1])
@@ -278,10 +262,11 @@ class XLO_sim:
         self.S_other_F = S_other_F
         self.S_ion_Fi = S_ion_Fi
         self.S_2s_F = S_2s_F
-        self.S_2p3_3d5_F = S_2p3_3d5_F
         self.Tijs_plus = np.einsum('ijs, ij->ijs', self.Tijs, self.Hij)
         self.Tijs_minus = np.einsum('ijs, ji->ijs', self.Tijs, self.Hij)
         self.Mij = self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) + self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) + (self.GammaKfsm1N + self.GammaL3fsm1N) * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)) / 2.0
+        # Incoherent 2s -> 2p_3/2 3d_5/2 Auger feeding
+        self.auger_feeding_matrix = np.diag(self.ei_L3 / np.sum(self.ei_L3)) * self.GammaA_L1_to_L3M45fs1N
         self.transform_matrix = np.asarray([[1, 1], [1j, -1j]]) / np.sqrt(2.0) # transformation matrix from circular polarization vectors to Cartesian
 
         

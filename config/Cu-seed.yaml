@@ -55,8 +55,8 @@ hwKalpha2N: 8027.98
 #simulation domain and padding parameters
 tgrid: 200
 zgrid: 15
-xgrid: 16
-ygrid: 16
+xgrid: 8
+ygrid: 8
 
 tmax: 8.
 

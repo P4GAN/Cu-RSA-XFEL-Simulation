@@ -12,7 +12,8 @@ dependencies = [
   "scipy",
   "matplotlib",
   "pyyaml",
-  "h5py"
+  "h5py",
+  "numba"
 ]
 
 [tool.setuptools]

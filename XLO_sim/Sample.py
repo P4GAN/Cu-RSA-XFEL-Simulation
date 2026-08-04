@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import tools
-import Model
-import Optics as XLO_optics
+from . import tools
+from . import Model
+from . import Optics as XLO_optics
 
 
 class XLO_sample:

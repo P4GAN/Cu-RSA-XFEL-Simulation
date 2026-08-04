@@ -2,10 +2,10 @@ import yaml
 import numpy as np
 import scipy.constants as sp_const
 import matplotlib.pyplot as plt
-import tools
-import Model
-import Sample as XLO_sample
-import Optics as XLO_optics
+from . import tools
+from . import Model
+from . import Sample as XLO_sample
+from . import Optics as XLO_optics
 import h5py
 
 
@@ -258,6 +258,7 @@ class XLO_sim:
             
         self.Tijs = Tijs
         self.Gij = Gij
+        self.Gamma_sp_Gij = self.Gamma_sp_fsm1N * Gij
         self.S_ground_Fi = S_ground_Fi
         self.S_other_F = S_other_F
         self.S_ion_Fi = S_ion_Fi
@@ -313,8 +314,8 @@ class XLO_sim:
         if self.nphoton_pump_z[0] != 0.0:
             self.pump_transmission = self.nphoton_pump_z[-1] / self.nphoton_pump_z[0]
         
-        self.E_sstxyz = np.einsum('ijp,jktxyz,kir->prtxyz', self.Tijs_minus, self.rho_ijtxyz, self.Tijs_plus)
-        self.G_sstxyz = np.einsum('ijr,jktxyz,kip->prtxyz', self.Tijs_plus, self.rho_ijtxyz, self.Tijs_minus)
+        self.E_sstxyz = np.einsum('ijp,jktxyz,kir->prtxyz', self.Tijs_minus, self.rho_ijtxyz, self.Tijs_plus, optimize=True)
+        self.G_sstxyz = np.einsum('ijr,jktxyz,kip->prtxyz', self.Tijs_plus, self.rho_ijtxyz, self.Tijs_minus, optimize=True)
 
         self.P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', self.Tijs_minus, self.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', self.rho_ijtxyz, self.Tijs_plus) ])
         

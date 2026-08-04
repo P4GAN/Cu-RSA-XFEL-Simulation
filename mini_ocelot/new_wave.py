@@ -22,10 +22,16 @@ import os
 ##from ocelot.common.math_op import find_nearest_idx, fwhm, std_moment, bin_scale, bin_array, mut_coh_func
 ##from ocelot.common.py_func import filename_from_path
 
-from o_globals import *
-from math_op import find_nearest_idx, fwhm, std_moment, bin_scale, bin_array, mut_coh_func
-from py_func import filename_from_path
-from ocelog import *
+try:
+    from .o_globals import *
+    from .math_op import find_nearest_idx, fwhm, std_moment, bin_scale, bin_array, mut_coh_func
+    from .py_func import filename_from_path
+    from .ocelog import *
+except ImportError:  # pragma: no cover - fallback for repo-root usage
+    from o_globals import *
+    from math_op import find_nearest_idx, fwhm, std_moment, bin_scale, bin_array, mut_coh_func
+    from py_func import filename_from_path
+    from ocelog import *
 
 import matplotlib.pyplot as plt
 

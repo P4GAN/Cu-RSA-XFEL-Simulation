@@ -28,11 +28,13 @@ def MB_nlevel_regular(t, rho_ijxy, params):
     Hint = 1j * (np.einsum('ijs, sxy->ijxy', X.Tijs_plus, Omega_plus_sxy) + np.einsum('ijs, sxy->ijxy', X.Tijs_minus, Omega_minus_sxy)) 
     drho_MB = np.einsum('isxy,sjxy->ijxy', Hint, rho_ijxy) - np.einsum('isxy,sjxy->ijxy', rho_ijxy, Hint)
 
-    drho_pump = np.einsum('ij, ijxy->ijxy', -X.Mij, rho_ijxy) + np.einsum('ij, ixy->ijxy', X.delta_ij, (np.einsum('is, ssxy->ixy', X.Gamma_sp_fsm1N * X.Gij, rho_ijxy) + np.einsum('i, xy->ixy', X.S_ground_Fi[0, :-1], J_P_xy * rho_ground_xy)))
+    drho_pump = np.einsum('ij, ijxy->ijxy', -X.Mij, rho_ijxy) + np.einsum('ij, ixy->ijxy', X.delta_ij, (np.einsum('is, ssxy->ixy', X.Gamma_sp_Gij, rho_ijxy) + np.einsum('i, xy->ixy', X.S_ground_Fi[0, :-1], J_P_xy * rho_ground_xy)))
     gamma_ion_ixy = np.einsum('i, xy->ixy', X.S_ion_Fi[0, :], J_P_xy)
 
-    drho_pump += np.einsum('ij, ixy->ijxy', X.delta_ij, np.einsum('fi, fxy->ixy', X.S_ground_Fi[1:, :-1], np.einsum('fxy, xy-> fxy', [J_Omega_minus_xy, J_Omega_plus_xy], rho_ground_xy)))
-    gamma_ion_ixy += np.einsum('fi, fxy->ixy', X.S_ion_Fi[1:, :], np.array([J_Omega_minus_xy, J_Omega_plus_xy]))
+    J_Omega_fxy = np.array([J_Omega_minus_xy, J_Omega_plus_xy])
+
+    drho_pump += np.einsum('ij, ixy->ijxy', X.delta_ij, np.einsum('fi, fxy->ixy', X.S_ground_Fi[1:, :-1], np.einsum('fxy, xy-> fxy', J_Omega_fxy, rho_ground_xy)))
+    gamma_ion_ixy += np.einsum('fi, fxy->ixy', X.S_ion_Fi[1:, :], J_Omega_fxy)
     
     drho_ion = - 1.0 / 2.0 * (np.einsum('ixy, ijxy->ijxy', gamma_ion_ixy, rho_ijxy) + np.einsum('jxy, ijxy->ijxy', gamma_ion_ixy, rho_ijxy))
     

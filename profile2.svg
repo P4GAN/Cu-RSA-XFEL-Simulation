@@ -1,0 +1,491 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="826" onload="init(evt)" viewBox="0 0 1200 826" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:monospace; font-size:12px }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = true;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames, known_font_width;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    known_font_width = get_monospace_width(frames);
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        if (!isEdge) {
+            svg.removeAttribute("viewBox");
+        }
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            update_text_for_elements(frames.children);
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function get_monospace_width(frames) {
+    // Given the id="frames" element, return the width of text characters if
+    // this is a monospace font, otherwise return 0.
+    text = find_child(frames.children[0], "text");
+    originalContent = text.textContent;
+    text.textContent = "!";
+    bangWidth = text.getComputedTextLength();
+    text.textContent = "W";
+    wWidth = text.getComputedTextLength();
+    text.textContent = originalContent;
+    if (bangWidth === wWidth) {
+        return bangWidth;
+    } else {
+        return 0;
+    }
+}
+function update_text_for_elements(elements) {
+    // In order to render quickly in the browser, you want to do one pass of
+    // reading attributes, and one pass of mutating attributes. See
+    // https://web.dev/avoid-large-complex-layouts-and-layout-thrashing/ for details.
+
+    // Fall back to inefficient calculation, if we're variable-width font.
+    // TODO This should be optimized somehow too.
+    if (known_font_width === 0) {
+        for (var i = 0; i < elements.length; i++) {
+            update_text(elements[i]);
+        }
+        return;
+    }
+
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        var newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * known_font_width) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+        // Fit in full text width
+        if (txt.length * known_font_width < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+
+        var substringLength = Math.floor(w / known_font_width) - 2;
+        if (truncate_text_right) {
+            // Truncate the right side of the text.
+            textElemNewAttributes.push([newX, txt.substring(0, substringLength) + ".."]);
+            continue;
+        } else {
+            // Truncate the left side of the text.
+            textElemNewAttributes.push([newX, ".." + txt.substring(txt.length - substringLength, txt.length)]);
+            continue;
+        }
+    }
+
+    console.assert(textElemNewAttributes.length === elements.length, "Resize failed, please file a bug at https://github.com/jonhoo/inferno/");
+
+    // Now that we know new textContent, set it all in one go so we don't refresh a bazillion times.
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
+}
+
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    var to_update_text = [];
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                to_update_text.push(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                to_update_text.push(e);
+            }
+        }
+    }
+    update_text_for_elements(to_update_text);
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+    }
+    update_text_for_elements(el);
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="826" fill="url(#background)"/><text id="title" fill="rgb(0,0,0)" x="50.0000%" y="24.00">py-spy record -o profile2.svg -- python example_script.py</text><text id="details" fill="rgb(0,0,0)" x="10" y="40.00"> </text><text id="unzoom" class="hide" fill="rgb(0,0,0)" x="10" y="24.00">Reset Zoom</text><text id="search" fill="rgb(0,0,0)" x="1190" y="24.00">Search</text><text id="matched" fill="rgb(0,0,0)" x="1190" y="815.00"> </text><svg id="frames" x="10" width="1180" total_samples="8038"><g><title>&lt;module&gt; (example_script.py:12) (10 samples, 0.12%)</title><rect x="0.0000%" y="68" width="0.1244%" height="15" fill="rgb(227,0,7)" fg:x="0" fg:w="10"/><text x="0.2500%" y="78.50"></text></g><g><title>__init__ (XLO_sim/Sample.py:13) (55 samples, 0.68%)</title><rect x="0.1493%" y="100" width="0.6842%" height="15" fill="rgb(217,0,24)" fg:x="12" fg:w="55"/><text x="0.3993%" y="110.50"></text></g><g><title>random_gaussian_noise_nlevel_pstxyz (XLO_sim/tools.py:641) (55 samples, 0.68%)</title><rect x="0.1493%" y="116" width="0.6842%" height="15" fill="rgb(221,193,54)" fg:x="12" fg:w="55"/><text x="0.3993%" y="126.50"></text></g><g><title>random_vector_normal (XLO_sim/tools.py:601) (43 samples, 0.53%)</title><rect x="0.2986%" y="132" width="0.5350%" height="15" fill="rgb(248,212,6)" fg:x="24" fg:w="43"/><text x="0.5486%" y="142.50"></text></g><g><title>&lt;module&gt; (example_script.py:15) (60 samples, 0.75%)</title><rect x="0.1493%" y="68" width="0.7465%" height="15" fill="rgb(208,68,35)" fg:x="12" fg:w="60"/><text x="0.3993%" y="78.50"></text></g><g><title>configure (XLO_sim/XLO_sim.py:286) (60 samples, 0.75%)</title><rect x="0.1493%" y="84" width="0.7465%" height="15" fill="rgb(232,128,0)" fg:x="12" fg:w="60"/><text x="0.3993%" y="94.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:28) (168 samples, 2.09%)</title><rect x="1.1321%" y="132" width="2.0901%" height="15" fill="rgb(207,160,47)" fg:x="91" fg:w="168"/><text x="1.3821%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (153 samples, 1.90%)</title><rect x="1.3187%" y="148" width="1.9035%" height="15" fill="rgb(228,23,34)" fg:x="106" fg:w="153"/><text x="1.5687%" y="158.50">e..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:29) (484 samples, 6.02%)</title><rect x="3.2222%" y="132" width="6.0214%" height="15" fill="rgb(218,30,26)" fg:x="259" fg:w="484"/><text x="3.4722%" y="142.50">MB_nleve..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (472 samples, 5.87%)</title><rect x="3.3715%" y="148" width="5.8721%" height="15" fill="rgb(220,122,19)" fg:x="271" fg:w="472"/><text x="3.6215%" y="158.50">einsum ..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:31) (158 samples, 1.97%)</title><rect x="9.2436%" y="132" width="1.9657%" height="15" fill="rgb(250,228,42)" fg:x="743" fg:w="158"/><text x="9.4936%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (121 samples, 1.51%)</title><rect x="9.7039%" y="148" width="1.5053%" height="15" fill="rgb(240,193,28)" fg:x="780" fg:w="121"/><text x="9.9539%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:34) (85 samples, 1.06%)</title><rect x="11.2466%" y="132" width="1.0575%" height="15" fill="rgb(216,20,37)" fg:x="904" fg:w="85"/><text x="11.4966%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (67 samples, 0.83%)</title><rect x="11.4705%" y="148" width="0.8335%" height="15" fill="rgb(206,188,39)" fg:x="922" fg:w="67"/><text x="11.7205%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:37) (107 samples, 1.33%)</title><rect x="12.3414%" y="132" width="1.3312%" height="15" fill="rgb(217,207,13)" fg:x="992" fg:w="107"/><text x="12.5914%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (95 samples, 1.18%)</title><rect x="12.4907%" y="148" width="1.1819%" height="15" fill="rgb(231,73,38)" fg:x="1004" fg:w="95"/><text x="12.7407%" y="158.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:685) (1,026 samples, 12.76%)</title><rect x="1.0948%" y="116" width="12.7644%" height="15" fill="rgb(225,20,46)" fg:x="88" fg:w="1026"/><text x="1.3448%" y="126.50">RK45_step (XLO_sim/..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:39) (15 samples, 0.19%)</title><rect x="13.6726%" y="132" width="0.1866%" height="15" fill="rgb(210,31,41)" fg:x="1099" fg:w="15"/><text x="13.9226%" y="142.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:28) (168 samples, 2.09%)</title><rect x="14.2822%" y="132" width="2.0901%" height="15" fill="rgb(221,200,47)" fg:x="1148" fg:w="168"/><text x="14.5322%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (154 samples, 1.92%)</title><rect x="14.4563%" y="148" width="1.9159%" height="15" fill="rgb(226,26,5)" fg:x="1162" fg:w="154"/><text x="14.7063%" y="158.50">e..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:29) (465 samples, 5.79%)</title><rect x="16.3722%" y="132" width="5.7850%" height="15" fill="rgb(249,33,26)" fg:x="1316" fg:w="465"/><text x="16.6222%" y="142.50">MB_nlev..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (443 samples, 5.51%)</title><rect x="16.6459%" y="148" width="5.5113%" height="15" fill="rgb(235,183,28)" fg:x="1338" fg:w="443"/><text x="16.8959%" y="158.50">einsum ..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:31) (157 samples, 1.95%)</title><rect x="22.1573%" y="132" width="1.9532%" height="15" fill="rgb(221,5,38)" fg:x="1781" fg:w="157"/><text x="22.4073%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (130 samples, 1.62%)</title><rect x="22.4932%" y="148" width="1.6173%" height="15" fill="rgb(247,18,42)" fg:x="1808" fg:w="130"/><text x="22.7432%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:34) (77 samples, 0.96%)</title><rect x="24.1354%" y="132" width="0.9579%" height="15" fill="rgb(241,131,45)" fg:x="1940" fg:w="77"/><text x="24.3854%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (68 samples, 0.85%)</title><rect x="24.2473%" y="148" width="0.8460%" height="15" fill="rgb(249,31,29)" fg:x="1949" fg:w="68"/><text x="24.4973%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:35) (11 samples, 0.14%)</title><rect x="25.0933%" y="132" width="0.1368%" height="15" fill="rgb(225,111,53)" fg:x="2017" fg:w="11"/><text x="25.3433%" y="142.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:37) (97 samples, 1.21%)</title><rect x="25.2302%" y="132" width="1.2068%" height="15" fill="rgb(238,160,17)" fg:x="2028" fg:w="97"/><text x="25.4802%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (80 samples, 1.00%)</title><rect x="25.4417%" y="148" width="0.9953%" height="15" fill="rgb(214,148,48)" fg:x="2045" fg:w="80"/><text x="25.6917%" y="158.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:686) (1,026 samples, 12.76%)</title><rect x="13.8592%" y="116" width="12.7644%" height="15" fill="rgb(232,36,49)" fg:x="1114" fg:w="1026"/><text x="14.1092%" y="126.50">RK45_step (XLO_sim/..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:39) (15 samples, 0.19%)</title><rect x="26.4369%" y="132" width="0.1866%" height="15" fill="rgb(209,103,24)" fg:x="2125" fg:w="15"/><text x="26.6869%" y="142.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:28) (164 samples, 2.04%)</title><rect x="27.0839%" y="132" width="2.0403%" height="15" fill="rgb(229,88,8)" fg:x="2177" fg:w="164"/><text x="27.3339%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (151 samples, 1.88%)</title><rect x="27.2456%" y="148" width="1.8786%" height="15" fill="rgb(213,181,19)" fg:x="2190" fg:w="151"/><text x="27.4956%" y="158.50">e..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:29) (469 samples, 5.83%)</title><rect x="29.1242%" y="132" width="5.8348%" height="15" fill="rgb(254,191,54)" fg:x="2341" fg:w="469"/><text x="29.3742%" y="142.50">MB_nlev..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (451 samples, 5.61%)</title><rect x="29.3481%" y="148" width="5.6108%" height="15" fill="rgb(241,83,37)" fg:x="2359" fg:w="451"/><text x="29.5981%" y="158.50">einsum ..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:31) (152 samples, 1.89%)</title><rect x="34.9589%" y="132" width="1.8910%" height="15" fill="rgb(233,36,39)" fg:x="2810" fg:w="152"/><text x="35.2089%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (130 samples, 1.62%)</title><rect x="35.2326%" y="148" width="1.6173%" height="15" fill="rgb(226,3,54)" fg:x="2832" fg:w="130"/><text x="35.4826%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:34) (70 samples, 0.87%)</title><rect x="36.9370%" y="132" width="0.8709%" height="15" fill="rgb(245,192,40)" fg:x="2969" fg:w="70"/><text x="37.1870%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (59 samples, 0.73%)</title><rect x="37.0739%" y="148" width="0.7340%" height="15" fill="rgb(238,167,29)" fg:x="2980" fg:w="59"/><text x="37.3239%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:37) (103 samples, 1.28%)</title><rect x="37.8701%" y="132" width="1.2814%" height="15" fill="rgb(232,182,51)" fg:x="3044" fg:w="103"/><text x="38.1201%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (80 samples, 1.00%)</title><rect x="38.1563%" y="148" width="0.9953%" height="15" fill="rgb(231,60,39)" fg:x="3067" fg:w="80"/><text x="38.4063%" y="158.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:687) (1,018 samples, 12.66%)</title><rect x="26.6235%" y="116" width="12.6648%" height="15" fill="rgb(208,69,12)" fg:x="2140" fg:w="1018"/><text x="26.8735%" y="126.50">RK45_step (XLO_sim/..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:39) (11 samples, 0.14%)</title><rect x="39.1515%" y="132" width="0.1368%" height="15" fill="rgb(235,93,37)" fg:x="3147" fg:w="11"/><text x="39.4015%" y="142.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:28) (153 samples, 1.90%)</title><rect x="39.5123%" y="132" width="1.9035%" height="15" fill="rgb(213,116,39)" fg:x="3176" fg:w="153"/><text x="39.7623%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (139 samples, 1.73%)</title><rect x="39.6865%" y="148" width="1.7293%" height="15" fill="rgb(222,207,29)" fg:x="3190" fg:w="139"/><text x="39.9365%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:29) (492 samples, 6.12%)</title><rect x="41.4158%" y="132" width="6.1209%" height="15" fill="rgb(206,96,30)" fg:x="3329" fg:w="492"/><text x="41.6658%" y="142.50">MB_nleve..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (479 samples, 5.96%)</title><rect x="41.5775%" y="148" width="5.9592%" height="15" fill="rgb(218,138,4)" fg:x="3342" fg:w="479"/><text x="41.8275%" y="158.50">einsum (..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:31) (164 samples, 2.04%)</title><rect x="47.5367%" y="132" width="2.0403%" height="15" fill="rgb(250,191,14)" fg:x="3821" fg:w="164"/><text x="47.7867%" y="142.50">M..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (147 samples, 1.83%)</title><rect x="47.7482%" y="148" width="1.8288%" height="15" fill="rgb(239,60,40)" fg:x="3838" fg:w="147"/><text x="47.9982%" y="158.50">e..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:34) (70 samples, 0.87%)</title><rect x="49.6641%" y="132" width="0.8709%" height="15" fill="rgb(206,27,48)" fg:x="3992" fg:w="70"/><text x="49.9141%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (65 samples, 0.81%)</title><rect x="49.7263%" y="148" width="0.8087%" height="15" fill="rgb(225,35,8)" fg:x="3997" fg:w="65"/><text x="49.9763%" y="158.50"></text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:37) (77 samples, 0.96%)</title><rect x="50.6220%" y="132" width="0.9579%" height="15" fill="rgb(250,213,24)" fg:x="4069" fg:w="77"/><text x="50.8720%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (61 samples, 0.76%)</title><rect x="50.8211%" y="148" width="0.7589%" height="15" fill="rgb(247,123,22)" fg:x="4085" fg:w="61"/><text x="51.0711%" y="158.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:688) (1,004 samples, 12.49%)</title><rect x="39.2884%" y="116" width="12.4907%" height="15" fill="rgb(231,138,38)" fg:x="3158" fg:w="1004"/><text x="39.5384%" y="126.50">RK45_step (XLO_sim/..</text></g><g><title>MB_nlevel_regular (XLO_sim/Model.py:39) (16 samples, 0.20%)</title><rect x="51.5800%" y="132" width="0.1991%" height="15" fill="rgb(231,145,46)" fg:x="4146" fg:w="16"/><text x="51.8300%" y="142.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:198) (4,138 samples, 51.48%)</title><rect x="1.0326%" y="100" width="51.4805%" height="15" fill="rgb(251,118,11)" fg:x="83" fg:w="4138"/><text x="1.2826%" y="110.50">evaluate_n_level_3D (XLO_sim/Sample.py:198)</text></g><g><title>RK45_step (XLO_sim/tools.py:690) (59 samples, 0.73%)</title><rect x="51.7790%" y="116" width="0.7340%" height="15" fill="rgb(217,147,25)" fg:x="4162" fg:w="59"/><text x="52.0290%" y="126.50"></text></g><g><title>MB_other_regular (XLO_sim/Model.py:61) (14 samples, 0.17%)</title><rect x="52.5753%" y="132" width="0.1742%" height="15" fill="rgb(247,81,37)" fg:x="4226" fg:w="14"/><text x="52.8253%" y="142.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:685) (25 samples, 0.31%)</title><rect x="52.5504%" y="116" width="0.3110%" height="15" fill="rgb(209,12,38)" fg:x="4224" fg:w="25"/><text x="52.8004%" y="126.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:686) (11 samples, 0.14%)</title><rect x="52.8614%" y="116" width="0.1368%" height="15" fill="rgb(227,1,9)" fg:x="4249" fg:w="11"/><text x="53.1114%" y="126.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:687) (11 samples, 0.14%)</title><rect x="52.9983%" y="116" width="0.1368%" height="15" fill="rgb(248,47,43)" fg:x="4260" fg:w="11"/><text x="53.2483%" y="126.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:199) (62 samples, 0.77%)</title><rect x="52.5131%" y="100" width="0.7713%" height="15" fill="rgb(221,10,30)" fg:x="4221" fg:w="62"/><text x="52.7631%" y="110.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:686) (13 samples, 0.16%)</title><rect x="53.3466%" y="116" width="0.1617%" height="15" fill="rgb(210,229,1)" fg:x="4288" fg:w="13"/><text x="53.5966%" y="126.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:687) (10 samples, 0.12%)</title><rect x="53.5083%" y="116" width="0.1244%" height="15" fill="rgb(222,148,37)" fg:x="4301" fg:w="10"/><text x="53.7583%" y="126.50"></text></g><g><title>RK45_step (XLO_sim/tools.py:688) (13 samples, 0.16%)</title><rect x="53.6327%" y="116" width="0.1617%" height="15" fill="rgb(234,67,33)" fg:x="4311" fg:w="13"/><text x="53.8827%" y="126.50"></text></g><g><title>MB_ground_regular (XLO_sim/Model.py:88) (12 samples, 0.15%)</title><rect x="53.6452%" y="132" width="0.1493%" height="15" fill="rgb(247,98,35)" fg:x="4312" fg:w="12"/><text x="53.8952%" y="142.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:200) (46 samples, 0.57%)</title><rect x="53.2844%" y="100" width="0.5723%" height="15" fill="rgb(247,138,52)" fg:x="4283" fg:w="46"/><text x="53.5344%" y="110.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:202) (10 samples, 0.12%)</title><rect x="53.8567%" y="100" width="0.1244%" height="15" fill="rgb(213,79,30)" fg:x="4329" fg:w="10"/><text x="54.1067%" y="110.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:206) (14 samples, 0.17%)</title><rect x="53.9935%" y="100" width="0.1742%" height="15" fill="rgb(246,177,23)" fg:x="4340" fg:w="14"/><text x="54.2435%" y="110.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:207) (12 samples, 0.15%)</title><rect x="54.1677%" y="100" width="0.1493%" height="15" fill="rgb(230,62,27)" fg:x="4354" fg:w="12"/><text x="54.4177%" y="110.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:208) (229 samples, 2.85%)</title><rect x="54.3170%" y="100" width="2.8490%" height="15" fill="rgb(216,154,8)" fg:x="4366" fg:w="229"/><text x="54.5670%" y="110.50">ev..</text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:210) (59 samples, 0.73%)</title><rect x="57.1660%" y="100" width="0.7340%" height="15" fill="rgb(244,35,45)" fg:x="4595" fg:w="59"/><text x="57.4160%" y="110.50"></text></g><g><title>absorption (XLO_sim/Model.py:182) (57 samples, 0.71%)</title><rect x="57.1908%" y="116" width="0.7091%" height="15" fill="rgb(251,115,12)" fg:x="4597" fg:w="57"/><text x="57.4408%" y="126.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (31 samples, 0.39%)</title><rect x="57.5143%" y="132" width="0.3857%" height="15" fill="rgb(240,54,50)" fg:x="4623" fg:w="31"/><text x="57.7643%" y="142.50"></text></g><g><title>pad (numpy/lib/arraypad.py:748) (16 samples, 0.20%)</title><rect x="58.1115%" y="148" width="0.1991%" height="15" fill="rgb(233,84,52)" fg:x="4671" fg:w="16"/><text x="58.3615%" y="158.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:316) (30 samples, 0.37%)</title><rect x="58.0368%" y="116" width="0.3732%" height="15" fill="rgb(207,117,47)" fg:x="4665" fg:w="30"/><text x="58.2868%" y="126.50"></text></g><g><title>my_pad (XLO_sim/Optics.py:156) (29 samples, 0.36%)</title><rect x="58.0493%" y="132" width="0.3608%" height="15" fill="rgb(249,43,39)" fg:x="4666" fg:w="29"/><text x="58.2993%" y="142.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:317) (114 samples, 1.42%)</title><rect x="58.4101%" y="116" width="1.4183%" height="15" fill="rgb(209,38,44)" fg:x="4695" fg:w="114"/><text x="58.6601%" y="126.50"></text></g><g><title>my_pad (XLO_sim/Optics.py:156) (21 samples, 0.26%)</title><rect x="59.5671%" y="132" width="0.2613%" height="15" fill="rgb(236,212,23)" fg:x="4788" fg:w="21"/><text x="59.8171%" y="142.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:70) (14 samples, 0.17%)</title><rect x="60.0025%" y="196" width="0.1742%" height="15" fill="rgb(242,79,21)" fg:x="4823" fg:w="14"/><text x="60.2525%" y="206.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:73) (17 samples, 0.21%)</title><rect x="60.1891%" y="196" width="0.2115%" height="15" fill="rgb(211,96,35)" fg:x="4838" fg:w="17"/><text x="60.4391%" y="206.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:318) (47 samples, 0.58%)</title><rect x="59.8283%" y="116" width="0.5847%" height="15" fill="rgb(253,215,40)" fg:x="4809" fg:w="47"/><text x="60.0783%" y="126.50"></text></g><g><title>my_fft (XLO_sim/Optics.py:98) (43 samples, 0.53%)</title><rect x="59.8781%" y="132" width="0.5350%" height="15" fill="rgb(211,81,21)" fg:x="4813" fg:w="43"/><text x="60.1281%" y="142.50"></text></g><g><title>fft2 (numpy/fft/_pocketfft.py:1014) (42 samples, 0.52%)</title><rect x="59.8905%" y="148" width="0.5225%" height="15" fill="rgb(208,190,38)" fg:x="4814" fg:w="42"/><text x="60.1405%" y="158.50"></text></g><g><title>_raw_fftnd (numpy/fft/_pocketfft.py:707) (35 samples, 0.44%)</title><rect x="59.9776%" y="164" width="0.4354%" height="15" fill="rgb(235,213,38)" fg:x="4821" fg:w="35"/><text x="60.2276%" y="174.50"></text></g><g><title>fft (numpy/fft/_pocketfft.py:215) (34 samples, 0.42%)</title><rect x="59.9900%" y="180" width="0.4230%" height="15" fill="rgb(237,122,38)" fg:x="4822" fg:w="34"/><text x="60.2400%" y="190.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:320) (42 samples, 0.52%)</title><rect x="60.4130%" y="116" width="0.5225%" height="15" fill="rgb(244,218,35)" fg:x="4856" fg:w="42"/><text x="60.6630%" y="126.50"></text></g><g><title>drift_propagator (XLO_sim/Optics.py:214) (42 samples, 0.52%)</title><rect x="60.4130%" y="132" width="0.5225%" height="15" fill="rgb(240,68,47)" fg:x="4856" fg:w="42"/><text x="60.6630%" y="142.50"></text></g><g><title>drift_kernel (XLO_sim/Optics.py:209) (33 samples, 0.41%)</title><rect x="60.5250%" y="148" width="0.4105%" height="15" fill="rgb(210,16,53)" fg:x="4865" fg:w="33"/><text x="60.7750%" y="158.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:70) (13 samples, 0.16%)</title><rect x="61.1097%" y="196" width="0.1617%" height="15" fill="rgb(235,124,12)" fg:x="4912" fg:w="13"/><text x="61.3597%" y="206.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:213) (284 samples, 3.53%)</title><rect x="57.9124%" y="100" width="3.5332%" height="15" fill="rgb(224,169,11)" fg:x="4655" fg:w="284"/><text x="58.1624%" y="110.50">eva..</text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:327) (41 samples, 0.51%)</title><rect x="60.9356%" y="116" width="0.5101%" height="15" fill="rgb(250,166,2)" fg:x="4898" fg:w="41"/><text x="61.1856%" y="126.50"></text></g><g><title>my_ifft (XLO_sim/Optics.py:136) (37 samples, 0.46%)</title><rect x="60.9853%" y="132" width="0.4603%" height="15" fill="rgb(242,216,29)" fg:x="4902" fg:w="37"/><text x="61.2353%" y="142.50"></text></g><g><title>ifft2 (numpy/fft/_pocketfft.py:1107) (36 samples, 0.45%)</title><rect x="60.9978%" y="148" width="0.4479%" height="15" fill="rgb(230,116,27)" fg:x="4903" fg:w="36"/><text x="61.2478%" y="158.50"></text></g><g><title>_raw_fftnd (numpy/fft/_pocketfft.py:707) (31 samples, 0.39%)</title><rect x="61.0600%" y="164" width="0.3857%" height="15" fill="rgb(228,99,48)" fg:x="4908" fg:w="31"/><text x="61.3100%" y="174.50"></text></g><g><title>ifft (numpy/fft/_pocketfft.py:316) (29 samples, 0.36%)</title><rect x="61.0848%" y="180" width="0.3608%" height="15" fill="rgb(253,11,6)" fg:x="4910" fg:w="29"/><text x="61.3348%" y="190.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:73) (14 samples, 0.17%)</title><rect x="61.2715%" y="196" width="0.1742%" height="15" fill="rgb(247,143,39)" fg:x="4925" fg:w="14"/><text x="61.5215%" y="206.50"></text></g><g><title>absorption (XLO_sim/Model.py:187) (88 samples, 1.09%)</title><rect x="61.4705%" y="116" width="1.0948%" height="15" fill="rgb(236,97,10)" fg:x="4941" fg:w="88"/><text x="61.7205%" y="126.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (68 samples, 0.85%)</title><rect x="61.7193%" y="132" width="0.8460%" height="15" fill="rgb(233,208,19)" fg:x="4961" fg:w="68"/><text x="61.9693%" y="142.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:220) (93 samples, 1.16%)</title><rect x="61.4581%" y="100" width="1.1570%" height="15" fill="rgb(216,164,2)" fg:x="4940" fg:w="93"/><text x="61.7081%" y="110.50"></text></g><g><title>pad (numpy/lib/arraypad.py:748) (11 samples, 0.14%)</title><rect x="62.9012%" y="148" width="0.1368%" height="15" fill="rgb(220,129,5)" fg:x="5056" fg:w="11"/><text x="63.1512%" y="158.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:337) (30 samples, 0.37%)</title><rect x="62.8515%" y="116" width="0.3732%" height="15" fill="rgb(242,17,10)" fg:x="5052" fg:w="30"/><text x="63.1015%" y="126.50"></text></g><g><title>my_pad (XLO_sim/Optics.py:156) (30 samples, 0.37%)</title><rect x="62.8515%" y="132" width="0.3732%" height="15" fill="rgb(242,107,0)" fg:x="5052" fg:w="30"/><text x="63.1015%" y="142.50"></text></g><g><title>_set_pad_area (numpy/lib/arraypad.py:147) (14 samples, 0.17%)</title><rect x="65.9866%" y="164" width="0.1742%" height="15" fill="rgb(251,28,31)" fg:x="5304" fg:w="14"/><text x="66.2366%" y="174.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:338) (243 samples, 3.02%)</title><rect x="63.2247%" y="116" width="3.0231%" height="15" fill="rgb(233,223,10)" fg:x="5082" fg:w="243"/><text x="63.4747%" y="126.50">Fre..</text></g><g><title>my_pad (XLO_sim/Optics.py:156) (34 samples, 0.42%)</title><rect x="65.8248%" y="132" width="0.4230%" height="15" fill="rgb(215,21,27)" fg:x="5291" fg:w="34"/><text x="66.0748%" y="142.50"></text></g><g><title>pad (numpy/lib/arraypad.py:808) (22 samples, 0.27%)</title><rect x="65.9741%" y="148" width="0.2737%" height="15" fill="rgb(232,23,21)" fg:x="5303" fg:w="22"/><text x="66.2241%" y="158.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:70) (36 samples, 0.45%)</title><rect x="66.6459%" y="196" width="0.4479%" height="15" fill="rgb(244,5,23)" fg:x="5357" fg:w="36"/><text x="66.8959%" y="206.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:73) (65 samples, 0.81%)</title><rect x="67.0938%" y="196" width="0.8087%" height="15" fill="rgb(226,81,46)" fg:x="5393" fg:w="65"/><text x="67.3438%" y="206.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:339) (135 samples, 1.68%)</title><rect x="66.2478%" y="116" width="1.6795%" height="15" fill="rgb(247,70,30)" fg:x="5325" fg:w="135"/><text x="66.4978%" y="126.50"></text></g><g><title>my_fft (XLO_sim/Optics.py:98) (114 samples, 1.42%)</title><rect x="66.5091%" y="132" width="1.4183%" height="15" fill="rgb(212,68,19)" fg:x="5346" fg:w="114"/><text x="66.7591%" y="142.50"></text></g><g><title>fft2 (numpy/fft/_pocketfft.py:1014) (114 samples, 1.42%)</title><rect x="66.5091%" y="148" width="1.4183%" height="15" fill="rgb(240,187,13)" fg:x="5346" fg:w="114"/><text x="66.7591%" y="158.50"></text></g><g><title>_raw_fftnd (numpy/fft/_pocketfft.py:707) (106 samples, 1.32%)</title><rect x="66.6086%" y="164" width="1.3187%" height="15" fill="rgb(223,113,26)" fg:x="5354" fg:w="106"/><text x="66.8586%" y="174.50"></text></g><g><title>fft (numpy/fft/_pocketfft.py:215) (103 samples, 1.28%)</title><rect x="66.6459%" y="180" width="1.2814%" height="15" fill="rgb(206,192,2)" fg:x="5357" fg:w="103"/><text x="66.8959%" y="190.50"></text></g><g><title>drift_kernel (XLO_sim/Optics.py:209) (33 samples, 0.41%)</title><rect x="67.9895%" y="148" width="0.4105%" height="15" fill="rgb(241,108,4)" fg:x="5465" fg:w="33"/><text x="68.2395%" y="158.50"></text></g><g><title>drift_propagator_tensorial (XLO_sim/Optics.py:219) (74 samples, 0.92%)</title><rect x="67.9398%" y="132" width="0.9206%" height="15" fill="rgb(247,173,49)" fg:x="5461" fg:w="74"/><text x="68.1898%" y="142.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (37 samples, 0.46%)</title><rect x="68.4001%" y="148" width="0.4603%" height="15" fill="rgb(224,114,35)" fg:x="5498" fg:w="37"/><text x="68.6501%" y="158.50"></text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:341) (100 samples, 1.24%)</title><rect x="67.9273%" y="116" width="1.2441%" height="15" fill="rgb(245,159,27)" fg:x="5460" fg:w="100"/><text x="68.1773%" y="126.50"></text></g><g><title>drift_propagator_tensorial (XLO_sim/Optics.py:222) (19 samples, 0.24%)</title><rect x="68.9351%" y="132" width="0.2364%" height="15" fill="rgb(245,172,44)" fg:x="5541" fg:w="19"/><text x="69.1851%" y="142.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:70) (46 samples, 0.57%)</title><rect x="69.4078%" y="196" width="0.5723%" height="15" fill="rgb(236,23,11)" fg:x="5579" fg:w="46"/><text x="69.6578%" y="206.50"></text></g><g><title>_raw_fft (numpy/fft/_pocketfft.py:73) (58 samples, 0.72%)</title><rect x="69.9801%" y="196" width="0.7216%" height="15" fill="rgb(205,117,38)" fg:x="5625" fg:w="58"/><text x="70.2301%" y="206.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:221) (652 samples, 8.11%)</title><rect x="62.6151%" y="100" width="8.1115%" height="15" fill="rgb(237,72,25)" fg:x="5033" fg:w="652"/><text x="62.8651%" y="110.50">evaluate_n_..</text></g><g><title>Fresnel_propagator_with_absorption (XLO_sim/Optics.py:348) (125 samples, 1.56%)</title><rect x="69.1714%" y="116" width="1.5551%" height="15" fill="rgb(244,70,9)" fg:x="5560" fg:w="125"/><text x="69.4214%" y="126.50"></text></g><g><title>my_ifft (XLO_sim/Optics.py:136) (113 samples, 1.41%)</title><rect x="69.3207%" y="132" width="1.4058%" height="15" fill="rgb(217,125,39)" fg:x="5572" fg:w="113"/><text x="69.5707%" y="142.50"></text></g><g><title>ifft2 (numpy/fft/_pocketfft.py:1107) (113 samples, 1.41%)</title><rect x="69.3207%" y="148" width="1.4058%" height="15" fill="rgb(235,36,10)" fg:x="5572" fg:w="113"/><text x="69.5707%" y="158.50"></text></g><g><title>_raw_fftnd (numpy/fft/_pocketfft.py:707) (108 samples, 1.34%)</title><rect x="69.3829%" y="164" width="1.3436%" height="15" fill="rgb(251,123,47)" fg:x="5577" fg:w="108"/><text x="69.6329%" y="174.50"></text></g><g><title>ifft (numpy/fft/_pocketfft.py:316) (106 samples, 1.32%)</title><rect x="69.4078%" y="180" width="1.3187%" height="15" fill="rgb(221,13,13)" fg:x="5579" fg:w="106"/><text x="69.6578%" y="190.50"></text></g><g><title>Omega_source_regular (XLO_sim/Model.py:114) (41 samples, 0.51%)</title><rect x="70.8758%" y="116" width="0.5101%" height="15" fill="rgb(238,131,9)" fg:x="5697" fg:w="41"/><text x="71.1258%" y="126.50"></text></g><g><title>Omega_source_regular (XLO_sim/Model.py:116) (89 samples, 1.11%)</title><rect x="71.3859%" y="116" width="1.1072%" height="15" fill="rgb(211,50,8)" fg:x="5738" fg:w="89"/><text x="71.6359%" y="126.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (86 samples, 1.07%)</title><rect x="71.4232%" y="132" width="1.0699%" height="15" fill="rgb(245,182,24)" fg:x="5741" fg:w="86"/><text x="71.6732%" y="142.50"></text></g><g><title>Omega_source_regular (XLO_sim/Model.py:117) (88 samples, 1.09%)</title><rect x="72.4932%" y="116" width="1.0948%" height="15" fill="rgb(242,14,37)" fg:x="5827" fg:w="88"/><text x="72.7432%" y="126.50"></text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (87 samples, 1.08%)</title><rect x="72.5056%" y="132" width="1.0824%" height="15" fill="rgb(246,228,12)" fg:x="5828" fg:w="87"/><text x="72.7556%" y="142.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:226) (244 samples, 3.04%)</title><rect x="70.7265%" y="100" width="3.0356%" height="15" fill="rgb(213,55,15)" fg:x="5685" fg:w="244"/><text x="70.9765%" y="110.50">eva..</text></g><g><title>Omega_source_regular (XLO_sim/Model.py:119) (14 samples, 0.17%)</title><rect x="73.5880%" y="116" width="0.1742%" height="15" fill="rgb(209,9,3)" fg:x="5915" fg:w="14"/><text x="73.8380%" y="126.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:235) (25 samples, 0.31%)</title><rect x="73.8617%" y="100" width="0.3110%" height="15" fill="rgb(230,59,30)" fg:x="5937" fg:w="25"/><text x="74.1117%" y="110.50"></text></g><g><title>evaluate_n_level_3D (XLO_sim/Sample.py:237) (9 samples, 0.11%)</title><rect x="74.1727%" y="100" width="0.1120%" height="15" fill="rgb(209,121,21)" fg:x="5962" fg:w="9"/><text x="74.4227%" y="110.50"></text></g><g><title>run_3D (XLO_sim/XLO_sim.py:301) (5,905 samples, 73.46%)</title><rect x="0.8957%" y="84" width="73.4635%" height="15" fill="rgb(220,109,13)" fg:x="72" fg:w="5905"/><text x="1.1457%" y="94.50">run_3D (XLO_sim/XLO_sim.py:301)</text></g><g><title>run_3D (XLO_sim/XLO_sim.py:314) (853 samples, 10.61%)</title><rect x="74.4339%" y="84" width="10.6121%" height="15" fill="rgb(232,18,1)" fg:x="5983" fg:w="853"/><text x="74.6839%" y="94.50">run_3D (XLO_sim..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (853 samples, 10.61%)</title><rect x="74.4339%" y="100" width="10.6121%" height="15" fill="rgb(215,41,42)" fg:x="5983" fg:w="853"/><text x="74.6839%" y="110.50">einsum (numpy/c..</text></g><g><title>run_3D (XLO_sim/XLO_sim.py:315) (888 samples, 11.05%)</title><rect x="85.0460%" y="84" width="11.0475%" height="15" fill="rgb(224,123,36)" fg:x="6836" fg:w="888"/><text x="85.2960%" y="94.50">run_3D (XLO_sim/..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (888 samples, 11.05%)</title><rect x="85.0460%" y="100" width="11.0475%" height="15" fill="rgb(240,125,3)" fg:x="6836" fg:w="888"/><text x="85.2960%" y="110.50">einsum (numpy/co..</text></g><g><title>run_3D (XLO_sim/XLO_sim.py:317) (150 samples, 1.87%)</title><rect x="96.0936%" y="84" width="1.8661%" height="15" fill="rgb(205,98,50)" fg:x="7724" fg:w="150"/><text x="96.3436%" y="94.50">r..</text></g><g><title>einsum (numpy/core/einsumfunc.py:1371) (147 samples, 1.83%)</title><rect x="96.1309%" y="100" width="1.8288%" height="15" fill="rgb(205,185,37)" fg:x="7727" fg:w="147"/><text x="96.3809%" y="110.50">e..</text></g><g><title>&lt;module&gt; (example_script.py:16) (7,807 samples, 97.13%)</title><rect x="0.8957%" y="68" width="97.1262%" height="15" fill="rgb(238,207,15)" fg:x="72" fg:w="7807"/><text x="1.1457%" y="78.50">&lt;module&gt; (example_script.py:16)</text></g><g><title>&lt;module&gt; (XLO_sim/XLO_sim.py:2) (10 samples, 0.12%)</title><rect x="98.0219%" y="164" width="0.1244%" height="15" fill="rgb(213,199,42)" fg:x="7879" fg:w="10"/><text x="98.2719%" y="174.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (10 samples, 0.12%)</title><rect x="98.0219%" y="180" width="0.1244%" height="15" fill="rgb(235,201,11)" fg:x="7879" fg:w="10"/><text x="98.2719%" y="190.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (10 samples, 0.12%)</title><rect x="98.0219%" y="196" width="0.1244%" height="15" fill="rgb(207,46,11)" fg:x="7879" fg:w="10"/><text x="98.2719%" y="206.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (10 samples, 0.12%)</title><rect x="98.0219%" y="212" width="0.1244%" height="15" fill="rgb(241,35,35)" fg:x="7879" fg:w="10"/><text x="98.2719%" y="222.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (10 samples, 0.12%)</title><rect x="98.0219%" y="228" width="0.1244%" height="15" fill="rgb(243,32,47)" fg:x="7879" fg:w="10"/><text x="98.2719%" y="238.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (10 samples, 0.12%)</title><rect x="98.0219%" y="244" width="0.1244%" height="15" fill="rgb(247,202,23)" fg:x="7879" fg:w="10"/><text x="98.2719%" y="254.50"></text></g><g><title>&lt;module&gt; (XLO_sim/XLO_sim.py:3) (12 samples, 0.15%)</title><rect x="98.1463%" y="164" width="0.1493%" height="15" fill="rgb(219,102,11)" fg:x="7889" fg:w="12"/><text x="98.3963%" y="174.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (12 samples, 0.15%)</title><rect x="98.1463%" y="180" width="0.1493%" height="15" fill="rgb(243,110,44)" fg:x="7889" fg:w="12"/><text x="98.3963%" y="190.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1126) (11 samples, 0.14%)</title><rect x="98.2956%" y="196" width="0.1368%" height="15" fill="rgb(222,74,54)" fg:x="7901" fg:w="11"/><text x="98.5456%" y="206.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (11 samples, 0.14%)</title><rect x="98.2956%" y="212" width="0.1368%" height="15" fill="rgb(216,99,12)" fg:x="7901" fg:w="11"/><text x="98.5456%" y="222.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (11 samples, 0.14%)</title><rect x="98.2956%" y="228" width="0.1368%" height="15" fill="rgb(226,22,26)" fg:x="7901" fg:w="11"/><text x="98.5456%" y="238.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (10 samples, 0.12%)</title><rect x="98.3080%" y="244" width="0.1244%" height="15" fill="rgb(217,163,10)" fg:x="7902" fg:w="10"/><text x="98.5580%" y="254.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (10 samples, 0.12%)</title><rect x="98.3080%" y="260" width="0.1244%" height="15" fill="rgb(213,25,53)" fg:x="7902" fg:w="10"/><text x="98.5580%" y="270.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (10 samples, 0.12%)</title><rect x="98.3080%" y="276" width="0.1244%" height="15" fill="rgb(252,105,26)" fg:x="7902" fg:w="10"/><text x="98.5580%" y="286.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (10 samples, 0.12%)</title><rect x="98.3080%" y="292" width="0.1244%" height="15" fill="rgb(220,39,43)" fg:x="7902" fg:w="10"/><text x="98.5580%" y="302.50"></text></g><g><title>&lt;module&gt; (matplotlib/__init__.py:161) (9 samples, 0.11%)</title><rect x="98.3205%" y="308" width="0.1120%" height="15" fill="rgb(229,68,48)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="318.50"></text></g><g><title>_handle_fromlist (&lt;frozen importlib._bootstrap&gt;:1232) (9 samples, 0.11%)</title><rect x="98.3205%" y="324" width="0.1120%" height="15" fill="rgb(252,8,32)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="334.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (9 samples, 0.11%)</title><rect x="98.3205%" y="340" width="0.1120%" height="15" fill="rgb(223,20,43)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="350.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (9 samples, 0.11%)</title><rect x="98.3205%" y="356" width="0.1120%" height="15" fill="rgb(229,81,49)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="366.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (9 samples, 0.11%)</title><rect x="98.3205%" y="372" width="0.1120%" height="15" fill="rgb(236,28,36)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="382.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (9 samples, 0.11%)</title><rect x="98.3205%" y="388" width="0.1120%" height="15" fill="rgb(249,185,26)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="398.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (9 samples, 0.11%)</title><rect x="98.3205%" y="404" width="0.1120%" height="15" fill="rgb(249,174,33)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="414.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (9 samples, 0.11%)</title><rect x="98.3205%" y="420" width="0.1120%" height="15" fill="rgb(233,201,37)" fg:x="7903" fg:w="9"/><text x="98.5705%" y="430.50"></text></g><g><title>&lt;module&gt; (XLO_sim/XLO_sim.py:4) (27 samples, 0.34%)</title><rect x="98.2956%" y="164" width="0.3359%" height="15" fill="rgb(221,78,26)" fg:x="7901" fg:w="27"/><text x="98.5456%" y="174.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (27 samples, 0.34%)</title><rect x="98.2956%" y="180" width="0.3359%" height="15" fill="rgb(250,127,30)" fg:x="7901" fg:w="27"/><text x="98.5456%" y="190.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (16 samples, 0.20%)</title><rect x="98.4324%" y="196" width="0.1991%" height="15" fill="rgb(230,49,44)" fg:x="7912" fg:w="16"/><text x="98.6824%" y="206.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (16 samples, 0.20%)</title><rect x="98.4324%" y="212" width="0.1991%" height="15" fill="rgb(229,67,23)" fg:x="7912" fg:w="16"/><text x="98.6824%" y="222.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (16 samples, 0.20%)</title><rect x="98.4324%" y="228" width="0.1991%" height="15" fill="rgb(249,83,47)" fg:x="7912" fg:w="16"/><text x="98.6824%" y="238.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (16 samples, 0.20%)</title><rect x="98.4324%" y="244" width="0.1991%" height="15" fill="rgb(215,43,3)" fg:x="7912" fg:w="16"/><text x="98.6824%" y="254.50"></text></g><g><title>&lt;module&gt; (scipy/interpolate/_bsplines.py:10) (12 samples, 0.15%)</title><rect x="98.6315%" y="708" width="0.1493%" height="15" fill="rgb(238,154,13)" fg:x="7928" fg:w="12"/><text x="98.8815%" y="718.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (12 samples, 0.15%)</title><rect x="98.6315%" y="724" width="0.1493%" height="15" fill="rgb(219,56,2)" fg:x="7928" fg:w="12"/><text x="98.8815%" y="734.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (12 samples, 0.15%)</title><rect x="98.6315%" y="740" width="0.1493%" height="15" fill="rgb(233,0,4)" fg:x="7928" fg:w="12"/><text x="98.8815%" y="750.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (12 samples, 0.15%)</title><rect x="98.6315%" y="756" width="0.1493%" height="15" fill="rgb(235,30,7)" fg:x="7928" fg:w="12"/><text x="98.8815%" y="766.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (12 samples, 0.15%)</title><rect x="98.6315%" y="772" width="0.1493%" height="15" fill="rgb(250,79,13)" fg:x="7928" fg:w="12"/><text x="98.8815%" y="782.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (12 samples, 0.15%)</title><rect x="98.6315%" y="788" width="0.1493%" height="15" fill="rgb(211,146,34)" fg:x="7928" fg:w="12"/><text x="98.8815%" y="798.50"></text></g><g><title>&lt;module&gt; (scipy/interpolate/_interpolate.py:15) (15 samples, 0.19%)</title><rect x="98.6315%" y="484" width="0.1866%" height="15" fill="rgb(228,22,38)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="494.50"></text></g><g><title>_handle_fromlist (&lt;frozen importlib._bootstrap&gt;:1232) (15 samples, 0.19%)</title><rect x="98.6315%" y="500" width="0.1866%" height="15" fill="rgb(235,168,5)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="510.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (15 samples, 0.19%)</title><rect x="98.6315%" y="516" width="0.1866%" height="15" fill="rgb(221,155,16)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="526.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (15 samples, 0.19%)</title><rect x="98.6315%" y="532" width="0.1866%" height="15" fill="rgb(215,215,53)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="542.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (15 samples, 0.19%)</title><rect x="98.6315%" y="548" width="0.1866%" height="15" fill="rgb(223,4,10)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="558.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (15 samples, 0.19%)</title><rect x="98.6315%" y="564" width="0.1866%" height="15" fill="rgb(234,103,6)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="574.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (15 samples, 0.19%)</title><rect x="98.6315%" y="580" width="0.1866%" height="15" fill="rgb(227,97,0)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="590.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (15 samples, 0.19%)</title><rect x="98.6315%" y="596" width="0.1866%" height="15" fill="rgb(234,150,53)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="606.50"></text></g><g><title>&lt;module&gt; (scipy/interpolate/_fitpack_py.py:10) (15 samples, 0.19%)</title><rect x="98.6315%" y="612" width="0.1866%" height="15" fill="rgb(228,201,54)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="622.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (15 samples, 0.19%)</title><rect x="98.6315%" y="628" width="0.1866%" height="15" fill="rgb(222,22,37)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="638.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (15 samples, 0.19%)</title><rect x="98.6315%" y="644" width="0.1866%" height="15" fill="rgb(237,53,32)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="654.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (15 samples, 0.19%)</title><rect x="98.6315%" y="660" width="0.1866%" height="15" fill="rgb(233,25,53)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="670.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (15 samples, 0.19%)</title><rect x="98.6315%" y="676" width="0.1866%" height="15" fill="rgb(210,40,34)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="686.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (15 samples, 0.19%)</title><rect x="98.6315%" y="692" width="0.1866%" height="15" fill="rgb(241,220,44)" fg:x="7928" fg:w="15"/><text x="98.8815%" y="702.50"></text></g><g><title>&lt;module&gt; (XLO_sim/tools.py:3) (21 samples, 0.26%)</title><rect x="98.6315%" y="292" width="0.2613%" height="15" fill="rgb(235,28,35)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="302.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (21 samples, 0.26%)</title><rect x="98.6315%" y="308" width="0.2613%" height="15" fill="rgb(210,56,17)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="318.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (21 samples, 0.26%)</title><rect x="98.6315%" y="324" width="0.2613%" height="15" fill="rgb(224,130,29)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="334.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (21 samples, 0.26%)</title><rect x="98.6315%" y="340" width="0.2613%" height="15" fill="rgb(235,212,8)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="350.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (21 samples, 0.26%)</title><rect x="98.6315%" y="356" width="0.2613%" height="15" fill="rgb(223,33,50)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="366.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (21 samples, 0.26%)</title><rect x="98.6315%" y="372" width="0.2613%" height="15" fill="rgb(219,149,13)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="382.50"></text></g><g><title>&lt;module&gt; (scipy/interpolate/__init__.py:192) (21 samples, 0.26%)</title><rect x="98.6315%" y="388" width="0.2613%" height="15" fill="rgb(250,156,29)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="398.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (21 samples, 0.26%)</title><rect x="98.6315%" y="404" width="0.2613%" height="15" fill="rgb(216,193,19)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="414.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (21 samples, 0.26%)</title><rect x="98.6315%" y="420" width="0.2613%" height="15" fill="rgb(216,135,14)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="430.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (21 samples, 0.26%)</title><rect x="98.6315%" y="436" width="0.2613%" height="15" fill="rgb(241,47,5)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="446.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (21 samples, 0.26%)</title><rect x="98.6315%" y="452" width="0.2613%" height="15" fill="rgb(233,42,35)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="462.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (21 samples, 0.26%)</title><rect x="98.6315%" y="468" width="0.2613%" height="15" fill="rgb(231,13,6)" fg:x="7928" fg:w="21"/><text x="98.8815%" y="478.50"></text></g><g><title>&lt;module&gt; (mini_ocelot/math_op.py:12) (12 samples, 0.15%)</title><rect x="98.8928%" y="484" width="0.1493%" height="15" fill="rgb(207,181,40)" fg:x="7949" fg:w="12"/><text x="99.1428%" y="494.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (12 samples, 0.15%)</title><rect x="98.8928%" y="500" width="0.1493%" height="15" fill="rgb(254,173,49)" fg:x="7949" fg:w="12"/><text x="99.1428%" y="510.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (12 samples, 0.15%)</title><rect x="98.8928%" y="516" width="0.1493%" height="15" fill="rgb(221,1,38)" fg:x="7949" fg:w="12"/><text x="99.1428%" y="526.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (12 samples, 0.15%)</title><rect x="98.8928%" y="532" width="0.1493%" height="15" fill="rgb(206,124,46)" fg:x="7949" fg:w="12"/><text x="99.1428%" y="542.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (12 samples, 0.15%)</title><rect x="98.8928%" y="548" width="0.1493%" height="15" fill="rgb(249,21,11)" fg:x="7949" fg:w="12"/><text x="99.1428%" y="558.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (12 samples, 0.15%)</title><rect x="98.8928%" y="564" width="0.1493%" height="15" fill="rgb(222,201,40)" fg:x="7949" fg:w="12"/><text x="99.1428%" y="574.50"></text></g><g><title>compile_extra (numba/core/compiler.py:737) (25 samples, 0.31%)</title><rect x="99.0545%" y="580" width="0.3110%" height="15" fill="rgb(235,61,29)" fg:x="7962" fg:w="25"/><text x="99.3045%" y="590.50"></text></g><g><title>__init__ (numba/core/compiler.py:396) (21 samples, 0.26%)</title><rect x="99.1043%" y="596" width="0.2613%" height="15" fill="rgb(219,207,3)" fg:x="7966" fg:w="21"/><text x="99.3543%" y="606.50"></text></g><g><title>refresh (numba/core/base.py:267) (21 samples, 0.26%)</title><rect x="99.1043%" y="612" width="0.2613%" height="15" fill="rgb(222,56,46)" fg:x="7966" fg:w="21"/><text x="99.3543%" y="622.50"></text></g><g><title>load_additional_registries (numba/core/cpu.py:138) (10 samples, 0.12%)</title><rect x="99.2411%" y="628" width="0.1244%" height="15" fill="rgb(239,76,54)" fg:x="7977" fg:w="10"/><text x="99.4911%" y="638.50"></text></g><g><title>init_all (numba/core/entrypoints.py:36) (10 samples, 0.12%)</title><rect x="99.2411%" y="644" width="0.1244%" height="15" fill="rgb(231,124,27)" fg:x="7977" fg:w="10"/><text x="99.4911%" y="654.50"></text></g><g><title>entry_points (importlib/metadata/__init__.py:1040) (10 samples, 0.12%)</title><rect x="99.2411%" y="660" width="0.1244%" height="15" fill="rgb(249,195,6)" fg:x="7977" fg:w="10"/><text x="99.4911%" y="670.50"></text></g><g><title>load (importlib/metadata/__init__.py:476) (10 samples, 0.12%)</title><rect x="99.2411%" y="676" width="0.1244%" height="15" fill="rgb(237,174,47)" fg:x="7977" fg:w="10"/><text x="99.4911%" y="686.50"></text></g><g><title>&lt;genexpr&gt; (importlib/metadata/__init__.py:1038) (9 samples, 0.11%)</title><rect x="99.2535%" y="692" width="0.1120%" height="15" fill="rgb(206,201,31)" fg:x="7978" fg:w="9"/><text x="99.5035%" y="702.50"></text></g><g><title>entry_points (importlib/metadata/__init__.py:636) (9 samples, 0.11%)</title><rect x="99.2535%" y="708" width="0.1120%" height="15" fill="rgb(231,57,52)" fg:x="7978" fg:w="9"/><text x="99.5035%" y="718.50"></text></g><g><title>read_text (importlib/metadata/__init__.py:938) (9 samples, 0.11%)</title><rect x="99.2535%" y="724" width="0.1120%" height="15" fill="rgb(248,177,22)" fg:x="7978" fg:w="9"/><text x="99.5035%" y="734.50"></text></g><g><title>&lt;module&gt; (mini_ocelot/math_op.py:502) (40 samples, 0.50%)</title><rect x="99.0421%" y="484" width="0.4976%" height="15" fill="rgb(215,211,37)" fg:x="7961" fg:w="40"/><text x="99.2921%" y="494.50"></text></g><g><title>wrapper (numba/core/decorators.py:234) (39 samples, 0.49%)</title><rect x="99.0545%" y="500" width="0.4852%" height="15" fill="rgb(241,128,51)" fg:x="7962" fg:w="39"/><text x="99.3045%" y="510.50"></text></g><g><title>compile (numba/core/dispatcher.py:906) (39 samples, 0.49%)</title><rect x="99.0545%" y="516" width="0.4852%" height="15" fill="rgb(227,165,31)" fg:x="7962" fg:w="39"/><text x="99.3045%" y="526.50"></text></g><g><title>compile (numba/core/dispatcher.py:80) (39 samples, 0.49%)</title><rect x="99.0545%" y="532" width="0.4852%" height="15" fill="rgb(228,167,24)" fg:x="7962" fg:w="39"/><text x="99.3045%" y="542.50"></text></g><g><title>_compile_cached (numba/core/dispatcher.py:94) (39 samples, 0.49%)</title><rect x="99.0545%" y="548" width="0.4852%" height="15" fill="rgb(228,143,12)" fg:x="7962" fg:w="39"/><text x="99.3045%" y="558.50"></text></g><g><title>_compile_core (numba/core/dispatcher.py:107) (39 samples, 0.49%)</title><rect x="99.0545%" y="564" width="0.4852%" height="15" fill="rgb(249,149,8)" fg:x="7962" fg:w="39"/><text x="99.3045%" y="574.50"></text></g><g><title>compile_extra (numba/core/compiler.py:739) (14 samples, 0.17%)</title><rect x="99.3655%" y="580" width="0.1742%" height="15" fill="rgb(243,35,44)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="590.50"></text></g><g><title>compile_extra (numba/core/compiler.py:439) (14 samples, 0.17%)</title><rect x="99.3655%" y="596" width="0.1742%" height="15" fill="rgb(246,89,9)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="606.50"></text></g><g><title>_compile_bytecode (numba/core/compiler.py:505) (14 samples, 0.17%)</title><rect x="99.3655%" y="612" width="0.1742%" height="15" fill="rgb(233,213,13)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="622.50"></text></g><g><title>_compile_core (numba/core/compiler.py:473) (14 samples, 0.17%)</title><rect x="99.3655%" y="628" width="0.1742%" height="15" fill="rgb(233,141,41)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="638.50"></text></g><g><title>run (numba/core/compiler_machinery.py:356) (14 samples, 0.17%)</title><rect x="99.3655%" y="644" width="0.1742%" height="15" fill="rgb(239,167,4)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="654.50"></text></g><g><title>_acquire_compile_lock (numba/core/compiler_lock.py:35) (14 samples, 0.17%)</title><rect x="99.3655%" y="660" width="0.1742%" height="15" fill="rgb(209,217,16)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="670.50"></text></g><g><title>_runPass (numba/core/compiler_machinery.py:311) (14 samples, 0.17%)</title><rect x="99.3655%" y="676" width="0.1742%" height="15" fill="rgb(219,88,35)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="686.50"></text></g><g><title>check (numba/core/compiler_machinery.py:272) (14 samples, 0.17%)</title><rect x="99.3655%" y="692" width="0.1742%" height="15" fill="rgb(220,193,23)" fg:x="7987" fg:w="14"/><text x="99.6155%" y="702.50"></text></g><g><title>lower (numba/core/lowering.py:193) (9 samples, 0.11%)</title><rect x="99.6392%" y="724" width="0.1120%" height="15" fill="rgb(230,90,52)" fg:x="8009" fg:w="9"/><text x="99.8892%" y="734.50"></text></g><g><title>lower_normal_function (numba/core/lowering.py:226) (9 samples, 0.11%)</title><rect x="99.6392%" y="740" width="0.1120%" height="15" fill="rgb(252,106,19)" fg:x="8009" fg:w="9"/><text x="99.8892%" y="750.50"></text></g><g><title>lower_function_body (numba/core/lowering.py:256) (9 samples, 0.11%)</title><rect x="99.6392%" y="756" width="0.1120%" height="15" fill="rgb(206,74,20)" fg:x="8009" fg:w="9"/><text x="99.8892%" y="766.50"></text></g><g><title>lower_block (numba/core/lowering.py:270) (9 samples, 0.11%)</title><rect x="99.6392%" y="772" width="0.1120%" height="15" fill="rgb(230,138,44)" fg:x="8009" fg:w="9"/><text x="99.8892%" y="782.50"></text></g><g><title>run_pass (numba/core/typed_passes.py:472) (10 samples, 0.12%)</title><rect x="99.6392%" y="708" width="0.1244%" height="15" fill="rgb(235,182,43)" fg:x="8009" fg:w="10"/><text x="99.8892%" y="718.50"></text></g><g><title>&lt;module&gt; (mini_ocelot/math_op.py:615) (13 samples, 0.16%)</title><rect x="99.6392%" y="484" width="0.1617%" height="15" fill="rgb(242,16,51)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="494.50"></text></g><g><title>wrapper (numba/core/decorators.py:234) (13 samples, 0.16%)</title><rect x="99.6392%" y="500" width="0.1617%" height="15" fill="rgb(248,9,4)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="510.50"></text></g><g><title>compile (numba/core/dispatcher.py:906) (13 samples, 0.16%)</title><rect x="99.6392%" y="516" width="0.1617%" height="15" fill="rgb(210,31,22)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="526.50"></text></g><g><title>compile (numba/core/dispatcher.py:80) (13 samples, 0.16%)</title><rect x="99.6392%" y="532" width="0.1617%" height="15" fill="rgb(239,54,39)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="542.50"></text></g><g><title>_compile_cached (numba/core/dispatcher.py:94) (13 samples, 0.16%)</title><rect x="99.6392%" y="548" width="0.1617%" height="15" fill="rgb(230,99,41)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="558.50"></text></g><g><title>_compile_core (numba/core/dispatcher.py:107) (13 samples, 0.16%)</title><rect x="99.6392%" y="564" width="0.1617%" height="15" fill="rgb(253,106,12)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="574.50"></text></g><g><title>compile_extra (numba/core/compiler.py:739) (13 samples, 0.16%)</title><rect x="99.6392%" y="580" width="0.1617%" height="15" fill="rgb(213,46,41)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="590.50"></text></g><g><title>compile_extra (numba/core/compiler.py:439) (13 samples, 0.16%)</title><rect x="99.6392%" y="596" width="0.1617%" height="15" fill="rgb(215,133,35)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="606.50"></text></g><g><title>_compile_bytecode (numba/core/compiler.py:505) (13 samples, 0.16%)</title><rect x="99.6392%" y="612" width="0.1617%" height="15" fill="rgb(213,28,5)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="622.50"></text></g><g><title>_compile_core (numba/core/compiler.py:473) (13 samples, 0.16%)</title><rect x="99.6392%" y="628" width="0.1617%" height="15" fill="rgb(215,77,49)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="638.50"></text></g><g><title>run (numba/core/compiler_machinery.py:356) (13 samples, 0.16%)</title><rect x="99.6392%" y="644" width="0.1617%" height="15" fill="rgb(248,100,22)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="654.50"></text></g><g><title>_acquire_compile_lock (numba/core/compiler_lock.py:35) (13 samples, 0.16%)</title><rect x="99.6392%" y="660" width="0.1617%" height="15" fill="rgb(208,67,9)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="670.50"></text></g><g><title>_runPass (numba/core/compiler_machinery.py:311) (13 samples, 0.16%)</title><rect x="99.6392%" y="676" width="0.1617%" height="15" fill="rgb(219,133,21)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="686.50"></text></g><g><title>check (numba/core/compiler_machinery.py:272) (13 samples, 0.16%)</title><rect x="99.6392%" y="692" width="0.1617%" height="15" fill="rgb(246,46,29)" fg:x="8009" fg:w="13"/><text x="99.8892%" y="702.50"></text></g><g><title>&lt;module&gt; (mini_ocelot/new_wave.py:27) (75 samples, 0.93%)</title><rect x="98.8928%" y="388" width="0.9331%" height="15" fill="rgb(246,185,52)" fg:x="7949" fg:w="75"/><text x="99.1428%" y="398.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (75 samples, 0.93%)</title><rect x="98.8928%" y="404" width="0.9331%" height="15" fill="rgb(252,136,11)" fg:x="7949" fg:w="75"/><text x="99.1428%" y="414.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (75 samples, 0.93%)</title><rect x="98.8928%" y="420" width="0.9331%" height="15" fill="rgb(219,138,53)" fg:x="7949" fg:w="75"/><text x="99.1428%" y="430.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (75 samples, 0.93%)</title><rect x="98.8928%" y="436" width="0.9331%" height="15" fill="rgb(211,51,23)" fg:x="7949" fg:w="75"/><text x="99.1428%" y="446.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (75 samples, 0.93%)</title><rect x="98.8928%" y="452" width="0.9331%" height="15" fill="rgb(247,221,28)" fg:x="7949" fg:w="75"/><text x="99.1428%" y="462.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (75 samples, 0.93%)</title><rect x="98.8928%" y="468" width="0.9331%" height="15" fill="rgb(251,222,45)" fg:x="7949" fg:w="75"/><text x="99.1428%" y="478.50"></text></g><g><title>&lt;module&gt; (XLO_sim/XLO_sim.py:5) (99 samples, 1.23%)</title><rect x="98.6315%" y="164" width="1.2316%" height="15" fill="rgb(217,162,53)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="174.50"></text></g><g><title>_handle_fromlist (&lt;frozen importlib._bootstrap&gt;:1232) (99 samples, 1.23%)</title><rect x="98.6315%" y="180" width="1.2316%" height="15" fill="rgb(229,93,14)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="190.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (99 samples, 1.23%)</title><rect x="98.6315%" y="196" width="1.2316%" height="15" fill="rgb(209,67,49)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="206.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (99 samples, 1.23%)</title><rect x="98.6315%" y="212" width="1.2316%" height="15" fill="rgb(213,87,29)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="222.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (99 samples, 1.23%)</title><rect x="98.6315%" y="228" width="1.2316%" height="15" fill="rgb(205,151,52)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="238.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (99 samples, 1.23%)</title><rect x="98.6315%" y="244" width="1.2316%" height="15" fill="rgb(253,215,39)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="254.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (99 samples, 1.23%)</title><rect x="98.6315%" y="260" width="1.2316%" height="15" fill="rgb(221,220,41)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="270.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (99 samples, 1.23%)</title><rect x="98.6315%" y="276" width="1.2316%" height="15" fill="rgb(218,133,21)" fg:x="7928" fg:w="99"/><text x="98.8815%" y="286.50"></text></g><g><title>&lt;module&gt; (XLO_sim/tools.py:5) (78 samples, 0.97%)</title><rect x="98.8928%" y="292" width="0.9704%" height="15" fill="rgb(221,193,43)" fg:x="7949" fg:w="78"/><text x="99.1428%" y="302.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (78 samples, 0.97%)</title><rect x="98.8928%" y="308" width="0.9704%" height="15" fill="rgb(240,128,52)" fg:x="7949" fg:w="78"/><text x="99.1428%" y="318.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (78 samples, 0.97%)</title><rect x="98.8928%" y="324" width="0.9704%" height="15" fill="rgb(253,114,12)" fg:x="7949" fg:w="78"/><text x="99.1428%" y="334.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (78 samples, 0.97%)</title><rect x="98.8928%" y="340" width="0.9704%" height="15" fill="rgb(215,223,47)" fg:x="7949" fg:w="78"/><text x="99.1428%" y="350.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (78 samples, 0.97%)</title><rect x="98.8928%" y="356" width="0.9704%" height="15" fill="rgb(248,225,23)" fg:x="7949" fg:w="78"/><text x="99.1428%" y="366.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (78 samples, 0.97%)</title><rect x="98.8928%" y="372" width="0.9704%" height="15" fill="rgb(250,108,0)" fg:x="7949" fg:w="78"/><text x="99.1428%" y="382.50"></text></g><g><title>all (8,038 samples, 100%)</title><rect x="0.0000%" y="52" width="100.0000%" height="15" fill="rgb(228,208,7)" fg:x="0" fg:w="8038"/><text x="0.2500%" y="62.50"></text></g><g><title>&lt;module&gt; (example_script.py:3) (159 samples, 1.98%)</title><rect x="98.0219%" y="68" width="1.9781%" height="15" fill="rgb(244,45,10)" fg:x="7879" fg:w="159"/><text x="98.2719%" y="78.50">&lt;..</text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (159 samples, 1.98%)</title><rect x="98.0219%" y="84" width="1.9781%" height="15" fill="rgb(207,125,25)" fg:x="7879" fg:w="159"/><text x="98.2719%" y="94.50">_..</text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (159 samples, 1.98%)</title><rect x="98.0219%" y="100" width="1.9781%" height="15" fill="rgb(210,195,18)" fg:x="7879" fg:w="159"/><text x="98.2719%" y="110.50">_..</text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (159 samples, 1.98%)</title><rect x="98.0219%" y="116" width="1.9781%" height="15" fill="rgb(249,80,12)" fg:x="7879" fg:w="159"/><text x="98.2719%" y="126.50">_..</text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (159 samples, 1.98%)</title><rect x="98.0219%" y="132" width="1.9781%" height="15" fill="rgb(221,65,9)" fg:x="7879" fg:w="159"/><text x="98.2719%" y="142.50">e..</text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (159 samples, 1.98%)</title><rect x="98.0219%" y="148" width="1.9781%" height="15" fill="rgb(235,49,36)" fg:x="7879" fg:w="159"/><text x="98.2719%" y="158.50">_..</text></g><g><title>&lt;module&gt; (XLO_sim/XLO_sim.py:9) (11 samples, 0.14%)</title><rect x="99.8632%" y="164" width="0.1368%" height="15" fill="rgb(225,32,20)" fg:x="8027" fg:w="11"/><text x="100.1132%" y="174.50"></text></g><g><title>_find_and_load (&lt;frozen importlib._bootstrap&gt;:1176) (11 samples, 0.14%)</title><rect x="99.8632%" y="180" width="0.1368%" height="15" fill="rgb(215,141,46)" fg:x="8027" fg:w="11"/><text x="100.1132%" y="190.50"></text></g><g><title>_find_and_load_unlocked (&lt;frozen importlib._bootstrap&gt;:1147) (11 samples, 0.14%)</title><rect x="99.8632%" y="196" width="0.1368%" height="15" fill="rgb(250,160,47)" fg:x="8027" fg:w="11"/><text x="100.1132%" y="206.50"></text></g><g><title>_load_unlocked (&lt;frozen importlib._bootstrap&gt;:690) (11 samples, 0.14%)</title><rect x="99.8632%" y="212" width="0.1368%" height="15" fill="rgb(216,222,40)" fg:x="8027" fg:w="11"/><text x="100.1132%" y="222.50"></text></g><g><title>exec_module (&lt;frozen importlib._bootstrap_external&gt;:940) (11 samples, 0.14%)</title><rect x="99.8632%" y="228" width="0.1368%" height="15" fill="rgb(234,217,39)" fg:x="8027" fg:w="11"/><text x="100.1132%" y="238.50"></text></g><g><title>_call_with_frames_removed (&lt;frozen importlib._bootstrap&gt;:241) (11 samples, 0.14%)</title><rect x="99.8632%" y="244" width="0.1368%" height="15" fill="rgb(207,178,40)" fg:x="8027" fg:w="11"/><text x="100.1132%" y="254.50"></text></g></svg></svg>

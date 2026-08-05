@@ -6,7 +6,8 @@ from . import tools
 @njit(cache=True, fastmath=True)
 def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus, Tijs_minus,
                              Mij, Gamma_sp_Gij, S_ground_Fi0, S_ground_Fif, S_ion_Fi0, S_ion_Fif,
-                             rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy, J_P_xy):
+                             auger_feeding_diag,
+                             rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, J_P_xy):
     nlevel = rho_ijxy.shape[0]
     s_dim = Tijs_plus.shape[2]
     nx = rho_ijxy.shape[2]
@@ -35,6 +36,7 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                 pump_i = diag_sum + S_ground_Fi0[i] * J_P_xy[x, y] * rho_ground_xy[x, y]
                 pump_i += S_ground_Fif[0, i] * J_Omega_minus_xy[x, y] * rho_ground_xy[x, y]
                 pump_i += S_ground_Fif[1, i] * J_Omega_plus_xy[x, y] * rho_ground_xy[x, y]
+                pump_i += auger_feeding_diag[i] * rho_2s_xy[x, y]
                 pump_term[i, x, y] = pump_i
 
                 gion = S_ion_Fi0[i] * J_P_xy[x, y]
@@ -84,7 +86,10 @@ def MB_nlevel_regular(t, rho_ijxy, params):
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
 
-    ######### New Auger feeding code:
+    ######### Old unoptimized version
+
+    # Hint = 1j * (np.einsum('ijs, sxy->ijxy', X.Tijs_plus, Omega_plus_sxy) + np.einsum('ijs, sxy->ijxy', X.Tijs_minus, Omega_minus_sxy)) 
+    # drho_MB = np.einsum('isxy,sjxy->ijxy', Hint, rho_ijxy) - np.einsum('isxy,sjxy->ijxy', rho_ijxy, Hint)
 
     # drho_decay = np.einsum('ij, ijxy->ijxy', -X.Mij, rho_ijxy)
     # drho_spontaneous = np.einsum('ij, ixy->ijxy', X.delta_ij, np.einsum('is, ssxy->ixy', X.Gamma_sp_fsm1N * X.Gij, rho_ijxy))
@@ -98,33 +103,14 @@ def MB_nlevel_regular(t, rho_ijxy, params):
 
     # return drho_MB + drho_decay + drho_spontaneous + drho_pump + drho_ion + drho_auger_feeding
 
-
-
-    ######### Old unoptimized version
-
-    # Hint = 1j * (np.einsum('ijs, sxy->ijxy', X.Tijs_plus, Omega_plus_sxy) + np.einsum('ijs, sxy->ijxy', X.Tijs_minus, Omega_minus_sxy)) 
-    # drho_MB = np.einsum('isxy,sjxy->ijxy', Hint, rho_ijxy) - np.einsum('isxy,sjxy->ijxy', rho_ijxy, Hint)
-
-    # drho_pump = np.einsum('ij, ijxy->ijxy', -X.Mij, rho_ijxy) + np.einsum('ij, ixy->ijxy', X.delta_ij, (np.einsum('is, ssxy->ixy', X.Gamma_sp_Gij, rho_ijxy) + np.einsum('i, xy->ixy', X.S_ground_Fi[0, :-1], J_P_xy * rho_ground_xy)))
-    # gamma_ion_ixy = np.einsum('i, xy->ixy', X.S_ion_Fi[0, :], J_P_xy)
-
-    # J_Omega_fxy = np.array([J_Omega_minus_xy, J_Omega_plus_xy])
-
-    # drho_pump += np.einsum('ij, ixy->ijxy', X.delta_ij, np.einsum('fi, fxy->ixy', X.S_ground_Fi[1:, :-1], np.einsum('fxy, xy-> fxy', J_Omega_fxy, rho_ground_xy)))
-    # gamma_ion_ixy += np.einsum('fi, fxy->ixy', X.S_ion_Fi[1:, :], J_Omega_fxy)
-    
-    # drho_ion = - 1.0 / 2.0 * (np.einsum('ixy, ijxy->ijxy', gamma_ion_ixy, rho_ijxy) + np.einsum('jxy, ijxy->ijxy', gamma_ion_ixy, rho_ijxy))
-    
-    # return drho_MB + drho_pump + drho_ion
-
     #########
 
     # New version without einsum, optimized with numba
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
         X.Mij, X.Gamma_sp_Gij, X.S_ground_Fi[0, :-1], X.S_ground_Fi[1:, :-1],
-        X.S_ion_Fi[0, :], X.S_ion_Fi[1:, :],
-        rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy, J_P_xy,
+        X.S_ion_Fi[0, :], X.S_ion_Fi[1:, :], np.diag(X.auger_feeding_matrix),
+        rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, J_P_xy,
     )
 
 

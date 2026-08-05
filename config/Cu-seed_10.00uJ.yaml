@@ -58,10 +58,10 @@ tgrid: 200
 tmax: 8.0
 tpad: 0
 turn_off_coherences: false
-xgrid: 16
+xgrid: 8
 xmax: 1000.0
 xpad: 20
-ygrid: 16
+ygrid: 8
 ymax: 1000.0
 ypad: 20
 zgrid: 15

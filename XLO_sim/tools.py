@@ -2,8 +2,9 @@ import numpy as np
 import scipy.constants as sp_const
 from scipy.interpolate import RegularGridInterpolator
 
-from mini_ocelot.new_wave import *
-
+from ocelot.optics.new_wave import *
+import logging
+logging.getLogger('ocelot').setLevel(logging.CRITICAL + 1)
 
 def gaussian_pulse(X):
     """

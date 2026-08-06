@@ -185,9 +185,7 @@ class XLO_sample:
             
             rho_ground_xy = rho_ground_txyz[0, :, :, iz].copy()
             rho_other_xy = rho_other_txyz[0, :, :, iz].copy()
-        
-            print ("Slice: ", iz)
-                        
+                               
             ######################
             # Loop over simulation time window begins      
             for it in range(0, X.tgrid):

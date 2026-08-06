@@ -75,6 +75,7 @@ class XLO_sim:
         self.t = domains_txy[0]
         self.dt, self.dx, self.dy = step_sizes_txy
 
+        self.t_pump_max = 0
         if self.pump_pulse_format == "None":
             self.pump_pulse_3D = np.zeros((self.tgrid, self.xgrid, self.ygrid))
         
@@ -83,10 +84,11 @@ class XLO_sim:
             
         if self.pump_pulse_format == 'Gaussian_pulse_aniso_pump':            
             self.pump_pulse_3D = tools.Gaussian_pulse_aniso_pump(self)       
+            self.t_pump_max = self.tmax / 2
             
         if self.pump_pulse_format == 'Gaussian_shifted':
             self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted(self)      
-            
+
         if self.pump_pulse_format == 'Gaussian_shifted_splitted':
             self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted_splitted(self)        
             

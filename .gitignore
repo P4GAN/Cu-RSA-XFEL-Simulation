@@ -1,11 +1,15 @@
 /.DS_Store
 
-XLO_sim/__pycache__/
+*.egg-info/
 
-mini_ocelot/__pycache__/
+.vscode
+
+XLO_sim/__pycache__/
 
 __pycache__/
 
 data/
 
 figs/
+
+config/generated/

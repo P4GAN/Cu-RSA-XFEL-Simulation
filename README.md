@@ -8,7 +8,7 @@ At XFEL intensities, X-ray pulses can ionize a copper target fast enough to chan
 
 - A **multilevel density-matrix (Maxwell–Bloch) model** of the Cu atomic populations, tracking photoionization, spontaneous decay, and K-shell fluorescence across `nlevel` atomic states.
 - A **3D (transverse + longitudinal + time) optical propagation solver**, handling Gaussian/SASE pulse profiles, beam geometry, and auto-gridding based on diffraction angle.
-- Support for both **seeded** and **SASE** (Self-Amplified Spontaneous Emission) XFEL pulses, generated via a bundled mini X-ray FEL simulator (`mini_ocelot`).
+- Support for both **seeded** and **SASE** (Self-Amplified Spontaneous Emission) XFEL pulses.
 
 The result is a first-principles prediction of how a copper target's transmittance evolves under intense, ultrafast X-ray exposure — directly relevant to XFEL beam diagnostics and sample damage studies at facilities like European XFEL.
 
@@ -23,7 +23,6 @@ The result is a first-principles prediction of how a copper target's transmittan
 
 ```
 XLO_sim/        Core simulation package (Maxwell-Bloch solver, optics, sample physics)
-mini_ocelot/    Lightweight SASE X-ray FEL pulse generator
 config/         YAML configs for seeded / SASE runs, pulse-energy sweeps
 notebooks/      Analysis notebooks (transmittance, SASE runs)
 data/           Simulation outputs (HDF5)
@@ -32,8 +31,11 @@ figs/           Result plots
 
 ## Quick start
 
+Install the package once, in editable mode, so `import XLO_sim` works from anywhere in the repo (including `notebooks/`), regardless of your terminal's current directory:
+
 ```bash
 pip install -e .
+
 python example_script.py
 ```
 

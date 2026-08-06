@@ -64,42 +64,34 @@ class XLO_sim:
         self.t = domains_txy[0]
         self.dt, self.dx, self.dy = step_sizes_txy
 
+        self.t_pump_max = 0
+        if self.pump_pulse_format == "None":
+            self.pump_pulse_3D = np.zeros((self.tgrid, self.xgrid, self.ygrid))
         
         if self.pump_pulse_format == 'Gaussian':            
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D(self)                
-            print('Using Gaussian pump profile')
-            print("FWHM beam size: ", 2.355 * self.sigma_r, "nm")
+            self.pump_pulse_3D = tools.Gaussian_pulse_3D(self)          
             
         if self.pump_pulse_format == 'Gaussian_pulse_aniso_pump':            
-            self.pump_pulse_3D = tools.Gaussian_pulse_aniso_pump(self)                
-            print('Using Gaussian_pulse_aniso_pump')
+            self.pump_pulse_3D = tools.Gaussian_pulse_aniso_pump(self)       
             self.t_pump_max = self.tmax / 2
             
         if self.pump_pulse_format == 'Gaussian_shifted':
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted(self)                
-            print('Using Gaussian shifted pump profile')
-            print("FWHM beam size: ", 2.355 * self.sigma_r, "nm")
-            
+            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted(self)      
+
         if self.pump_pulse_format == 'Gaussian_shifted_splitted':
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted_splitted(self)                
-            print('Using Gaussian shifted pump profile')
-            print("FWHM beam size: ", 2.355 * self.sigma_r, "nm")
+            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted_splitted(self)        
             
         if self.pump_pulse_format == 'Gaussian_pulse_3D_t_shifted_chirped':
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted_chirped(self)                
-            print('Using Gaussian shifted chirped pump profile')
-            print("FWHM beam size: ", 2.355 * self.sigma_r, "nm")
+            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted_chirped(self)  
             
         if self.pump_pulse_format == 'Ocelot_SASE_pulse_pump_txy':
             self.pump_pulse_3D = tools.Ocelot_SASE_pulse_pump_txy(self)                
-            print('Ocelot_SASE_pulse_pump_txy')
             self.t_pump_max = self.tmax / 2
             
         if self.pump_pulse_format == 'SASE':
             self.N_modes = self.config['N_modes']
             self.sigma_coh = self.config['sigma_coh']
             self.pump_pulse_3D = tools.SASE_pulse_3D_with_q(self)
-            print('Using SASE pump profile')
 
         if self.pump_pulse_format == 'loadh5':
             print('loading from h5')
@@ -128,10 +120,6 @@ class XLO_sim:
             self.dgrid_GenV2 = self.config['dgrid_GenV2'] / mag_factor
             self.zsep_GenV2 = self.config['zsep_GenV2']
             self.pump_pulse_3D = tools.pump_from_file_genesis2_DFL(self, crop_t, crop_x)
-            print('Loaded genesis2 DFL file')
-            
-        if self.pump_pulse_format == 'GenesisV4':
-            print('Imported pump')
 
         self.GammaKfsm1N = self.config['GammaKeVN'] / self.hbar
         self.GammaL3fsm1N = self.config['GammaL3eVN'] / self.hbar
@@ -288,7 +276,6 @@ class XLO_sim:
 
         sample = XLO_sample.XLO_sample(self, seed_field)
         self.sample = sample
-        print("Configured XLO simulation in simultaneous mode")
 
 
 

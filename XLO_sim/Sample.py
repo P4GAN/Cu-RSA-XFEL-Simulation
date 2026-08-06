@@ -17,11 +17,11 @@ class XLO_sample:
         
         if (seed_field is None):
             self.is_seeded = 0  
-            print('Simulation startup: noise')
+            # Simulation startup: noise
         else:
             self.is_seeded = 1
-            print('Simulation startup: seeded')
-            print('Seed field will be converted to RH and LH polarization')
+            # Simulation startup: seeded
+            # Seed field will be converted to RH and LH polarization
             self.seed_field = tools.linear_to_circular(X, seed_field)
     
         self.pump_field = X.pump_pulse_3D.copy()
@@ -149,10 +149,6 @@ class XLO_sample:
         self.rho_i_3D = rho_i_txyz
         self.j_3D = j_txyz 
     
-        if X.enable_pump_diffraction: 
-            print('Pump field diffraction: enabled')
-        else:
-            print('Pump field diffraction: disabled')
 
             
 
@@ -188,10 +184,8 @@ class XLO_sample:
             
             rho_ground_xy = rho_ground_txyz[0, :, :, iz].copy()
             rho_other_xy = rho_other_txyz[0, :, :, iz].copy()
-            rho_2s_xy = rho_2s_txyz[0, :, :, iz].copy()
-
-            print ("Slice: ", iz)
-                        
+            rho_2s_xy = rho_2s_txyz[0, :, :, iz].copy()                      
+                               
             ######################
             # Loop over simulation time window begins      
             for it in range(0, X.tgrid):

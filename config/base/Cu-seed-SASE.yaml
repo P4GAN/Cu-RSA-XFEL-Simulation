@@ -73,12 +73,7 @@ tpad: 0
 auto_grid: False
 
 #no pump
-pump_pulse_format: 'Gaussian_pulse_aniso_pump'
-E_pump_uJ: 0.0
-pump_duration_FWHM_t: 3.
-pump_width_FWHM_x: 180
-pump_width_FWHM_y: 220
-FEL_bandwidth: 1.5e-3
+pump_pulse_format: 'None'
 
 #seed parameters
 seed_pulse_format: 'Ocelot_SASE_seed_pstxy'

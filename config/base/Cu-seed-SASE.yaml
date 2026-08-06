@@ -79,7 +79,6 @@ pump_pulse_format: 'None'
 seed_pulse_format: 'Ocelot_SASE_seed_pstxy'
 E_seed_uJ: 40
 seed_duration_FWHM_t: 6.0
-t_peak: 7.0
 seed_width_FWHM_x: 180
 seed_width_FWHM_y: 220
 seed_FEL_bandwidth: 1.5e-3

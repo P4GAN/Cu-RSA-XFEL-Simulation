@@ -43,7 +43,7 @@ class XLO_sim:
         self.z = np.linspace(0, self.zmax, self.zgrid)
         
         self.t0 = self.tmax / 2.0
-
+               
         self.optics = XLO_optics.XLO_optics(self)
 
         if self.auto_grid == True:

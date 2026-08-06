@@ -17,11 +17,11 @@ class XLO_sample:
         
         if (seed_field is None):
             self.is_seeded = 0  
-            print('Simulation startup: noise')
+            # Simulation startup: noise
         else:
             self.is_seeded = 1
-            print('Simulation startup: seeded')
-            print('Seed field will be converted to RH and LH polarization')
+            # Simulation startup: seeded
+            # Seed field will be converted to RH and LH polarization
             self.seed_field = tools.linear_to_circular(X, seed_field)
     
         self.pump_field = X.pump_pulse_3D.copy()
@@ -150,10 +150,6 @@ class XLO_sample:
 
         self.pump_itxyz = np.einsum('i, txyz->itxyz', X.S_ground_Fi[0, : -1], j_txyz * rho_0_txyz)
     
-        if X.enable_pump_diffraction: 
-            print('Pump field diffraction: enabled')
-        else:
-            print('Pump field diffraction: disabled')
 
             
 

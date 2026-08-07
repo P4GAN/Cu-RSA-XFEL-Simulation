@@ -208,22 +208,16 @@ class XLO_sample:
                                                rho_2s_txyz[it, :, :, iz-1:iz+1], 
                                                rho_ijtxyz[:, :, it, :, :, iz-1:iz+1], [X, it, iz, 'pump'])
                 
-                if (X.enable_pump_diffraction == True) and (iz != 0):
+                if (iz != 0):
                     Pfield_txy[it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Pfield_txy[it, :, :], X.dz, iz * X.dz, kappa_P_xyz, X.lambdaPump, 'pump')
                     J_P_txy[it, :, :] = np.real(Pfield_txy[it, :, :] * np.conj(Pfield_txy[it, :, :]))
                     
-                if (X.enable_pump_diffraction == False) and (iz != 0):
-                    J_P_txy[it, :, :] -= X.dz * 0.5 * np.real(kappa_P_xyz[:, :, 0] + kappa_P_xyz[:, :, 1]) * J_P_txy[it, :, :]
-                
-                if (X.enable_self_absorption == True) and (iz != 0):
+                if (iz != 0):
                     kappa_Omega_psxyz = Model.absorption(rho_ground_txyz[it, :, :, iz-1:iz+1], rho_other_txyz[it, :, :, iz-1:iz+1], 
                                                          rho_2s_txyz[it, :, :, iz-1:iz+1], 
                                                          rho_ijtxyz[:, :, it, :, :, iz-1:iz+1], [X, it, iz, 'field'])
                     Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N, 'ASE') 
                     
-                if (X.enable_self_absorption == False) and (iz != 0):
-                    Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_no_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz)
-
                 Omega_pstxy[:, :, it, :, :] +=  1.0 * X.dz * Model.Omega_source_regular(rho_ijtxyz[:, :, it, :, :, iz], [X, it, iz]) 
                     
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)

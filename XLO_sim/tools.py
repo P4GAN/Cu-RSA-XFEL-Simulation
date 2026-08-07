@@ -504,7 +504,7 @@ def Ocelot_SASE_seed_pstxy(X):
     # plt.show()
     
     N_seed_photons = X.E_seed_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
-    print('number of seed photons = ' + f"{N_seed_photons:.1e}")
+    # print('number of seed photons = ' + f"{N_seed_photons:.1e}")
     
     SASE_for_seed = np.sqrt(N_seed_photons) * field_txy
     

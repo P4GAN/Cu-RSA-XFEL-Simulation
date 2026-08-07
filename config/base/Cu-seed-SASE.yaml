@@ -60,7 +60,7 @@ zgrid: 15
 xgrid: 8
 ygrid: 8
 
-tmax: 8.
+tmax: 20.0
 
 zmax: 20.0e+3
 xmax: 1000.0

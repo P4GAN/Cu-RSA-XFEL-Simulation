@@ -1,6 +1,9 @@
 import numpy as np
 import scipy.constants as sp_const
 from scipy.interpolate import RegularGridInterpolator
+import scipy.constants as sp_const
+import scipy.special as sp_func
+import scipy.signal as sp_sign
 
 from ocelot.optics.new_wave import *
 import logging
@@ -137,9 +140,9 @@ def Ocelot_SASE_pulse_pump_txy(X):
     # The transverse domain is considered to be space [m], since I hace input
     # parameters in time [fs], the correct conversion is needed
     
-    sigma_rx = X.config['pump_width_FWHM_x'] / (2 * np.sqrt(2*np.log(2))) 
-    sigma_ry = X.config['pump_width_FWHM_y'] / (2 * np.sqrt(2*np.log(2)))
-    sigma_t  = X.config['pump_duration_FWHM_t'] / (2 * np.sqrt(2*np.log(2)))
+    sigma_rx = X.pump_width_FWHM_x / (2 * np.sqrt(2*np.log(2))) 
+    sigma_ry = X.pump_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
+    sigma_t  = X.pump_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
     
     N_pump_photons = X.E_pump_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
     print('number of pump photons = ' + f"{N_pump_photons:.1e}")
@@ -176,22 +179,14 @@ def Ocelot_SASE_pulse_pump_txy(X):
     
     field_txy = field_txy / norm
     
-    # plt.figure()
-    # plt.imshow(np.abs(field_txy[0,:,:])**2)
-    # plt.figure()
-    # #plt.plot(np.linspace(-SASE.Lz()/sp_const.c*1.e15, SASE.Lz()*1.e15/sp_const.c, X.tgrid), np.abs(field_txy[:,1,1])**2)
-    # plt.plot(np.linspace(0, SASE.Lz()*1.e15/sp_const.c, X.tgrid), np.abs(field_txy[:,1,1])**2)
-    # plt.xlabel('t (fs)')
-    # plt.show()
-        
-    return np.sqrt(N_pump_photons) * field_txy#shift_P_txy(np.sqrt(X.N_pump_photons) * field_txy, X.t_pump_max, X.tmax)
+    return np.sqrt(N_pump_photons) * field_txy
 
 
 def Gaussian_pulse_aniso_pump(X):
           
-    sigma_rx = X.config['pump_width_FWHM_x'] / (2 * np.sqrt(2*np.log(2)))
-    sigma_ry = X.config['pump_width_FWHM_y'] / (2 * np.sqrt(2*np.log(2)))
-    sigma_t  = X.config['pump_duration_FWHM_t'] / (2 * np.sqrt(2*np.log(2)))
+    sigma_rx = X.pump_width_FWHM_x / (2 * np.sqrt(2*np.log(2)))
+    sigma_ry = X.pump_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
+    sigma_t  = X.pump_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
     
     field_txy = np.sqrt( 
         1 / (2.0 * np.pi * sigma_rx * sigma_ry) 
@@ -217,9 +212,9 @@ def Gaussian_pulse_aniso_pump(X):
 
 def Gaussian_pulse_aniso_seed(X):
           
-    seed_sigma_rx = X.config['seed_width_FWHM_x'] / (2 * np.sqrt(2*np.log(2)))
-    seed_sigma_ry = X.config['seed_width_FWHM_y'] / (2 * np.sqrt(2*np.log(2)))
-    seed_sigma_t  = X.config['seed_duration_FWHM_t'] / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_rx = X.seed_width_FWHM_x / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_ry = X.seed_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_t  = X.seed_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
     
     field_txy = np.sqrt( 
         1 / (2.0 * np.pi * seed_sigma_rx * seed_sigma_ry) 
@@ -340,29 +335,60 @@ def roll_zeropad(a, shift, axis=None):
     else:
         return res
 
-def Roh(X):
+def bragg_angle_for_energy(E_eV, d_hkl_A):
+    """
+    Bragg angle needed for a crystal reflection to select a given photon energy.
+
+    Parameters
+    ----------
+    E_eV : float
+        Target photon energy [eV].
+    d_hkl_A : float
+        Lattice plane spacing [Angstrom].
+
+    Returns
+    -------
+    float
+        Bragg angle [rad].
+    """
+    hc_eVA = 12398.42  # eV*Angstrom
+    return np.arcsin(hc_eVA / (2 * d_hkl_A * E_eV))
+
+
+def Roh(X, target_energy_eV):
+    """
+    Response function for X-ray Bragg diffraction for 111 silicon
+    http://dx.doi.org/10.1103/PhysRevSTAB.15.100702
+    
+    """
+    d_hkl_A=5.4310/np.sqrt(3)
+
     chi_h = -0.79955e-05 + 1j*0.24361e-06
     chi_mh = chi_h
     chi_0 = -0.15127e-04 + 1j*0.34955e-06
-    theta_B = (np.pi/180) * 14.221
-    
-    t = X.t - (X.tmax/2)
-    
-    Tg = (2 * np.sin(theta_B)**2) / ( (X.hwKalpha1N/X.hbar) * np.sqrt(chi_h*chi_mh))
-    exparg = - ( (X.hwKalpha1N/X.hbar) * np.imag(chi_0) * t) / (2 * np.sin(theta_B)**2)
-    
-    # plt.plot(np.real((sp_func.jv(1, t/Tg) / (1j*t)) * np.exp(exparg)))
-    # plt.plot(np.imag((sp_func.jv(1, t/Tg) / (1j*t)) * np.exp(exparg)))
-    # plt.show()
-    
-    return np.heaviside(t, 1) * (sp_func.jv(1, t/Tg) / (1j*t)) * np.exp(exparg)
 
-def Ocelot_SASE_seed_220_dbm_pstxy(X):
+    theta_B = bragg_angle_for_energy(target_energy_eV, d_hkl_A)
+
+    omega_Bragg = target_energy_eV / X.hbar
+
+    # Detuning of the selected energy from the Ka1 line
+    domega = (target_energy_eV - X.hwKalpha1N) / X.hbar
+
+    t = X.t - (X.tmax/2)
+
+    Tg = (2 * np.sin(theta_B)**2) / (omega_Bragg * np.sqrt(chi_h*chi_mh))
+    exparg = - (omega_Bragg * np.imag(chi_0) * t) / (2 * np.sin(theta_B)**2)
+
+    return np.heaviside(t, 1) * (sp_func.jv(1, t/Tg) / (1j*t)) * np.exp(exparg) * np.exp(1j * domega * t)
+
+def Ocelot_SASE_seed_111_dcm_pstxy(X):
     SASE = RadiationField()  # initialize RadiationField object
+
+    target_energy_eV = X.monochromator_target_energy_eV
     
-    seed_sigma_rx = X.config['seed_width_FWHM_x'] / (2 * np.sqrt(2*np.log(2)))
-    seed_sigma_ry = X.config['seed_width_FWHM_y'] / (2 * np.sqrt(2*np.log(2)))
-    seed_sigma_t  = X.config['seed_duration_FWHM_t'] / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_rx = X.seed_width_FWHM_x / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_ry = X.seed_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_t  = X.seed_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
     
     # The transverse domain is considered to be space [m], since I hace input
     # parameters in time [fs], the correct conversion is needed
@@ -386,58 +412,24 @@ def Ocelot_SASE_seed_220_dbm_pstxy(X):
     SASE = imitate_sase_dfl(**kwargs);
     
     field_txy = SASE.fld  
-        
-    # plt.figure()
-    # plt.imshow(np.abs(field_txy[0,:,:])**2)
-    # plt.figure()
-    # plt.plot(np.linspace(-SASE.Lz()/sp_const.c, SASE.Lz()/sp_const.c, X.tgrid), np.abs(field_txy[:,1,1])**2)
-    # plt.show()
     
-    # Effect of mono: convolution between field_t and Roh
+    # Effect of monochromator: convolution between field_t and Roh
     field_temp_t0 = np.einsum('txy -> t', field_txy) # extract t domain
     field_temp_t0 = roll_zeropad(field_temp_t0, int(X.seed_delay/X.dt))
-    
+
     field_temp_xy = np.einsum('txy -> xy', field_txy)
-    
-    field_temp_t1 = sp_sign.convolve(field_temp_t0, Roh(X), mode='same')
-    field_temp_t2 = sp_sign.convolve(field_temp_t1, Roh(X), mode='same')
+
+    field_temp_t1 = sp_sign.convolve(field_temp_t0, Roh(X, target_energy_eV), mode='same')
+    field_temp_t2 = sp_sign.convolve(field_temp_t1, Roh(X, target_energy_eV), mode='same')
     
     field_txy = np.einsum('t, xy -> txy', field_temp_t2, field_temp_xy)
-    
-    # plt.plot(np.abs(1e12*Roh(X))**2)
-    # plt.show()
-    # plt.plot(np.abs(field_temp_t0)**2)
-    # plt.show()
-    # plt.plot(np.abs(0.1*field_temp_t1)**2)
-    # plt.show()
-    # plt.plot(np.abs(0.01*field_temp_t2)**2)
-    # plt.show()
-    # plt.plot(np.abs(field_txy[:,0,0])**2)
-    # plt.show()  
-       
-    
-    # Normalization: it has to be compatible with the units used in the rest of
-    # the code. imitate_sase_dfl uses SI units [m, s, J], need to normalize with
-    # respect to [nm, fs, eV]
-    
-    # dx = 1e9 * (SASE.Lx() / (SASE.Nx()-1))
-    # dy = 1e9 * (SASE.Ly() / (SASE.Ny()-1))
-    # dt = 1e15 * (SASE.Lz() / (SASE.Nz()-1)) / sp_const.c
     
     norm = np.sqrt(np.sum(np.abs(field_txy)**2 * X.dx * X.dy * X.dt))
     
     field_txy = field_txy / norm
     
-    # plt.figure()
-    # plt.imshow(np.abs(field_txy[0,:,:])**2)
-    # plt.figure()
-    # #plt.plot(np.linspace(-SASE.Lz()/sp_const.c*1.e15, SASE.Lz()*1.e15/sp_const.c, X.tgrid), np.abs(field_txy[:,1,1])**2)
-    # plt.plot(np.linspace(0, SASE.Lz()*1.e15/sp_const.c, X.tgrid), np.abs(field_txy[:,1,1])**2)
-    # plt.xlabel('t (fs)')
-    # plt.show()
-    
     N_seed_photons = X.E_seed_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
-    print('number of seed photons = ' + f"{N_seed_photons:.1e}")
+    # print('number of seed photons = ' + f"{N_seed_photons:.1e}")
     
     SASE_for_seed = np.sqrt(N_seed_photons) * field_txy
     
@@ -450,14 +442,12 @@ def Ocelot_SASE_seed_220_dbm_pstxy(X):
 
 
 
-
-
 def Ocelot_SASE_seed_pstxy(X):
     SASE = RadiationField()  # initialize RadiationField object
     
-    seed_sigma_rx = X.config['seed_width_FWHM_x'] / (2 * np.sqrt(2*np.log(2)))
-    seed_sigma_ry = X.config['seed_width_FWHM_y'] / (2 * np.sqrt(2*np.log(2)))
-    seed_sigma_t  = X.config['seed_duration_FWHM_t'] / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_rx = X.seed_width_FWHM_x / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_ry = X.seed_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
+    seed_sigma_t  = X.seed_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
     
     # The transverse domain is considered to be space [m], since I hace input
     # parameters in time [fs], the correct conversion is needed
@@ -482,26 +472,9 @@ def Ocelot_SASE_seed_pstxy(X):
     
     field_txy = SASE.fld
     
-    # Normalization: it has to be compatible with the units used in the rest of
-    # the code. imitate_sase_dfl uses SI units [m, s, J], need to normalize with
-    # respect to [nm, fs, eV]
-    
-    # dx = 1e9 * (SASE.Lx() / (SASE.Nx()-1))
-    # dy = 1e9 * (SASE.Ly() / (SASE.Ny()-1))
-    # dt = 1e15 * (SASE.Lz() / (SASE.Nz()-1)) / sp_const.c
-
-    
     norm = np.sqrt(np.sum(np.abs(field_txy)**2 * X.dx * X.dy * X.dt))
     
     field_txy = field_txy / norm
-    
-    # plt.figure()
-    # plt.imshow(np.abs(field_txy[0,:,:])**2)
-    # plt.figure()
-    # #plt.plot(np.linspace(-SASE.Lz()/sp_const.c*1.e15, SASE.Lz()*1.e15/sp_const.c, X.tgrid), np.abs(field_txy[:,1,1])**2)
-    # plt.plot(np.linspace(0, SASE.Lz()*1.e15/sp_const.c, X.tgrid), np.abs(field_txy[:,1,1])**2)
-    # plt.xlabel('t (fs)')
-    # plt.show()
     
     N_seed_photons = X.E_seed_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
     # print('number of seed photons = ' + f"{N_seed_photons:.1e}")
@@ -881,4 +854,108 @@ def find_fwhm(x, y):
             break
     return x[idx_right] - x[idx_left]
 
+   
+def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
+    """
+    Fourier transform a field from the (time, y) domain to the (omega, theta_y) domain.
 
+    Zero-pads the t and y axes, then FFTs along them and applies a linear
+    phase correction for the fact that the simulation window is not centered
+    at t=0/y=0 (it is centered at X.t_pump_max/X.ymax), so the resulting
+    energy/angle map has the correct phase reference.
+
+    Parameters
+    ----------
+    X
+        XLO_sim object
+    field_pstxy : np.ndarray
+        Field array with axes (p, s, t, x, y), e.g. a z-slice of X.Omega_pstxyz.
+    ypad : int
+        Zero-padding added on each side of the y axis before the FFT (sets theta_y resolution).
+    tpad : int
+        Zero-padding added on each side of the t axis before the FFT (sets omega resolution).
+
+    Returns
+    -------
+    extent_w_thy : list of float
+        [omega_min, omega_max, theta_y_min, theta_y_max] (omega in eV, theta_y in mrad),
+        the plot extent of the transformed field.
+    field_psxwThy : np.ndarray
+        The FFT'd, phase-corrected field with axes (p, s, x, omega, theta_y).
+
+    """
+
+    coeffs = (2.0 * np.pi * X.hbar, 2.0 * np.pi / X.k0)
+    shifts = (X.t_pump_max + tpad * X.dt, X.ymax + ypad * X.dy)
+    field_psxty = np.einsum('pstxy->psxty',field_pstxy)
+    pad_shape = [(0, 0), (0, 0), (0, 0), (tpad, tpad), (ypad, ypad)]
+    domains_sim, meshes_sim, step_sizes_sim = X.optics.nd_kspace(coeffs, (X.tgrid, X.ygrid), (tpad, ypad), (X.dt, X.dy))
+    phasors = [np.exp(1j * 2.0 * np.pi * mesh * shift / coeff) for coeff, mesh, shift in zip(coeffs, meshes_sim, shifts)]
+
+    field_psxty_pad = X.optics.my_pad(field_psxty, pad_shape)
+    field_fft_pad_phased = X.optics.my_fft_phased(field_psxty_pad, (3, 4), phasors)
+
+    extent_w_thy = [
+        np.min(domains_sim[0][tpad:X.tgrid + tpad]), np.max(domains_sim[0][tpad:X.tgrid + tpad]),
+        1e3*np.min(domains_sim[1]), 1e3*np.max(domains_sim[1])]
+
+    return extent_w_thy, field_fft_pad_phased 
+
+
+
+def SF_spectrum_w(X, zint, ypad, tpad):
+    """
+    Compute the spectral intensity of the in-sample field at a given depth z.
+
+    X.Omega_pstxyz is the coherent Rabi-frequency field propagating through
+    the sample: it is seeded with the injected probe field at z=0 and picks
+    up the medium's stimulated/spontaneous response as it propagates (see
+    Sample.py). Following this codebase's convention (e.g. I_SF_w_thy,
+    convert_SF_phnm2fs_Wcm2) it is referred to as the "SF" field throughout,
+    though depending on `zint` it may still be seed-dominated rather than
+    purely spontaneously emitted.
+
+    Takes that field at z-grid index `zint`, transforms it to the (omega,
+    theta_y) domain via `fft_field_t_y_to_w_thy`, and forms the intensity from
+    the product of the p=0 (Omega) and p=1 (Omega*) components. Returns the
+    spectrum both integrated over theta_y and evaluated on-axis (theta_y = 0).
+
+    Parameters
+    ----------
+    X
+        XLO_sim object
+    zint : int
+        Grid index along z (propagation depth into the sample) at which to evaluate the spectrum.
+    ypad : int
+        Zero-padding added to the y axis before the FFT (see `fft_field_t_y_to_w_thy`).
+    tpad : int
+        Zero-padding added to the t axis before the FFT (see `fft_field_t_y_to_w_thy`).
+
+    Returns
+    -------
+    womega_ar : np.ndarray
+        Photon energy grid, in eV.
+    I_int_thy_w : np.ndarray
+        SF spectral intensity integrated over theta_y, as a function of omega.
+    I_thy0_w : np.ndarray
+        On-axis (theta_y = 0) SF spectral intensity, as a function of omega.
+
+    """
+
+    OmegaSF_z_pstxy = X.Omega_pstxyz[:, :, :, :, :, zint]
+    extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad)
+    I_SF_w_thy = np.real(
+        np.einsum('sxwy,sxwy->wy', OmegaSF_z_psxwThy[0,:,:,:,:], OmegaSF_z_psxwThy[1,:,:,::-1,::-1])
+    )  
+
+    ygrid_pad = X.ygrid + 2*ypad
+    tgrid_pad = X.tgrid + 2*tpad
+    womega_ar  = np.linspace(extent_w_thy[0], extent_w_thy[1], tgrid_pad)
+    theta_y_ar = np.linspace(extent_w_thy[2], extent_w_thy[3], ygrid_pad)
+
+    dtheta_y = theta_y_ar[1] - theta_y_ar[0] 
+    I_int_thy_w = np.real(dtheta_y * np.einsum('wa -> w', I_SF_w_thy))
+    I_thy0_w = np.real(I_SF_w_thy[:,int(ygrid_pad/2)])
+    
+        
+    return womega_ar, I_int_thy_w, I_thy0_w 

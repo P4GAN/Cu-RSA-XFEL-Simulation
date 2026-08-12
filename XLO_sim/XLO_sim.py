@@ -25,8 +25,8 @@ class XLO_sim:
             self.initial_population = 'ground'
 
         self.sigma_ground_pump = self.sigma1_pump_1s + self.sigma1_pump_2p3 + self.sigma1_pump_other
-        self.sigma_compound_pump = np.sum(element['N_atoms'] * element['sigma_compound_pump'] for element in self.compound.values())
-        self.sigma_compound_Ka1 = np.sum(element['N_atoms'] * element['sigma_compound_Ka1'] for element in self.compound.values())
+        self.sigma_compound_pump = sum(element['N_atoms'] * element['sigma_compound_pump'] for element in self.compound.values())
+        self.sigma_compound_Ka1 = sum(element['N_atoms'] * element['sigma_compound_Ka1'] for element in self.compound.values())
             
         self.is_kfilter = self.config['enable_kfilter']
 

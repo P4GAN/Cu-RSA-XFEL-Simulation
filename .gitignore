@@ -15,3 +15,5 @@ figs/
 profiling/
 
 config/generated/
+
+logs/

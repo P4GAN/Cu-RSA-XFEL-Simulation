@@ -19,7 +19,7 @@ import yaml
 # Cu 2p core-hole lifetime is ~1 fs (Ka1 linewidth ~2.5 eV FWHM -> tau ~ hbar/Gamma
 # ~0.3-1 fs), so this scan spans seed durations from well below (0.1 fs) to well
 # above (6 fs) that timescale -- see notebooks/transmittance-vs-duration.ipynb cell 5.
-DEFAULT_DURATION_VALUES = [0.1, 0.2, 0.5, 1, 2, 3, 6]
+DEFAULT_DURATION_VALUES = [0.1, 0.2, 0.3, 0.5, 1, 2, 3, 4, 6, 10]
 
 
 def yaml_modify_seed_duration(input_yaml_path, output_yaml_path, new_seed_duration):

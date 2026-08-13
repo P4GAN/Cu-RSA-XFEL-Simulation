@@ -8,10 +8,16 @@
 # array task still just looks up one YAML path by CONFIG_IDX, exactly like
 # the 1D sweeps.
 #
-# With CHUNKS_PER_CONFIG=1, each of the 110 (E_seed, energy) configs gets
-# one node and runs its NREP repetitions across that node's cores. Raise
-# CHUNKS_PER_CONFIG (and widen --array to match) to spread across more nodes
-# if you have queue room -- every task for a given config writes into the
+# The mono base config (config/base/Cu-seed-mono-SASE.yaml) uses tgrid=15000
+# vs. 800 for the 1D sweeps -- ~19x finer time resolution to resolve the
+# monochromator's narrow bandwidth. That makes each rep far more expensive,
+# both in compute and memory: rho_ijtxyz alone is ~8.3 GB per worker process
+# at this tgrid, so --mem=0 (grab the whole node) instead of a fixed cap,
+# since 40 concurrent workers can easily want 300+ GB between them.
+#
+# CHUNKS_PER_CONFIG=2 splits NREP=50 into 25/chunk, fitting one parallel
+# round on 40 cores (the speed floor) -- 110 configs x 2 = 220 tasks,
+# throttled to 50 concurrent. Every task for a given config writes into the
 # same runs_seed_<E>_uJ__energy_<E_target>_eV/ folder, so the notebook's
 # aggregation step (data_from_folder) doesn't need to change either way.
 #
@@ -26,9 +32,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=40
-#SBATCH --mem=32G
-#SBATCH --time=00:20:00
-#SBATCH --array=0-109%40
+#SBATCH --mem=0
+#SBATCH --time=01:00:00
+#SBATCH --array=0-219%50
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 
@@ -50,7 +56,7 @@ fi
 mapfile -t YAML_FILES < "$MANIFEST"
 
 NREP=50
-CHUNKS_PER_CONFIG=1
+CHUNKS_PER_CONFIG=2
 REPS_PER_CHUNK=$(( NREP / CHUNKS_PER_CONFIG ))
 
 CONFIG_IDX=$(( SLURM_ARRAY_TASK_ID / CHUNKS_PER_CONFIG ))

@@ -27,7 +27,7 @@ def yaml_modify_seed_duration(input_yaml_path, output_yaml_path, new_seed_durati
         yaml_data = yaml.safe_load(f)
 
     yaml_data["seed_duration_FWHM_t"] = new_seed_duration
-    yaml_data["tmax"] = 4 * new_seed_duration
+    yaml_data["tmax"] = 20 * new_seed_duration
 
     with open(output_yaml_path, "w") as f:
         yaml.safe_dump(yaml_data, f)

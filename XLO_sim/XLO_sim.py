@@ -300,31 +300,9 @@ class XLO_sim:
         self.nphoton_pump_z = tools.nphoton_pump_z(self)
         if self.nphoton_pump_z[0] != 0.0:
             self.pump_transmission = self.nphoton_pump_z[-1] / self.nphoton_pump_z[0]
-        
-        self.E_sstxyz = np.einsum('ijp,jktxyz,kir->prtxyz', self.Tijs_minus, self.rho_ijtxyz, self.Tijs_plus, optimize=True)
-        self.G_sstxyz = np.einsum('ijr,jktxyz,kip->prtxyz', self.Tijs_plus, self.rho_ijtxyz, self.Tijs_minus, optimize=True)
-
-        self.P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', self.Tijs_minus, self.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', self.rho_ijtxyz, self.Tijs_plus) ])
-        
+      
         if self.is_Cartesian_pol:
             Omega_pqtxy = tools.circular_to_linear(self, self.Omega_pstxyz[:, :, :, :, :, -1])
             self.Omega_qtxy = (Omega_pqtxy[0, :, :, :, :] + np.conj(Omega_pqtxy[1, :, :, :, :])) / 2.0
             
         self.Pfield_txyz = self.sample.Pfield_txyz
-
-        
-    def pre_run_3D(self):
-        """
-        Calculate ASE field propagation and density matrix evolution with or without absorption of the ASE field.
-
-        Returns
-        -------
-
-        """
-
-        self.sample.evaluate_rho_ij_with_pump_3D(self)
-
-        self.pre_rho_ijtxyz = self.sample.rho_ijtxyz
-        self.Omega_pstxyz = self.sample.Omega_pstxyz
-
-        self.P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', self.Tijs_minus, self.pre_rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', self.pre_rho_ijtxyz, self.Tijs_plus) ])

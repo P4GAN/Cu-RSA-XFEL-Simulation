@@ -59,15 +59,29 @@ def run_simulation(yaml_path, run_path, rep):
     womega_ar, I_int_thy_w_last, I_thy0_w_last = tools.SF_spectrum_w(X, -1, YPAD, TPAD)
 
     target_energy_eV = X.monochromator_target_energy_eV
+    P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', X.Tijs_minus, X.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', X.rho_ijtxyz, X.Tijs_plus) ])
+    
+    I_t_0 = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, 0], X.Omega_pstxyz[1, :, :, :, :, 0])
+    I_t_last = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, -1], X.Omega_pstxyz[1, :, :, :, :, -1])
+    rho_ee_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_plus)
+    rho_gg_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_minus)
+    rho_eg_t_last = P_pstxyz[0,0,:,int(X.xgrid/2),int(X.ygrid/2),-1]
+    rho_ground_t_last = X.rho_0_3D[:,int(X.xgrid/2),int(X.ygrid/2),-1]
+    t_axis = X.t
+
     date_string = np.datetime_as_string(np.datetime64('now'))
     np.savez_compressed(
         os.path.join(run_path, f"run_at_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV__repetition_{rep + 1}_{date_string}.npz"),
-        target_energy_eV=target_energy_eV,
         womega_ar=womega_ar,
         I_int_thy_w_0=I_int_thy_w_0,
-        I_thy0_w_0=I_thy0_w_0,
         I_int_thy_w_last=I_int_thy_w_last,
-        I_thy0_w_last=I_thy0_w_last,
+        I_t_0=I_t_0,
+        I_t_last=I_t_last,
+        rho_ee_t_last=rho_ee_t_last,
+        rho_gg_t_last=rho_gg_t_last,
+        rho_eg_t_last=rho_eg_t_last,
+        rho_ground_t_last=rho_ground_t_last,
+        t_axis=t_axis
     )
 
 

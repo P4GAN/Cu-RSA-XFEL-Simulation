@@ -3,6 +3,10 @@
 # Counterpart of submit_transmittance_sweep.sh -- see that file's header for
 # how CHUNKS_PER_CONFIG/--array trade off node count vs. reps per task.
 #
+# CHUNKS_PER_CONFIG=4 -> 25 reps/chunk, already <=40 so each task is a
+# single parallel round (~2 min) -- the speed floor for this NREP. Going
+# finer wastes tasks without going faster. 7 configs x 4 = 28 tasks total.
+#
 # Before submitting:
 #   1. python scripts/generate_duration_sweep_configs.py   (writes the manifest)
 #   2. mkdir -p logs
@@ -15,8 +19,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=40
 #SBATCH --mem=32G
-#SBATCH --time=00:30:00
-#SBATCH --array=0-6
+#SBATCH --time=00:20:00
+#SBATCH --array=0-27
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 
@@ -44,7 +48,7 @@ fi
 mapfile -t YAML_FILES < "$MANIFEST"
 
 NREP=100
-CHUNKS_PER_CONFIG=1
+CHUNKS_PER_CONFIG=4
 REPS_PER_CHUNK=$(( NREP / CHUNKS_PER_CONFIG ))
 
 CONFIG_IDX=$(( SLURM_ARRAY_TASK_ID / CHUNKS_PER_CONFIG ))

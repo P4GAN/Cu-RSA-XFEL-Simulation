@@ -2,19 +2,18 @@
 # SLURM array job for the transmittance-vs-intensity sweep.
 #
 # One array task == one independent SLURM job == (usually) its own node.
-# With CHUNKS_PER_CONFIG=1 below, each of the 10 E_seed configs gets one
-# node and runs its 300 repetitions across that node's cores, same as the
-# notebook's multiprocessing.Pool -- but all 10 configs run *concurrently*
-# on different nodes instead of one after another on a single JupyterHub
-# session.
+# CHUNKS_PER_CONFIG=4 below splits each of the 10 E_seed configs' 300
+# repetitions into 4 chunks of 75 (2 parallel rounds on 40 cores each,
+# ~4 min/task at ~2 min/rep) -- 40 tasks total, comfortably under a >50
+# idle-node budget. All of them run *concurrently* on different nodes
+# instead of sequentially on a single JupyterHub session.
 #
-# To spread across MORE nodes than there are configs (e.g. you have queue
-# room for 30 nodes, not just 10), raise CHUNKS_PER_CONFIG and widen
-# --array to match: CHUNKS_PER_CONFIG=3 with --array=0-29 splits each
-# config's 300 repetitions into 3 chunks of 100, each chunk an independent
-# task/node. Every task writes into the same runs_seed_<E>_uJ/ folder, so
-# the notebook's aggregation step (data_from_folder) doesn't need to change
-# either way.
+# Raising CHUNKS_PER_CONFIG further doesn't help unless REPS_PER_CHUNK
+# drops to <=40 (one round instead of two) -- e.g. CHUNKS_PER_CONFIG=10
+# (30 reps/chunk) hits that floor, but costs 100 tasks to get there, so
+# only worth it if you know you have that much idle capacity. Every task
+# writes into the same runs_seed_<E>_uJ/ folder, so the notebook's
+# aggregation step (data_from_folder) doesn't need to change either way.
 #
 # Before submitting:
 #   1. python scripts/generate_sweep_configs.py         (writes the manifest)
@@ -28,8 +27,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=40
 #SBATCH --mem=32G
-#SBATCH --time=00:30:00
-#SBATCH --array=0-9
+#SBATCH --time=00:20:00
+#SBATCH --array=0-39
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 
@@ -57,7 +56,7 @@ fi
 mapfile -t YAML_FILES < "$MANIFEST"
 
 NREP=300
-CHUNKS_PER_CONFIG=1
+CHUNKS_PER_CONFIG=4
 REPS_PER_CHUNK=$(( NREP / CHUNKS_PER_CONFIG ))
 
 CONFIG_IDX=$(( SLURM_ARRAY_TASK_ID / CHUNKS_PER_CONFIG ))

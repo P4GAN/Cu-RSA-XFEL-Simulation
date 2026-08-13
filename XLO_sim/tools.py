@@ -724,7 +724,7 @@ def nphoton_pump_z(X):
 
     """
     
-    return X.dt * X.dx * X.dy * np.sum(X.j_3D, axis=(0, 1, 2))
+    return X.dt * X.dx * X.dy * np.sum(X.J_P_txyz, axis=(0, 1, 2))
 
 
 def random_vector_normal(size, seed=None):

@@ -289,8 +289,10 @@ class XLO_sim:
         """
 
         self.sample.evaluate_n_level_3D(self)
-        self.rho_0_3D = self.sample.rho_0_3D
-        self.j_3D = self.sample.j_3D
+        self.rho_ground_txyz = self.sample.rho_ground_txyz
+        self.rho_other_txyz = self.sample.rho_other_txyz
+        self.rho_2s_txyz = self.sample.rho_2s_txyz
+        self.J_P_txyz = self.sample.J_P_txyz
         self.nphoton_pump_z = tools.nphoton_pump_z(self)
 
         self.rho_ijtxyz = self.sample.rho_ijtxyz

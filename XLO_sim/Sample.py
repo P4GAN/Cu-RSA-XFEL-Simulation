@@ -97,9 +97,9 @@ class XLO_sample:
 
         """
         
-        rho_0_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid))
+        rho_ground_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid))
         rho_i_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid))
-        j_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid))
+        J_P_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid))
         
         if X.initial_population == 'ground':
             rho_0_txy = np.ones((X.tgrid, X.xgrid, X.ygrid))
@@ -112,7 +112,7 @@ class XLO_sample:
             rho_i_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
 
         j0_txy = np.real(self.pump_field * np.conj(self.pump_field))
-        j_txyz[:, :, :, 0] = j0_txy
+        J_P_txyz[:, :, :, 0] = j0_txy
 
         if X.enable_pump_diffraction == True:
             pfield_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
@@ -130,24 +130,23 @@ class XLO_sample:
                 rho_0_val += delta_Rho_3D[0]
                 rho_i_val += delta_Rho_3D[1]
 
-                rho_0_txyz[i, :, :, j] = rho_0_val
+                rho_ground_txyz[i, :, :, j] = rho_0_val
                 rho_i_txyz[i, :, :, j] = rho_i_val
                 
                 if (X.enable_pump_diffraction == True) and (j != 0):
-                    kappa_p_xyz = (X.n * X.sigma_ground_pump * rho_0_txyz[i, :, :, j - 1: j + 1] + X.n * X.sigma_compound_pump) * (1.0 + 0.0 * 1j)
+                    kappa_p_xyz = (X.n * X.sigma_ground_pump * rho_ground_txyz[i, :, :, j - 1: j + 1] + X.n * X.sigma_compound_pump) * (1.0 + 0.0 * 1j)
                     
                     pfield0_txy[i, :, :] = self.optics.Fresnel_propagator_with_absorption(X, pfield0_txy[i, :, :], X.dz, j * X.dz, kappa_p_xyz, X.lambdaPump, 'pump')
                     j0_txy[i, :, :] = np.real(pfield0_txy[i, :, :] * np.conj(pfield0_txy[i, :, :]))           
             
             
             if (X.enable_pump_diffraction == False) and (j != 0):
-                j0_txy -= 1.0 * X.dz * j0_txy * X.n * (X.sigma_ground_pump * rho_0_txyz[:, :, :, j] + X.sigma_compound_pump)
+                j0_txy -= 1.0 * X.dz * j0_txy * X.n * (X.sigma_ground_pump * rho_ground_txyz[:, :, :, j] + X.sigma_compound_pump)
                 
-            j_txyz[:, :, :, j] = j0_txy
+            J_P_txyz[:, :, :, j] = j0_txy
 
-        self.rho_0_3D = rho_0_txyz
-        self.rho_i_3D = rho_i_txyz
-        self.j_3D = j_txyz 
+        self.rho_ground_txyz = rho_ground_txyz
+        self.J_P_txyz = J_P_txyz 
     
 
             
@@ -240,8 +239,8 @@ class XLO_sample:
         self.rho_ijtxyz = rho_ijtxyz
         self.Omega_pstxyz = Omega_pstxyz
         
-        self.rho_0_3D = np.real(rho_ground_txyz)
-        self.j_3D = J_P_txyz
+        self.rho_ground_txyz = np.real(rho_ground_txyz)
+        self.J_P_txyz = J_P_txyz
         self.Pfield_txyz = Pfield_txyz
 
         self.rho_2s_txyz = np.real(rho_2s_txyz)

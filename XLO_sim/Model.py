@@ -277,7 +277,7 @@ def absorption_Omega(rho_ijxyz, rho_other_xyz, params):
     
     X, it, iz = params
 
-    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', X.rho_0_3D[it, :, :, iz-1:iz+1], X.S_ground_Fi[1:, :]) + X.n * np.einsum('s, xyz->sxyz', X.S_other_F[1:],  rho_other_xyz) + X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[1:, :], rho_ijxyz) + X.n * X.sigma_compound_Ka1
+    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', X.rho_ground_txyz[it, :, :, iz-1:iz+1], X.S_ground_Fi[1:, :]) + X.n * np.einsum('s, xyz->sxyz', X.S_other_F[1:],  rho_other_xyz) + X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[1:, :], rho_ijxyz) + X.n * X.sigma_compound_Ka1
 
     return np.array([kappa_Omega_sxyz, kappa_Omega_sxyz])
 

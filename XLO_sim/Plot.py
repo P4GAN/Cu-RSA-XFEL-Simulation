@@ -366,7 +366,7 @@ class XLO_plot:
     
     
     
-    def plot_pump_j_3D(self, X):
+    def plot_pump_J_P_txyz(self, X):
         # def find_fwhm(x, y):
         #     max_value = np.max(y)
         #     max_index = np.argmax(y)
@@ -385,14 +385,14 @@ class XLO_plot:
 
         plt.figure(figsize=(10, 4))
         plt.subplot(1, 2, 1)
-        plt.plot(X.t, X.convert_pump_phnm2fs_Wcm2 * X.j_3D[:,int(X.xgrid/2),int(X.ygrid/2),0])
+        plt.plot(X.t, X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),0])
         plt.xlabel('t (fs)')
         plt.ylabel(r'$j_{pump}$ (W/cm$^{2}$)')
         plt.grid(True)
 
         tint = np.abs(X.t - X.t_pump_max).argmin()
         plt.subplot(1, 2, 2)
-        plt.imshow(X.convert_pump_phnm2fs_Wcm2 * X.j_3D[tint,:,:,0], aspect='auto', origin='lower', extent=[-X.xmax,X.xmax,-X.ymax,X.ymax])
+        plt.imshow(X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[tint,:,:,0], aspect='auto', origin='lower', extent=[-X.xmax,X.xmax,-X.ymax,X.ymax])
         plt.xlabel('x (nm)')
         plt.ylabel('y (nm)')
         plt.title(f't = {(X.t[tint]):.2f} fs, z=0')
@@ -402,9 +402,9 @@ class XLO_plot:
         plt.show()
 
         x_x = np.linspace(-X.xmax,X.xmax,X.xgrid)
-        print(f'FWHM x = {tools.find_fwhm(x_x, X.j_3D[int(X.tgrid/2),:,int(X.ygrid/2),0]):.0f} nm, nominal {X.pump_width_FWHM:.0f} nm')
-        print(f'FWHM t = {tools.find_fwhm(X.t, X.j_3D[:,int(X.xgrid/2),int(X.ygrid/2),0]):.3f} fs, nominal {X.pump_duration_FWHM_t:.3f} fs')
-        print(f'pump photons = {np.sum(X.dx * X.dy * X.dt * X.j_3D[:,:,:,0]):.2e}, nominal {X.N_pump_photons:.1e}')
+        print(f'FWHM x = {tools.find_fwhm(x_x, X.J_P_txyz[int(X.tgrid/2),:,int(X.ygrid/2),0]):.0f} nm, nominal {X.pump_width_FWHM:.0f} nm')
+        print(f'FWHM t = {tools.find_fwhm(X.t, X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),0]):.3f} fs, nominal {X.pump_duration_FWHM_t:.3f} fs')
+        print(f'pump photons = {np.sum(X.dx * X.dy * X.dt * X.J_P_txyz[:,:,:,0]):.2e}, nominal {X.N_pump_photons:.1e}')
 
         sigma_x = X.pump_width_FWHM / 2.355
         fwhm_kx = 1.1774 / sigma_x
@@ -420,8 +420,8 @@ class XLO_plot:
 
         name = 'z-t__j-rho_g-rho_ee'
 
-        j_tz    = X.convert_pump_phnm2fs_Wcm2 * X.j_3D[:,int(X.xgrid/2),int(X.ygrid/2),:]
-        rho0_tz = X.rho_0_3D[:,int(X.xgrid/2),int(X.ygrid/2),:]
+        j_tz    = X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),:]
+        rho0_tz = X.rho_ground_txyz[:,int(X.xgrid/2),int(X.ygrid/2),:]
         E_tz    = np.einsum('ijs, jktz, kis-> tz', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),:], X.Tijs_plus)
         extentV = [0,X.tmax,0,X.zmax/1.0e3]
 
@@ -460,7 +460,7 @@ class XLO_plot:
 
         nphot1 = np.real(X.nphoton_sz[0,:])
         nphot2 = np.real(X.nphoton_sz[1,:])
-        nph_pump_z = X.dt * X.dx * X.dy * np.einsum('txyz -> z', X.j_3D)
+        nph_pump_z = X.dt * X.dx * X.dy * np.einsum('txyz -> z', X.J_P_txyz)
         z_axis = 1e-3 * X.z
 
         plt.figure()
@@ -493,8 +493,8 @@ class XLO_plot:
             I_t = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, zint], X.Omega_pstxyz[1, :, :, :, :, zint])
             E_t = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),zint], X.Tijs_plus)
             G_t = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),zint], X.Tijs_minus)
-            j_t = X.j_3D[:,int(X.xgrid/2),int(X.ygrid/2),zint]
-            r0_t = X.rho_0_3D[:,int(X.xgrid/2),int(X.ygrid/2),zint]
+            j_t = X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),zint]
+            r0_t = X.rho_ground_txyz[:,int(X.xgrid/2),int(X.ygrid/2),zint]
             t_axis = X.t
 
             plt.figure()
@@ -523,7 +523,7 @@ class XLO_plot:
         name = "x-y__I-j-rho_ee"
         np.savetxt(folder_data_path + '/' + name + '_zar', z_str_ar, fmt='%s')
         
-        tint_max_j = np.unravel_index(np.argmax(X.j_3D), X.j_3D.shape)[0]
+        tint_max_j = np.unravel_index(np.argmax(X.J_P_txyz), X.J_P_txyz.shape)[0]
         print(f'peak of pump at   {(X.t[tint_max_j]):.3f} fs')
 
         rho_ee_t = np.real(np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),0], X.Tijs_plus))
@@ -547,7 +547,7 @@ class XLO_plot:
                     np.einsum('sxy,sxy->xy', X.Omega_pstxyz[0, :, tint_max_I, :, :, zint], X.Omega_pstxyz[1, :, tint_max_I, :, :, zint])
                    )
             E_xy = np.einsum('ijs, jkxy, kis-> xy', X.Tijs_minus, X.rho_ijtxyz[:,:,tint_max_rho_ee,:,:,zint], X.Tijs_plus)
-            j_xy = X.convert_pump_phnm2fs_Wcm2 * X.j_3D[tint_max_j,:,:,zint]
+            j_xy = X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[tint_max_j,:,:,zint]
             extentV = [-X.xmax,X.xmax,-X.ymax,X.ymax]
             t_max_I = X.t[tint_max_I]
             t_max_j = X.t[tint_max_j]
@@ -601,7 +601,7 @@ class XLO_plot:
             conv_factor = 1 / (3.0 * X.lambdaKalpha1N**2 * X.Gamma_sp_fsm1N / 8.0 / np.pi)
 
             I_xy = conv_factor * X.dt * np.einsum('stxy,stxy->xy', X.Omega_pstxyz[0, :, :, :, :, zint], X.Omega_pstxyz[1, :, :, :, :, zint])
-            j_xy = X.dt * np.einsum('txy->xy', X.j_3D[:,:,:,zint]) 
+            j_xy = X.dt * np.einsum('txy->xy', X.J_P_txyz[:,:,:,zint]) 
             Nph_SF   = np.real(X.dx * X.dy * np.sum(I_xy))
             Nph_pump = X.dx * X.dy * np.sum(j_xy)
             extentV = [-X.xmax,X.xmax,-X.ymax,X.ymax]
@@ -702,7 +702,7 @@ class XLO_plot:
             extent_theta_w, OmegaLm1_w_thx = FFT_theta_w(OmegaLm1_tx)
             I_w_thx = np.abs(OmegaLp0_w_thx * OmegaLm0_w_thx + OmegaLp1_w_thx * OmegaLm1_w_thx)
 
-            Omega0_txy = np.sqrt(X.j_3D[:,:,:,zint])
+            Omega0_txy = np.sqrt(X.J_P_txyz[:,:,:,zint])
             Omega0_tx = X.dy * np.einsum('txy -> tx', Omega0_txy)
             extent_theta_w, Omega0_w_thx = FFT_theta_w(Omega0_tx)
 
@@ -866,7 +866,7 @@ class XLO_plot:
             extent_thxy, OmegaSF_z_pstThxThy = FFT_thxy(OmegaSF_z_pstxy)
             extent_w_thy, OmegaSF_z_psxwThy = FFT_w_thy(OmegaSF_z_pstxy)
 
-            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]#np.sqrt(X.j_3D[:,:,:,zint])
+            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]#np.sqrt(X.J_P_txyz[:,:,:,zint])
             extent_w_thy, OmegaPump_z_xwThy = FFT_pump_w_thy(OmegaPump_z_txy)
 
 
@@ -1100,7 +1100,7 @@ class XLO_plot:
                                X.Omega_pstxyz[1,:,:,int(X.xgrid/2),int(X.ygrid/2),:]) / X.flux_factor
 
         j_tz    = X.convert_pump_phnm2fs_Wcm2 * J_Omega_tz
-        rho0_tz = X.rho_0_3D[:,int(X.xgrid/2),int(X.ygrid/2),:]
+        rho0_tz = X.rho_ground_txyz[:,int(X.xgrid/2),int(X.ygrid/2),:]
         E_tz    = np.einsum('ijs, jktz, kis-> tz', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),:], X.Tijs_plus)
         G_tz    = np.einsum('ijs, jktz, kis-> tz', X.Tijs_plus , X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),:], X.Tijs_minus)
         extentV = [0,X.tmax,0,X.zmax/1.0e3]
@@ -1189,8 +1189,8 @@ class XLO_plot:
             P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', self.Tijs_minus, self.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', self.rho_ijtxyz, self.Tijs_plus) ])
 
             P_t = P_pstxyz[0,0,:,int(X.xgrid/2),int(X.ygrid/2),zint]
-            # j_t = X.j_3D[:,int(X.xgrid/2),int(X.ygrid/2),zint]
-            r0_t = X.rho_0_3D[:,int(X.xgrid/2),int(X.ygrid/2),zint]
+            # j_t = X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),zint]
+            r0_t = X.rho_ground_txyz[:,int(X.xgrid/2),int(X.ygrid/2),zint]
             t_axis = X.t
 
             plt.figure()
@@ -1347,7 +1347,7 @@ class XLO_plot:
             extent_thxy, OmegaSF_z_pstThxThy = FFT_thxy(OmegaSF_z_pstxy)
             extent_w_thy, OmegaSF_z_psxwThy = FFT_w_thy(OmegaSF_z_pstxy)
 
-            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]#np.sqrt(X.j_3D[:,:,:,zint])
+            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]#np.sqrt(X.J_P_txyz[:,:,:,zint])
             extent_w_thy, OmegaPump_z_xwThy = FFT_pump_w_thy(OmegaPump_z_txy)
 
 
@@ -1405,7 +1405,7 @@ class XLO_plot:
             name = "x-y__I-j-rho_ee"
             np.savetxt(folder_data_path + '/' + name + '_zar', z_str_ar, fmt='%s')
 
-            # tint_max_j = np.unravel_index(np.argmax(X.j_3D), X.j_3D.shape)[0]
+            # tint_max_j = np.unravel_index(np.argmax(X.J_P_txyz), X.J_P_txyz.shape)[0]
             # print(f'peak of pump at   {(X.t[tint_max_j]):.3f} fs')
 
             rho_ee_t = np.real(np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),1], X.Tijs_plus))
@@ -1430,7 +1430,7 @@ class XLO_plot:
                        )
                 E_xy = np.einsum('ijs, jkxy, kis-> xy', X.Tijs_minus, X.rho_ijtxyz[:,:,tint_max_rho_ee,:,:,zint], X.Tijs_plus)
                 G_xy = np.einsum('ijs, jkxy, kis-> xy', X.Tijs_plus, X.rho_ijtxyz[:,:,tint_max_rho_ee,:,:,zint], X.Tijs_minus)
-                # j_xy = X.convert_pump_phnm2fs_Wcm2 * X.j_3D[tint_max_j,:,:,zint]
+                # j_xy = X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[tint_max_j,:,:,zint]
                 extentV = [-X.xmax,X.xmax,-X.ymax,X.ymax]
                 t_max_I = X.t[tint_max_I]
                 # t_max_j = X.t[tint_max_j]
@@ -1463,7 +1463,7 @@ class XLO_plot:
                 
                 
                 I_xy = conv_factor * X.dt * np.einsum('stxy,stxy->xy', X.Omega_pstxyz[0, :, :, :, :, zint], X.Omega_pstxyz[1, :, :, :, :, zint])
-                j_xy = X.dt * np.einsum('txy->xy', X.j_3D[:,:,:,zint]) 
+                j_xy = X.dt * np.einsum('txy->xy', X.J_P_txyz[:,:,:,zint]) 
                 Nph_SF   = np.real(X.dx * X.dy * np.sum(I_xy))
                 Nph_pump = X.dx * X.dy * np.sum(j_xy)
                 extentV = [-X.xmax,X.xmax,-X.ymax,X.ymax]

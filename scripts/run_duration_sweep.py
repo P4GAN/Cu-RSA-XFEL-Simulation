@@ -57,10 +57,12 @@ def run_simulation(yaml_path, run_path, rep):
     
     I_t_0 = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, 0], X.Omega_pstxyz[1, :, :, :, :, 0])
     I_t_last = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, -1], X.Omega_pstxyz[1, :, :, :, :, -1])
-    rho_ee_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_plus)
-    rho_gg_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_minus)
+    rho_ee_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_plus, optimize=True)
+    rho_gg_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_minus, optimize=True)
     rho_eg_t_last = P_pstxyz[0,0,:,int(X.xgrid/2),int(X.ygrid/2),-1]
-    rho_ground_t_last = X.rho_0_3D[:,int(X.xgrid/2),int(X.ygrid/2),-1]
+    rho_ground_t_last = X.rho_ground_txyz[:,int(X.xgrid/2),int(X.ygrid/2),-1]
+    rho_other_t_last = X.rho_other_txyz[:,int(X.xgrid/2),int(X.ygrid/2),-1]
+    rho_2s_t_last = X.rho_2s_txyz[:,int(X.xgrid/2),int(X.ygrid/2),-1]
     t_axis = X.t
 
     date_string = np.datetime_as_string(np.datetime64('now'))
@@ -75,6 +77,8 @@ def run_simulation(yaml_path, run_path, rep):
         rho_gg_t_last=rho_gg_t_last,
         rho_eg_t_last=rho_eg_t_last,
         rho_ground_t_last=rho_ground_t_last,
+        rho_other_t_last=rho_other_t_last,
+        rho_2s_t_last=rho_2s_t_last,
         t_axis=t_axis
     )
 

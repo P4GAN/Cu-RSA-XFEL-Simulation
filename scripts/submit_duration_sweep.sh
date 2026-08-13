@@ -5,7 +5,9 @@
 #
 # CHUNKS_PER_CONFIG=4 -> 25 reps/chunk, already <=40 so each task is a
 # single parallel round (~2 min) -- the speed floor for this NREP. Going
-# finer wastes tasks without going faster. 7 configs x 4 = 28 tasks total.
+# finer wastes tasks without going faster. 10 configs x 4 = 40 tasks total.
+# NOTE: --array below must equal (number of manifest lines * CHUNKS_PER_CONFIG) - 1;
+# it does not update itself when DEFAULT_DURATION_VALUES changes.
 #
 # Before submitting:
 #   1. python scripts/generate_duration_sweep_configs.py   (writes the manifest)
@@ -20,7 +22,7 @@
 #SBATCH --cpus-per-task=40
 #SBATCH --mem=32G
 #SBATCH --time=00:20:00
-#SBATCH --array=0-27
+#SBATCH --array=0-39
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 
@@ -41,7 +43,7 @@ if [[ ! -f "$MANIFEST" ]]; then
 fi
 mapfile -t YAML_FILES < "$MANIFEST"
 
-NREP=100
+NREP=300
 CHUNKS_PER_CONFIG=4
 REPS_PER_CHUNK=$(( NREP / CHUNKS_PER_CONFIG ))
 

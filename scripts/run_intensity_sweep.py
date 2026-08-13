@@ -13,7 +13,7 @@ array task produced them, so the existing data_from_folder() aggregation in the
 notebook works unchanged.
 
 Example:
-    python scripts/run_transmittance_sweep.py \\
+    python scripts/run_intensity_sweep.py \\
         --yaml config/generated/transmittance_vs_intensity/Cu-seed-SASE_30.00uJ.yaml \\
         --rep-start 0 --rep-end 300 --nproc 40 --data-path data/sweep_2026-08-07
 """

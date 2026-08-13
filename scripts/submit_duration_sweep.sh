@@ -1,6 +1,6 @@
 #!/bin/bash
 # SLURM array job for the transmittance-vs-duration sweep.
-# Counterpart of submit_transmittance_sweep.sh -- see that file's header for
+# Counterpart of submit_intensity_sweep.sh -- see that file's header for
 # how CHUNKS_PER_CONFIG/--array trade off node count vs. reps per task.
 #
 # CHUNKS_PER_CONFIG=4 -> 25 reps/chunk, already <=40 so each task is a

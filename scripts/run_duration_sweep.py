@@ -4,7 +4,7 @@
 Batch-job counterpart of notebooks/transmittance-vs-duration.ipynb (cell 7),
 generalized to take a config path and a [rep_start, rep_end) range from the
 command line so it can be driven by a SLURM array task. See
-scripts/run_transmittance_sweep.py for the E_seed-sweep equivalent -- the two
+scripts/run_intensity_sweep.py for the E_seed-sweep equivalent -- the two
 share their FFT/SF_spectrum_w post-processing via XLO_sim/tools.py.
 
 Output layout matches the notebook's expectations: one

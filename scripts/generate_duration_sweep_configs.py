@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate one YAML config per seed duration for the transmittance-vs-duration sweep.
 
-Mirrors scripts/generate_sweep_configs.py, but modifies seed_duration_FWHM_t
+Mirrors scripts/generate_intensity_sweep_configs.py, but modifies seed_duration_FWHM_t
 (and widens tmax to fit it, matching notebooks/transmittance-vs-duration.ipynb
 cell 4) instead of E_seed_uJ. Writes into its own subfolder + manifest.txt so
 array-index -> config lookup doesn't depend on filename globbing.

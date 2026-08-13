@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate one YAML config per (E_seed, target energy) pair for the mono-transmittance-vs-intensity sweep.
 
-Mirrors scripts/generate_sweep_configs.py, but the sweep has two physical
+Mirrors scripts/generate_intensity_sweep_configs.py, but the sweep has two physical
 parameters instead of one: E_seed_uJ and the monochromator's absolute target
 photon energy (monochromator_target_energy_eV). Rather than overriding
 monochromator_target_energy_eV as a Python attribute at run time, this

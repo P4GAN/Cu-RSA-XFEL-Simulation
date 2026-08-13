@@ -4,7 +4,7 @@
 Batch-job counterpart of notebooks/mono-transmittance-vs-intensity.ipynb (cell 7),
 generalized to take a config path and a [rep_start, rep_end) range from the
 command line so it can be driven by a SLURM array task. See
-scripts/run_transmittance_sweep.py for the broadband-SASE equivalent -- the
+scripts/run_intensity_sweep.py for the broadband-SASE equivalent -- the
 two share their FFT/SF_spectrum_w post-processing via XLO_sim/tools.py, but
 this one seeds through the 111 DCM monochromator response
 (tools.Ocelot_SASE_seed_111_dcm_pstxy) instead of the bare SASE seed. The
@@ -19,7 +19,7 @@ produced them, so the existing data_from_folder() aggregation in the notebook
 works unchanged.
 
 Example:
-    python scripts/run_mono_transmittance_sweep.py \\
+    python scripts/run_mono_sweep.py \\
         --yaml config/generated/mono_transmittance_vs_intensity/Cu-seed-mono-SASE_40.00uJ_8041.91eV.yaml \\
         --rep-start 0 --rep-end 20 --nproc 40 --data-path data/mono_sweep_2026-08-12
 """

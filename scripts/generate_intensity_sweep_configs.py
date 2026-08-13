@@ -10,7 +10,7 @@ with a glob pattern).
 
 Run this once, locally or on a login node, before submitting the array job:
 
-    python scripts/generate_sweep_configs.py
+    python scripts/generate_intensity_sweep_configs.py
 """
 
 import argparse

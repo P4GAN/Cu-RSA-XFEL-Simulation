@@ -16,10 +16,10 @@
 # aggregation step (data_from_folder) doesn't need to change either way.
 #
 # Before submitting:
-#   1. python scripts/generate_sweep_configs.py         (writes the manifest)
+#   1. python scripts/generate_intensity_sweep_configs.py         (writes the manifest)
 #   2. mkdir -p logs
 #   3. edit the "adjust to your environment" block below
-#   4. sbatch scripts/submit_transmittance_sweep.sh
+#   4. sbatch scripts/submit_intensity_sweep.sh
 
 #SBATCH --partition=allcpu
 #SBATCH --job-name=xlo-transmittance
@@ -50,7 +50,7 @@ cd "$REPO_ROOT"
 
 MANIFEST=config/generated/transmittance_vs_intensity/manifest.txt
 if [[ ! -f "$MANIFEST" ]]; then
-    echo "Missing $MANIFEST -- run scripts/generate_sweep_configs.py first" >&2
+    echo "Missing $MANIFEST -- run scripts/generate_intensity_sweep_configs.py first" >&2
     exit 1
 fi
 mapfile -t YAML_FILES < "$MANIFEST"
@@ -69,7 +69,7 @@ DATA_PATH=data/sweep_${SLURM_ARRAY_JOB_ID}
 
 echo "task $SLURM_ARRAY_TASK_ID -> config $CONFIG_IDX ($YAML), reps [$REP_START, $REP_END)"
 
-python scripts/run_transmittance_sweep.py \
+python scripts/run_intensity_sweep.py \
     --yaml "$YAML" \
     --rep-start "$REP_START" --rep-end "$REP_END" \
     --nproc "$SLURM_CPUS_PER_TASK" \

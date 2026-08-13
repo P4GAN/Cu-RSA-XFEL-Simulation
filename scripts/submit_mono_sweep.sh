@@ -1,7 +1,7 @@
 #!/bin/bash
 # SLURM array job for the mono-transmittance-vs-intensity sweep.
 #
-# Counterpart of submit_transmittance_sweep.sh, but the grid has two physical
+# Counterpart of submit_intensity_sweep.sh, but the grid has two physical
 # parameters (E_seed x absolute target photon energy) instead of one. That
 # doesn't change the array-indexing logic below: generate_mono_sweep_configs.py
 # flattens the E_seed x energy grid into a single manifest.txt, so each
@@ -69,7 +69,7 @@ DATA_PATH=data/mono_sweep_${SLURM_ARRAY_JOB_ID}
 
 echo "task $SLURM_ARRAY_TASK_ID -> config $CONFIG_IDX ($YAML), reps [$REP_START, $REP_END)"
 
-python scripts/run_mono_transmittance_sweep.py \
+python scripts/run_mono_sweep.py \
     --yaml "$YAML" \
     --rep-start "$REP_START" --rep-end "$REP_END" \
     --nproc "$SLURM_CPUS_PER_TASK" \

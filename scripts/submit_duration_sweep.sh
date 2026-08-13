@@ -26,12 +26,6 @@
 
 set -euo pipefail
 
-# --- adjust to your environment ---
-# module purge
-# module load maxwell/python  # or whatever module gives you the right python
-# source ~/miniconda3/bin/activate xlo-sim
-# -----------------------------------
-
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1

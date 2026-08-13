@@ -44,7 +44,7 @@ export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$SLURM_SUBMIT_DIR"
 cd "$REPO_ROOT"
 
 MANIFEST=config/generated/transmittance_vs_intensity/manifest.txt

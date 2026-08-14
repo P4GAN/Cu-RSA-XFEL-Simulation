@@ -250,12 +250,16 @@ class XLO_sim:
         self.S_ground_Fi = S_ground_Fi
         self.S_other_F = S_other_F
         self.S_ion_Fi = S_ion_Fi
-        self.S_2s_F = S_2s_F
         self.Tijs_plus = np.einsum('ijs, ij->ijs', self.Tijs, self.Hij)
         self.Tijs_minus = np.einsum('ijs, ji->ijs', self.Tijs, self.Hij)
         self.Mij = self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) + self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) + (self.GammaKfsm1N + self.GammaL3fsm1N) * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)) / 2.0
         # Incoherent 2s -> 2p_3/2 3d_5/2 Auger feeding
-        self.auger_feeding_matrix = np.diag(self.ei_L3 / np.sum(self.ei_L3)) * self.GammaA_L1_to_L3M45fs1N
+        if self.use_2s_pathway == True:
+            self.auger_feeding_matrix = np.diag(self.ei_L3 / np.sum(self.ei_L3)) * self.GammaA_L1_to_L3M45fs1N
+            self.S_2s_F = S_2s_F
+        else:
+            self.auger_feeding_matrix = np.zeros((self.nlevel, self.nlevel))
+            self.S_2s_F = np.zeros(3)
         self.transform_matrix = np.asarray([[1, 1], [1j, -1j]]) / np.sqrt(2.0) # transformation matrix from circular polarization vectors to Cartesian
 
         

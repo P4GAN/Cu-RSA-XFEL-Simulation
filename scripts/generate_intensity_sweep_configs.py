@@ -20,6 +20,10 @@ import yaml
 
 DEFAULT_E_SEED_VALUES = [200, 150, 100, 70, 40, 20, 10, 5, 1, 0.1]
 
+# Must match CHUNKS_PER_CONFIG in submit_intensity_sweep.sh -- used below only
+# to print the matching sbatch --array bound.
+CHUNKS_PER_CONFIG = 4
+
 
 def yaml_modify_seed_energy(input_yaml_path, output_yaml_path, new_seed_energy):
     with open(input_yaml_path, "r") as f:
@@ -51,7 +55,10 @@ def main():
             manifest.write(os.path.abspath(out_path) + "\n")
             print(f"wrote {out_path}")
 
-    print(f"manifest: {manifest_path}  ({len(args.e_seed)} configs)")
+    n = len(args.e_seed)
+    total_tasks = n * CHUNKS_PER_CONFIG
+    print(f"manifest: {manifest_path}  ({n} configs)")
+    print(f"\nsubmit with:\n  sbatch --array=0-{total_tasks - 1} scripts/submit_intensity_sweep.sh")
 
 
 if __name__ == "__main__":

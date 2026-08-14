@@ -98,6 +98,7 @@ enable_self_absorption: True
 turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
+use_2s_pathway: True
 
 #pump photon energy
 hwPump: 9000.0

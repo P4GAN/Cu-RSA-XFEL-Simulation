@@ -165,30 +165,6 @@ def MB_2s_regular(t, rho_2s_xy, params):
     return drho_pump + drho_ion + drho_2s_decay
 
 
-def MB_2p3_3d5_regular(t, rho_2p3_3d5_xy, params):
-    """
-    Calculate the change of population of the 2p3_3d5 hole level due to auger decay from the 2s level, photoionization with the pump and seed fields and decay.
-    Parameters
-    ----------
-    t
-    rho_2p3_3d5_xy: np.ndarray
-        Population of the 2p3_3d5 hole level at given t,z
-    params: list
-        List containing the XLO_sim object, seed field Rabi frequency at given t,z, t index, z index, ground state population, pump flux, seed flux for the -1 polarization, seed flux for the +1 polarization (all at given t,z)
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-      
-    X, Omega_psxy, it, iz, rho_2s_xy, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
-    
-    drho_ion = -np.einsum('f, fxy->xy', X.S_2p3_3d5_F[:], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_2p3_3d5_xy
-    drho_2p3_3d5_decay = -X.Gamma3M45fsm1N * rho_2p3_3d5_xy
-    drho_2p3_3d5_auger_feeding = X.GammaA_L1_to_L3M45fs1N * rho_2s_xy
-
-    return drho_ion + drho_2p3_3d5_decay + drho_2p3_3d5_auger_feeding
 
 
 def MB_ground_regular(t, rho_ground_xy, params):

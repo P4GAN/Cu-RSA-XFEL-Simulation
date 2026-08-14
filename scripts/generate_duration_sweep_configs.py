@@ -21,6 +21,10 @@ import yaml
 # above (6 fs) that timescale -- see notebooks/transmittance-vs-duration.ipynb cell 5.
 DEFAULT_DURATION_VALUES = [0.1, 0.2, 0.3, 0.5, 1, 2, 3, 4, 6, 10]
 
+# Must match CHUNKS_PER_CONFIG in submit_duration_sweep.sh -- used below only
+# to print the matching sbatch --array bound.
+CHUNKS_PER_CONFIG = 4
+
 
 def yaml_modify_seed_duration(input_yaml_path, output_yaml_path, new_seed_duration):
     with open(input_yaml_path, "r") as f:
@@ -52,7 +56,10 @@ def main():
             manifest.write(os.path.abspath(out_path) + "\n")
             print(f"wrote {out_path}")
 
-    print(f"manifest: {manifest_path}  ({len(args.duration)} configs)")
+    n = len(args.duration)
+    total_tasks = n * CHUNKS_PER_CONFIG
+    print(f"manifest: {manifest_path}  ({n} configs)")
+    print(f"\nsubmit with:\n  sbatch --array=0-{total_tasks - 1} scripts/submit_duration_sweep.sh")
 
 
 if __name__ == "__main__":

@@ -260,6 +260,7 @@ class XLO_sim:
         else:
             self.auger_feeding_matrix = np.zeros((self.nlevel, self.nlevel))
             self.S_2s_F = np.zeros(3)
+            self.S_ground_Fi[:, -2] = 0.0
         self.transform_matrix = np.asarray([[1, 1], [1j, -1j]]) / np.sqrt(2.0) # transformation matrix from circular polarization vectors to Cartesian
 
         

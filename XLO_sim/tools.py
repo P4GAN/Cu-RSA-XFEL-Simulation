@@ -855,6 +855,30 @@ def find_fwhm(x, y):
     return x[idx_right] - x[idx_left]
 
    
+def transmittance_to_absorbance(T, base=np.e):
+    """
+    Convert transmittance to absorbance.
+
+    Parameters
+    ----------
+    T : array_like
+        Transmittance, I_out / I_in.
+    base : float, optional
+        Logarithm base. Use `np.e` (default) for the natural-log optical
+        depth (A_e = mu * L, directly comparable to an absorption
+        coefficient), or 10 for the decadic optical density (A = -log10(T)).
+
+    Returns
+    -------
+    np.ndarray
+        Absorbance.
+
+    """
+
+    return -np.log(T) / np.log(base)
+
+
+
 def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
     """
     Fourier transform a field from the (time, y) domain to the (omega, theta_y) domain.

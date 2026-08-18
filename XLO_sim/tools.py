@@ -940,9 +940,13 @@ def SF_spectrum_w(X, zint, ypad, tpad):
     purely spontaneously emitted.
 
     Takes that field at z-grid index `zint`, transforms it to the (omega,
-    theta_y) domain via `fft_field_t_y_to_w_thy`, and forms the intensity from
-    the product of the p=0 (Omega) and p=1 (Omega*) components. Returns the
-    spectrum both integrated over theta_y and evaluated on-axis (theta_y = 0).
+    theta_y) domain via `fft_field_t_y_to_w_thy`, and forms the intensity as
+    |FFT(Omega)|^2 from the p=0 (Omega) component and its conjugate (rather
+    than using the stored p=1 (Omega*) component, whose transform would need
+    reflecting about zero frequency/angle to line up -- exact only for the
+    interior bins of an even-length FFT grid, not the Nyquist edge bins).
+    Returns the spectrum both integrated over theta_y and evaluated on-axis
+    (theta_y = 0).
 
     Parameters
     ----------
@@ -969,8 +973,8 @@ def SF_spectrum_w(X, zint, ypad, tpad):
     OmegaSF_z_pstxy = X.Omega_pstxyz[:, :, :, :, :, zint]
     extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad)
     I_SF_w_thy = np.real(
-        np.einsum('sxwy,sxwy->wy', OmegaSF_z_psxwThy[0,:,:,:,:], OmegaSF_z_psxwThy[1,:,:,::-1,::-1])
-    )  
+        np.einsum('sxwy,sxwy->wy', OmegaSF_z_psxwThy[0,:,:,:,:], np.conj(OmegaSF_z_psxwThy[0,:,:,:,:]))
+    )
 
     ygrid_pad = X.ygrid + 2*ypad
     tgrid_pad = X.tgrid + 2*tpad

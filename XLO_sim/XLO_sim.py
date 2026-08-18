@@ -140,7 +140,7 @@ class XLO_sim:
             
         self.flux_factor = 3.0 * self.lambdaKalpha1N ** 2 * self.Gamma_sp_fsm1N / 8.0 / np.pi
         self.field_source_factor = 1j * 3.0 * self.lambdaKalpha1N**2 * self.Gamma_sp_fsm1N * self.n / 16.0 / np.pi 
-        self.Gamma_ij = 0.5 * (self.GammaKfsm1N + self.GammaL3fsm1N)
+        self.Gamma_ij = 0.5 * (self.GammaKfsm1N + self.GammaL3fsm1N) + self.additional_dephasing
         self.convert_pump_phnm2fs_Wcm2 = (self.hwPump     * 1.602e-19 / (1e-9)**2 / 1e-15) / (1 / (1e-2)**2)
         self.convert_SF_phnm2fs_Wcm2   = (self.hwKalpha1N * 1.602e-19 / (1e-9)**2 / 1e-15) / (1 / (1e-2)**2)
         
@@ -252,7 +252,9 @@ class XLO_sim:
         self.S_ion_Fi = S_ion_Fi
         self.Tijs_plus = np.einsum('ijs, ij->ijs', self.Tijs, self.Hij)
         self.Tijs_minus = np.einsum('ijs, ji->ijs', self.Tijs, self.Hij)
-        self.Mij = self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) + self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) + (self.GammaKfsm1N + self.GammaL3fsm1N) * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)) / 2.0
+        self.Mij = (self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) + 
+                    self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) + 
+                    self.Gamma_ij * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)))
         # Incoherent 2s -> 2p_3/2 3d_5/2 Auger feeding
         if self.use_2s_pathway == True:
             self.auger_feeding_matrix = np.diag(self.ei_L3 / np.sum(self.ei_L3)) * self.GammaA_L1_to_L3M45fs1N

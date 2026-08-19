@@ -1025,6 +1025,8 @@ def compute_run_outputs(X, tpad, ypad):
         "womega_ar": womega_ar,
         "I_int_thy_w_0": I_int_thy_w_0,
         "I_int_thy_w_last": I_int_thy_w_last,
+        "I_thy0_w_0": I_thy0_w_0,
+        "I_thy0_w_last": I_thy0_w_last,
         "I_t_0": I_t_0,
         "I_t_last": I_t_last,
         "rho_ee_t_last": rho_ee_t_last,

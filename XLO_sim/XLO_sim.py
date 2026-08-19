@@ -219,15 +219,6 @@ class XLO_sim:
             S_ion_Fi[2, 4] = self.sigma2_Ka1_1s * 1.25
             S_ion_Fi[2, 5] = self.sigma2_Ka1_1s * 0.75
 
-            S_other_F[0] = self.sigma2_pump_other
-            S_other_F[1] = self.sigma2_Ka1_other
-            S_other_F[2] = self.sigma2_Ka1_other
-
-            S_2s_F[0] = self.sigma2_pump_2s
-            S_2s_F[1] = self.sigma2_Ka1_2s
-            S_2s_F[2] = self.sigma2_Ka1_2s
-
-
             self.ei_L3 = np.asarray([1, 1, 1, 1, 0, 0])
             self.ei_K = np.asarray([0, 0, 0, 0, 1, 1])
             
@@ -238,11 +229,38 @@ class XLO_sim:
 
             Gij[0,1] = 1.0
 
-            S_ground_Fi[0, 1] = self.sigma_1s
-            S_ground_Fi[0, 2] = self.sigma_other
+            S_ground_Fi[0, 0] = self.sigma1_pump_2p3
+            S_ground_Fi[0, 1] = self.sigma1_pump_1s
+            S_ground_Fi[0, 2] = self.sigma1_pump_2s
+            S_ground_Fi[0, 3] = self.sigma1_pump_other
+
+            S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 
+            S_ground_Fi[1, 2] = self.sigma1_Ka1_2s
+            S_ground_Fi[1, 3] = self.sigma1_Ka1_other
+
+            S_ground_Fi[2, 0] = self.sigma1_Ka1_2p3 
+            S_ground_Fi[2, 2] = self.sigma1_Ka1_2s
+            S_ground_Fi[2, 3] = self.sigma1_Ka1_other
+
+            S_ion_Fi[0, 0] = self.sigma2_pump_2p3 
+            S_ion_Fi[0, 1] = self.sigma2_pump_1s
+
+            S_ion_Fi[1, 0] = self.sigma2_Ka1_2p3 
+            S_ion_Fi[1, 1] = self.sigma2_Ka1_1s 
+
+            S_ion_Fi[2, 0] = self.sigma2_Ka1_2p3 
+            S_ion_Fi[2, 1] = self.sigma2_Ka1_1s 
 
             self.ei_L3 = np.asarray([1, 0])
             self.ei_K = np.asarray([0, 1])
+
+        S_other_F[0] = self.sigma2_pump_other
+        S_other_F[1] = self.sigma2_Ka1_other
+        S_other_F[2] = self.sigma2_Ka1_other
+
+        S_2s_F[0] = self.sigma2_pump_2s
+        S_2s_F[1] = self.sigma2_Ka1_2s
+        S_2s_F[2] = self.sigma2_Ka1_2s
             
         self.Tijs = Tijs
         self.Gij = Gij

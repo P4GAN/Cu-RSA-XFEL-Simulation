@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a chunk of SASE repetitions for one (E_seed, target energy) config and save per-repetition results.
+"""Run a chunk of SASE repetitions for one (E_seed, target energy) config and save accumulated (sum/sumsq) results.
 
 Batch-job counterpart of notebooks/mono-transmittance-vs-intensity.ipynb (cell 7),
 generalized to take a config path and a [rep_start, rep_end) range from the
@@ -12,11 +12,12 @@ absolute target photon energy is baked into the config's
 monochromator_target_energy_eV by generate_mono_sweep_configs.py rather than
 overridden at run time.
 
-Output layout matches the notebook's expectations: one
-run_at_seed_..._energy_..._repetition_N.npz per repetition, all in the same
-runs_seed_<E>_uJ__energy_<E_target>_eV/ folder regardless of which array task
-produced them, so the existing data_from_folder() aggregation in the notebook
-works unchanged.
+Output layout: one run_at_seed_..._energy_..._reps_<start>-<end>.npz per
+array-task chunk (not per repetition -- see tools.accumulate_run_outputs),
+all in the same runs_seed_<E>_uJ__energy_<E_target>_eV/ folder regardless of
+which array task produced them. tools.data_from_folder() combines chunks'
+sum/sumsq/n_reps losslessly, so it doesn't matter how NREP was split across
+array tasks.
 
 Example:
     python scripts/run_mono_sweep.py \\
@@ -46,7 +47,7 @@ TPAD = 1000
 YPAD = 64
 
 
-def run_simulation(yaml_path, run_path, rep):
+def run_simulation(yaml_path, rep):
     print(f"repetition {rep + 1}", flush=True)
 
     X = XLO_sim(yaml_path)
@@ -55,38 +56,7 @@ def run_simulation(yaml_path, run_path, rep):
     X.configure(seed_field)
     X.run_3D()
 
-    womega_ar, I_int_thy_w_0, I_thy0_w_0 = tools.SF_spectrum_w(X, 0, YPAD, TPAD)
-    womega_ar, I_int_thy_w_last, I_thy0_w_last = tools.SF_spectrum_w(X, -1, YPAD, TPAD)
-
-    target_energy_eV = X.monochromator_target_energy_eV
-    P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', X.Tijs_minus, X.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', X.rho_ijtxyz, X.Tijs_plus) ])
-    
-    I_t_0 = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, 0], X.Omega_pstxyz[1, :, :, :, :, 0])
-    I_t_last = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, -1], X.Omega_pstxyz[1, :, :, :, :, -1])
-    rho_ee_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_plus, optimize=True)
-    rho_gg_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),-1], X.Tijs_minus, optimize=True)
-    rho_eg_t_last = P_pstxyz[0,0,:,int(X.xgrid/2),int(X.ygrid/2),-1]
-    rho_ground_t_last = X.rho_ground_txyz[:,int(X.xgrid/2),int(X.ygrid/2),-1]
-    rho_other_t_last = X.rho_other_txyz[:,int(X.xgrid/2),int(X.ygrid/2),-1]
-    rho_2s_t_last = X.rho_2s_txyz[:,int(X.xgrid/2),int(X.ygrid/2),-1]
-    t_axis = X.t
-
-    date_string = np.datetime_as_string(np.datetime64('now'))
-    np.savez_compressed(
-        os.path.join(run_path, f"run_at_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV__repetition_{rep + 1}_{date_string}.npz"),
-        womega_ar=womega_ar,
-        I_int_thy_w_0=I_int_thy_w_0,
-        I_int_thy_w_last=I_int_thy_w_last,
-        I_t_0=I_t_0,
-        I_t_last=I_t_last,
-        rho_ee_t_last=rho_ee_t_last,
-        rho_gg_t_last=rho_gg_t_last,
-        rho_eg_t_last=rho_eg_t_last,
-        rho_ground_t_last=rho_ground_t_last,
-        rho_other_t_last=rho_other_t_last,
-        rho_2s_t_last=rho_2s_t_last,
-        t_axis=t_axis
-    )
+    return tools.compute_run_outputs(X, TPAD, YPAD)
 
 
 def main():
@@ -116,7 +86,18 @@ def main():
     # behavior and keep this runnable interactively on macOS during testing.
     ctx = mp.get_context("fork")
     with ctx.Pool(processes=nproc) as pool:
-        pool.starmap(run_simulation, [(args.yaml, run_path, rep) for rep in reps])
+        results = pool.starmap(run_simulation, [(args.yaml, rep) for rep in reps])
+
+    acc = tools.accumulate_run_outputs(results)
+    date_string = np.datetime_as_string(np.datetime64('now'))
+    np.savez_compressed(
+        os.path.join(
+            run_path,
+            f"run_at_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV"
+            f"__reps_{args.rep_start}-{args.rep_end}_{date_string}.npz",
+        ),
+        **acc,
+    )
 
 
 if __name__ == "__main__":

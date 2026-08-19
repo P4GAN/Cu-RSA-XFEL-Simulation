@@ -1,4 +1,8 @@
+import os
+from collections import OrderedDict
+
 import numpy as np
+import yaml
 import scipy.constants as sp_const
 from scipy.interpolate import RegularGridInterpolator
 import scipy.constants as sp_const
@@ -984,6 +988,190 @@ def SF_spectrum_w(X, zint, ypad, tpad):
     dtheta_y = theta_y_ar[1] - theta_y_ar[0] 
     I_int_thy_w = np.real(dtheta_y * np.einsum('wa -> w', I_SF_w_thy))
     I_thy0_w = np.real(I_SF_w_thy[:,int(ygrid_pad/2)])
-    
-        
-    return womega_ar, I_int_thy_w, I_thy0_w 
+
+
+    return womega_ar, I_int_thy_w, I_thy0_w
+
+
+def compute_run_outputs(X, tpad, ypad):
+    """Post-process one finished XLO_sim repetition into the arrays the sweep
+    scripts save. Shared by run_mono_sweep.py, run_intensity_sweep.py,
+    run_duration_sweep.py and run_convergence_sweep.py, which differ only in
+    how they seed/configure X before calling X.run_3D().
+
+    rho_eg_t_last is contracted directly from a single (x, y, z) point of
+    X.rho_ijtxyz rather than via the full-grid P_pstxyz = einsum(...) used
+    historically -- same result (P_pstxyz's only consumer was that one
+    point), but avoids materializing a (p, s, t, x, y, z) array per worker
+    just to throw away everything but one (s, t) slice.
+    """
+    womega_ar, I_int_thy_w_0, I_thy0_w_0 = SF_spectrum_w(X, 0, ypad, tpad)
+    womega_ar, I_int_thy_w_last, I_thy0_w_last = SF_spectrum_w(X, -1, ypad, tpad)
+
+    cx, cy = int(X.xgrid / 2), int(X.ygrid / 2)
+    rho_ijt_center = X.rho_ijtxyz[:, :, :, cx, cy, -1]
+
+    I_t_0 = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, 0], X.Omega_pstxyz[1, :, :, :, :, 0])
+    I_t_last = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, -1], X.Omega_pstxyz[1, :, :, :, :, -1])
+    rho_ee_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, rho_ijt_center, X.Tijs_plus, optimize=True)
+    rho_gg_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, rho_ijt_center, X.Tijs_minus, optimize=True)
+    rho_eg_t_last = np.einsum('ijs,jit->st', X.Tijs_minus, rho_ijt_center, optimize=True)[0]
+    rho_ground_t_last = X.rho_ground_txyz[:, cx, cy, -1]
+    rho_other_t_last = X.rho_other_txyz[:, cx, cy, -1]
+    rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
+    t_axis = X.t
+
+    return {
+        "womega_ar": womega_ar,
+        "I_int_thy_w_0": I_int_thy_w_0,
+        "I_int_thy_w_last": I_int_thy_w_last,
+        "I_t_0": I_t_0,
+        "I_t_last": I_t_last,
+        "rho_ee_t_last": rho_ee_t_last,
+        "rho_gg_t_last": rho_gg_t_last,
+        "rho_eg_t_last": rho_eg_t_last,
+        "rho_ground_t_last": rho_ground_t_last,
+        "rho_other_t_last": rho_other_t_last,
+        "rho_2s_t_last": rho_2s_t_last,
+        "t_axis": t_axis,
+    }
+
+
+# Arrays that are deterministic functions of the grid config, not the random
+# SASE draw -- identical across every repetition of a config, so they are
+# saved as-is rather than accumulated into a sum/sumsq pair.
+RUN_OUTPUT_AXIS_KEYS = ("womega_ar", "t_axis")
+
+
+def accumulate_run_outputs(results):
+    """Fold a list of per-repetition output dicts (from compute_run_outputs)
+    into one dict of summary statistics, saved once per SLURM array task
+    instead of once per repetition.
+
+    Every non-axis array is reduced to '<key>_sum' (sum over repetitions)
+    and '<key>_sumsq' (sum of |value|**2 -- real-valued even for complex
+    inputs, since what convergence/error-bar checks need here is the spread
+    of each quantity's magnitude, not its complex-valued "variance"), plus
+    an 'n_reps' count. Because sums are additive, multiple chunks' saved
+    accumulators (e.g. from different array tasks writing into the same
+    runs_.../ folder) can be combined losslessly later by summing again and
+    dividing by the combined n_reps -- see data_from_folder().
+    """
+    acc = {"n_reps": len(results)}
+    for key in results[0]:
+        if key in RUN_OUTPUT_AXIS_KEYS:
+            acc[key] = results[0][key]
+        else:
+            acc[f"{key}_sum"] = sum(r[key] for r in results)
+            acc[f"{key}_sumsq"] = sum(np.abs(r[key]) ** 2 for r in results)
+    return acc
+
+
+def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
+    """Aggregate a sweep's runs_.../ subfolders of accumulate_run_outputs()
+    chunk files into per-group mean (and std, where defined) arrays.
+
+    Each runs_.../ subfolder may contain several chunk .npz files (one per
+    SLURM array task that contributed repetitions to that group); their
+    sum/sumsq/n_reps are combined by summing and dividing by the combined
+    n_reps, so a group's mean is correct even if its chunks covered
+    different repetition counts.
+
+    Parameters
+    ----------
+    folder_path : str
+        Sweep's top-level output directory (contains runs_.../ subfolders).
+    group_keys : str or tuple of str
+        YAML key(s), read from the config copied into each runs_.../
+        folder, used to group/nest results -- e.g. 'E_seed_uJ', or
+        ('E_seed_uJ', 'monochromator_target_energy_eV') for a nested
+        (E_seed, target energy) grouping. A tuple nests one dict level per
+        key, in order.
+    aux_keys : sequence of str
+        YAML keys to return as a flat aux_data list, read from whichever
+        runs_.../ folder is processed last (matching the sweep convention
+        that these are constant across the whole sweep).
+    reverse : bool
+        Sort direction for the outermost group level (nested levels, if
+        any, always sort ascending). Default True (descending) matches the
+        existing E_seed/duration-descending plotting convention.
+
+    Returns
+    -------
+    sorted_accumulated_arrays : OrderedDict
+        Nested (len(group_keys) levels deep) dict of {array_name: mean
+        array} (plus '<array_name>_std' for every accumulated, non-axis
+        array), sorted by group_keys.
+    aux_data : list
+        Values of aux_keys from the last-processed folder.
+    total_n_reps : int
+        Combined repetition count of the last-processed group (all groups
+        share the same count for a well-formed sweep).
+    """
+    if isinstance(group_keys, str):
+        group_keys = (group_keys,)
+
+    accumulated = {}
+    aux_data = None
+    total_n_reps = None
+
+    for runs_folder in os.listdir(folder_path):
+        runs_path = os.path.join(folder_path, runs_folder)
+        if not os.path.isdir(runs_path):
+            continue
+
+        yaml_file = next((f for f in os.listdir(runs_path) if f.endswith('.yaml')), None)
+        if yaml_file is None:
+            print(f"No YAML file found in {runs_path}")
+            continue
+        with open(os.path.join(runs_path, yaml_file), 'r') as f:
+            yaml_data = yaml.safe_load(f)
+
+        group_values = tuple(yaml_data[k] for k in group_keys)
+        aux_data = [yaml_data[k] for k in aux_keys]
+
+        sums, sumsqs, axes = {}, {}, {}
+        n_reps = 0
+        for file_name in os.listdir(runs_path):
+            if not file_name.endswith('.npz'):
+                continue
+            data = np.load(os.path.join(runs_path, file_name))
+            n_reps += int(data['n_reps'])
+            for array_name in data.files:
+                if array_name == 'n_reps':
+                    continue
+                if array_name.endswith('_sum'):
+                    key = array_name[:-len('_sum')]
+                    sums[key] = sums.get(key, 0) + data[array_name]
+                elif array_name.endswith('_sumsq'):
+                    key = array_name[:-len('_sumsq')]
+                    sumsqs[key] = sumsqs.get(key, 0) + data[array_name]
+                else:
+                    axes[array_name] = data[array_name]
+
+        if n_reps == 0:
+            print(f"No .npz chunk files found in {runs_path}")
+            continue
+
+        group_arrays = dict(axes)
+        for key, total_sum in sums.items():
+            mean = total_sum / n_reps
+            group_arrays[key] = mean
+            if key in sumsqs:
+                variance = sumsqs[key] / n_reps - np.abs(mean) ** 2
+                group_arrays[f"{key}_std"] = np.sqrt(np.clip(variance, 0, None))
+
+        node = accumulated
+        for gv in group_values[:-1]:
+            node = node.setdefault(gv, {})
+        node[group_values[-1]] = group_arrays
+        total_n_reps = n_reps
+
+    def sort_level(level_dict, depth):
+        items = sorted(level_dict.items(), key=lambda kv: kv[0], reverse=(reverse if depth == 0 else False))
+        if depth + 1 < len(group_keys):
+            return OrderedDict((k, sort_level(v, depth + 1)) for k, v in items)
+        return OrderedDict(items)
+
+    sorted_accumulated_arrays = sort_level(accumulated, 0)
+    return sorted_accumulated_arrays, aux_data, total_n_reps 

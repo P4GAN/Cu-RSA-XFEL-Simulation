@@ -45,7 +45,7 @@ def run_simulation(yaml_path, rep):
     print(f"repetition {rep + 1}", flush=True)
 
     X = XLO_sim(yaml_path)
-    X.random_seed = rep
+    # X.random_seed = rep
     seed_field = tools.Ocelot_SASE_seed_pstxy(X)
     X.configure(seed_field)
     X.run_3D()

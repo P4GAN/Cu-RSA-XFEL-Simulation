@@ -34,11 +34,11 @@ import os
 import yaml
 
 # 2 halvings, the base size, and 2 doublings.
-DEFAULT_SCALE_VALUES = [0.25, 0.5, 1.0, 2.0, 4.0]
+DEFAULT_SCALE_VALUES = [0.25, 0.5, 1.0, 2.0]
 
 # Must match CHUNKS_PER_CONFIG in submit_spotsize_sweep.sh -- used below only
 # to print the matching sbatch --array bound.
-CHUNKS_PER_CONFIG = 4
+CHUNKS_PER_CONFIG = 8
 
 
 def yaml_modify_spotsize(input_yaml_path, output_yaml_path, scale):
@@ -47,15 +47,9 @@ def yaml_modify_spotsize(input_yaml_path, output_yaml_path, scale):
 
     base_fwhm_x = yaml_data["seed_width_FWHM_x"]
     base_fwhm_y = yaml_data["seed_width_FWHM_y"]
-    base_xmax = yaml_data["xmax"]
-    base_ymax = yaml_data["ymax"]
 
     yaml_data["seed_width_FWHM_x"] = base_fwhm_x * scale
     yaml_data["seed_width_FWHM_y"] = base_fwhm_y * scale
-    yaml_data["xmax"] = base_xmax * scale
-    yaml_data["ymax"] = base_ymax * scale
-    yaml_data["xgrid"] = 64
-    yaml_data["ygrid"] = 64
 
     with open(output_yaml_path, "w") as f:
         yaml.safe_dump(yaml_data, f)

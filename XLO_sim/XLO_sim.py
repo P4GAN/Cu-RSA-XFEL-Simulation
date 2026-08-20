@@ -223,11 +223,12 @@ class XLO_sim:
             self.ei_K = np.asarray([0, 0, 0, 0, 1, 1])
             
         if (self.nlevel)==2:
-            
-            Tijs[0,1,0] = 1.0
-            Tijs[1,0,0] = 1.0
+            Tijs[0,1,0] = np.sqrt(2.0/9.0)
+            Tijs[1,0,0] = np.sqrt(2.0/9.0)
+            Tijs[0,1,1] = np.sqrt(2.0/9.0)   
+            Tijs[1,0,1] = np.sqrt(2.0/9.0) 
 
-            Gij[0,1] = 1.0
+            Gij[0,1] = 2.0 / 3.0
 
             S_ground_Fi[0, 0] = self.sigma1_pump_2p3
             S_ground_Fi[0, 1] = self.sigma1_pump_1s

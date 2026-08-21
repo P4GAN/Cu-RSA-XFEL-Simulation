@@ -1,5 +1,8 @@
 import os
+import time
+import multiprocessing as mp
 from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import yaml
@@ -1100,6 +1103,107 @@ def accumulate_run_outputs(results):
         acc[f"{key}_sumsq"] = (np.abs(finite) ** 2).sum(axis=0)
         acc[f"{key}_count"] = valid.sum(axis=0)
     return acc
+
+
+def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, nproc,
+                     checkpoint_every=None, ctx_method="fork"):
+    """Run `reps` repetitions of `run_simulation(yaml_path, rep)` across a
+    process pool and save the accumulated (sum/sumsq/count) result. Shared
+    by all run_*_sweep.py scripts.
+
+    Written to survive a failure mode seen on the SLURM cluster these run
+    on: a job whose per-repetition logs show every repetition has started
+    (or even finished), yet the job itself hangs past its --time limit
+    with nothing written to disk. Two things about the old
+    multiprocessing.Pool.starmap-based loop caused that:
+
+    - If a worker dies unexpectedly (most plausibly OOM-killed by the
+      kernel -- these sweeps run dozens of multi-GB worker processes per
+      node), Pool.starmap blocks forever waiting for a result that will
+      never arrive: nothing is logged, no exception is raised, and the
+      job just sits until SLURM's wall-clock kill fires. This uses
+      concurrent.futures.ProcessPoolExecutor instead, which detects the
+      dead worker and raises BrokenProcessPool on the next result fetch,
+      so the failure is visible in the job's .err log instead of being
+      indistinguishable from an ordinary timeout.
+    - The accumulated sum/sumsq/count of whatever repetitions have
+      completed so far is checkpointed to '<output_stem>.partial.npz'
+      every `checkpoint_every` completions (default: nproc, i.e. roughly
+      once per parallel wave). If the job is killed anyway (e.g. a
+      repetition that's genuinely stuck rather than dead, which a broken
+      pool won't catch), the repetitions completed up to the last
+      checkpoint are still on disk -- data_from_folder() already sums
+      every .npz chunk file it finds in a runs_.../ folder, so a leftover
+      partial file is picked up automatically instead of losing the whole
+      chunk's work. The partial file is removed once the chunk finishes
+      successfully and its final file is written, so a later successful
+      retry of the same chunk doesn't double-count it.
+
+    Parameters
+    ----------
+    run_simulation : callable(yaml_path, rep) -> dict
+        Per-repetition worker function (e.g. run_mono_sweep.run_simulation).
+        Must be a module-level function so it can be pickled to workers.
+    yaml_path : str
+    reps : sequence of int
+    run_path : str
+        Folder to write '<output_stem>_<timestamp>.npz' /
+        '<output_stem>.partial.npz' into.
+    output_stem : str
+        Filename stem, e.g. 'run_at_seed_30.0_uJ__reps_0-20'.
+    nproc : int
+        Worker processes.
+    checkpoint_every : int, optional
+        Completions between checkpoint writes (default: nproc).
+    ctx_method : str
+        multiprocessing start method (default 'fork', matching the
+        notebooks this is a batch-job counterpart of).
+
+    Returns
+    -------
+    str
+        Path to the final saved .npz file.
+    """
+    checkpoint_every = checkpoint_every or max(1, nproc)
+    partial_path = os.path.join(run_path, f"{output_stem}.partial.npz")
+
+    chunk_t0 = time.perf_counter()
+    ctx = mp.get_context(ctx_method)
+    results = []
+    executor = ProcessPoolExecutor(max_workers=nproc, mp_context=ctx)
+    futures = {executor.submit(run_simulation, yaml_path, rep): rep for rep in reps}
+    try:
+        for i, future in enumerate(as_completed(futures), start=1):
+            results.append(future.result())
+            if i % checkpoint_every == 0 and i < len(reps):
+                elapsed = time.perf_counter() - chunk_t0
+                np.savez_compressed(partial_path, **accumulate_run_outputs(results))
+                print(f"checkpoint: {len(results)}/{len(reps)} repetitions done "
+                      f"({elapsed:.1f}s elapsed, {elapsed / len(results):.1f}s/rep avg) -> {partial_path}",
+                      flush=True)
+    except Exception as e:
+        elapsed = time.perf_counter() - chunk_t0
+        print(f"{type(e).__name__} after {len(results)}/{len(reps)} completed repetitions "
+              f"({elapsed:.1f}s elapsed) -- a worker likely died (e.g. OOM-killed) or raised; "
+              f"see traceback below", flush=True)
+        if results:
+            np.savez_compressed(partial_path, **accumulate_run_outputs(results))
+            print(f"Saved {len(results)} completed repetitions to {partial_path} before re-raising", flush=True)
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
+
+    elapsed = time.perf_counter() - chunk_t0
+    print(f"chunk finished: {len(results)} repetitions in {elapsed:.1f}s "
+          f"({elapsed / max(1, len(results)):.1f}s/rep avg, {nproc} processes)", flush=True)
+
+    date_string = np.datetime_as_string(np.datetime64('now'))
+    final_path = os.path.join(run_path, f"{output_stem}_{date_string}.npz")
+    np.savez_compressed(final_path, **accumulate_run_outputs(results))
+    if os.path.exists(partial_path):
+        os.remove(partial_path)
+    return final_path
 
 
 def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):

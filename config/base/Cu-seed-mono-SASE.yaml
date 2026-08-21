@@ -62,7 +62,7 @@ zgrid: 15
 xgrid: 8
 ygrid: 8
 
-tmax: 60.0
+tmax: 40.0
 
 zmax: 20.0e+3
 xmax: 250.0
@@ -81,6 +81,7 @@ pump_pulse_format: 'None'
 seed_pulse_format: 'Ocelot_SASE_seed_111_dcm_pstxy'
 E_seed_uJ: 40
 seed_duration_FWHM_t: 6.0
+t_peak: 10
 seed_width_FWHM_x: 180
 seed_width_FWHM_y: 220
 seed_FEL_bandwidth: 1.5e-3

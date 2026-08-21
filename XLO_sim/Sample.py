@@ -22,10 +22,7 @@ class XLO_sample:
             # Seed field will be converted to RH and LH polarization
             self.seed_field = tools.linear_to_circular(X, seed_field)
     
-        self.pump_field = X.pump_pulse_3D.copy()
-
             
-        
     def init_n_level_3D(self, X):
         """
         Create arrays for storing the density matrix elements and emitted field amplitudes for propagation with and without field absorption. Check if the seed field is present and set up the initial conditions.
@@ -47,27 +44,17 @@ class XLO_sample:
         rho_ijtxyz = np.zeros((X.nlevel, X.nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
         Omega_pstxyz = (0.0 + 0 * 1j) * np.ones((2, 2, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
 
-        if X.nlevel == 6:
-            for i in range(4):
-                rho_ijtxyz[i, i, 0, :, :, :] = 1.0/4.0 + 1j * 0.0
-        elif X.nlevel == 2:
-            rho_ijtxyz[0, 0, 0, :, :, :] = 1.0 + 1j * 0.0
-        
         if (self.is_seeded == True):
             Omega_pstxyz[:,:,:,:,:,0] = self.seed_field
             
         rho_ground_txyz = np.ones((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
         rho_other_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
         rho_2s_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
-        Pfield_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
-        J_P_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid))
-        Pfield_txyz[:, :, :, 0] = self.pump_field.copy()
-        J_P_txyz[:, :, :, 0] = np.real(Pfield_txyz[:, :, :, 0] * np.conj(Pfield_txyz[:, :, :, 0]))
 
         J_Omega_minus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
         J_Omega_plus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
 
-        return rho_ground_txyz, rho_other_txyz, rho_2s_txyz, Pfield_txyz, J_P_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy
+        return rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy
 
 
   
@@ -104,14 +91,9 @@ class XLO_sample:
         outputs actually read (see tools.compute_run_outputs).
         """
 
-        rho_ground_txyz, rho_other_txyz, rho_2s_txyz, Pfield_txyz, J_P_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy = self.init_n_level_3D(X)
+        rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy = self.init_n_level_3D(X)
 
-        Pfield_txy = Pfield_txyz[:, :, :, 0].copy()
-        J_P_txy = J_P_txyz[:, :, :, 0].copy()
-
-       
         Omega_pstxy = Omega_pstxyz[:, :, :, :, :, 0].copy()
-        
         
         # Main loop begins. Iterate over longitudinal coordinate        
         for iz in range(0, X.zgrid):
@@ -125,12 +107,12 @@ class XLO_sample:
             ######################
             # Loop over simulation time window begins      
             for it in range(0, X.tgrid):
-                d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, rho_2s_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :], it, iz])
+                d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], rho_ground_xy, rho_2s_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
 
-                rho_ijxy += d_rho_it_reg #+ d_rho_it_noise 
+                rho_ijxy += d_rho_it_reg 
                 rho_ground_xy += d_rho_ground_it
                 rho_other_xy += d_rho_other_it
                 rho_2s_xy += d_rho_2s_it
@@ -140,21 +122,14 @@ class XLO_sample:
                 rho_2s_txyz[it, :, :, iz] = rho_2s_xy
                 rho_ijtxyz[:, :, it, :, :, iz] = rho_ijxy
                 
-                kappa_P_xyz = Model.absorption(rho_ground_txyz[it, :, :, iz-1:iz+1], rho_other_txyz[it, :, :, iz-1:iz+1], 
-                                               rho_2s_txyz[it, :, :, iz-1:iz+1], 
-                                               rho_ijtxyz[:, :, it, :, :, iz-1:iz+1], [X, it, iz, 'pump'])
-                
                 if (iz != 0):
-                    Pfield_txy[it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Pfield_txy[it, :, :], X.dz, iz * X.dz, kappa_P_xyz, X.lambdaPump, 'pump')
-                    J_P_txy[it, :, :] = np.real(Pfield_txy[it, :, :] * np.conj(Pfield_txy[it, :, :]))
-                    
-                if (iz != 0):
-                    kappa_Omega_psxyz = Model.absorption(rho_ground_txyz[it, :, :, iz-1:iz+1], rho_other_txyz[it, :, :, iz-1:iz+1], 
+                    kappa_Omega_psxyz = Model.absorption(X, rho_ground_txyz[it, :, :, iz-1:iz+1], 
+                                                         rho_other_txyz[it, :, :, iz-1:iz+1], 
                                                          rho_2s_txyz[it, :, :, iz-1:iz+1], 
-                                                         rho_ijtxyz[:, :, it, :, :, iz-1:iz+1], [X, it, iz, 'field'])
-                    Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N, 'ASE') 
+                                                         rho_ijtxyz[:, :, it, :, :, iz-1:iz+1])
+                    Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N) 
                     
-                Omega_pstxy[:, :, it, :, :] +=  1.0 * X.dz * Model.Omega_source_regular(rho_ijtxyz[:, :, it, :, :, iz], [X, it, iz]) 
+                Omega_pstxy[:, :, it, :, :] +=  1.0 * X.dz * Model.Omega_source_regular(X, rho_ijtxyz[:, :, it, :, :, iz]) 
                     
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
@@ -165,9 +140,6 @@ class XLO_sample:
             if (iz != X.zgrid-1):
                 Omega_pstxyz[:, :, :, :, :, iz + 1] = Omega_pstxy
 
-            Pfield_txyz[:, :, :, iz] = Pfield_txy
-            J_P_txyz[:, :, :, iz] = J_P_txy
-
         ######################
         # Main loop ends
 
@@ -175,8 +147,6 @@ class XLO_sample:
         self.Omega_pstxyz = Omega_pstxyz
         
         self.rho_ground_txyz = np.real(rho_ground_txyz)
-        self.J_P_txyz = J_P_txyz
-        self.Pfield_txyz = Pfield_txyz
 
         self.rho_2s_txyz = np.real(rho_2s_txyz)
         self.rho_other_txyz = np.real(rho_other_txyz)
@@ -198,7 +168,7 @@ class XLO_sample:
           after the loop only the last z's buffer is exposed, as a length-1 z
           axis (so existing [...,-1]/[...,0]-style indexing elsewhere keeps
           working unchanged).
-        - Omega_pstxyz/Pfield_txyz/J_P_txyz/J_Omega_(minus|plus)_txyz: never
+        - Omega_pstxyz/Pfield_txyz/J_Omega_(minus|plus)_txyz: never
           read back from storage during the marching -- only the live "xy"
           rolling variables (Omega_pstxy etc.) are, so no rolling buffer is
           needed at all, just a snapshot at z=0 and z=-1, taken at exactly the
@@ -244,21 +214,8 @@ class XLO_sample:
         Omega_pstxyz_z0 = Omega_pstxy.copy()
         Omega_pstxyz_zlast = Omega_pstxyz_z0 
 
-        Pfield_txy = self.pump_field.copy().astype(complex)
-        J_P_txy = np.real(Pfield_txy * np.conj(Pfield_txy))
         J_Omega_minus_txy = np.zeros((tgrid, xgrid, ygrid))
         J_Omega_plus_txy = np.zeros((tgrid, xgrid, ygrid))
-
-        # Untouched during iz==0 in the full-history path too (guarded there by
-        # `if iz != 0`), so the z=0 snapshot is just these initial values.
-        Pfield_txyz_z0 = Pfield_txy.copy()
-        J_P_txyz_z0 = J_P_txy.copy()
-        J_Omega_minus_txyz_z0 = J_Omega_minus_txy.copy()
-        J_Omega_plus_txyz_z0 = J_Omega_plus_txy.copy()
-        Pfield_txyz_zlast = Pfield_txyz_z0
-        J_P_txyz_zlast = J_P_txyz_z0
-        J_Omega_minus_txyz_zlast = J_Omega_minus_txyz_z0
-        J_Omega_plus_txyz_zlast = J_Omega_plus_txyz_z0
 
         prev_rho_ground_txy = prev_rho_other_txy = prev_rho_2s_txy = prev_rho_ijtxy = None
 
@@ -277,15 +234,15 @@ class XLO_sample:
             ######################
             # Loop over simulation time window begins
             for it in range(0, tgrid):
-                d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, rho_2s_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], it, iz, rho_ground_xy, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_P_txy[it, :, :], J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :], it, iz])
+                d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], rho_ground_xy, rho_2s_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
 
-                rho_ijxy = rho_ijxy + d_rho_it_reg
-                rho_ground_xy = rho_ground_xy + d_rho_ground_it
-                rho_other_xy = rho_other_xy + d_rho_other_it
-                rho_2s_xy = rho_2s_xy + d_rho_2s_it
+                rho_ijxy += d_rho_it_reg
+                rho_ground_xy += d_rho_ground_it
+                rho_other_xy += d_rho_other_it
+                rho_2s_xy += d_rho_2s_it
 
                 curr_rho_ground_txy[it, :, :] = np.real(rho_ground_xy)
                 curr_rho_other_txy[it, :, :] = np.real(rho_other_xy)
@@ -302,14 +259,10 @@ class XLO_sample:
                     window_2s = np.stack([prev_rho_2s_txy[it, :, :], curr_rho_2s_txy[it, :, :]], axis=-1).astype(complex)
                     window_ij = np.stack([prev_rho_ijtxy[:, :, it, :, :], curr_rho_ijtxy[:, :, it, :, :]], axis=-1)
 
-                    kappa_P_xyz = Model.absorption(window_ground, window_other, window_2s, window_ij, [X, it, iz, 'pump'])
-                    Pfield_txy[it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Pfield_txy[it, :, :], X.dz, iz * X.dz, kappa_P_xyz, X.lambdaPump, 'pump')
-                    J_P_txy[it, :, :] = np.real(Pfield_txy[it, :, :] * np.conj(Pfield_txy[it, :, :]))
+                    kappa_Omega_psxyz = Model.absorption(X, window_ground, window_other, window_2s, window_ij)
+                    Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
 
-                    kappa_Omega_psxyz = Model.absorption(window_ground, window_other, window_2s, window_ij, [X, it, iz, 'field'])
-                    Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N, 'ASE')
-
-                Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(curr_rho_ijtxy[:, :, it, :, :], [X, it, iz])
+                Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, curr_rho_ijtxy[:, :, it, :, :])
 
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
@@ -323,12 +276,6 @@ class XLO_sample:
             if iz == zgrid - 2:
                 Omega_pstxyz_zlast = Omega_pstxy.copy()
 
-            if iz == zgrid - 1:
-                Pfield_txyz_zlast = Pfield_txy.copy()
-                J_P_txyz_zlast = J_P_txy.copy()
-                J_Omega_minus_txyz_zlast = J_Omega_minus_txy.copy()
-                J_Omega_plus_txyz_zlast = J_Omega_plus_txy.copy()
-
             prev_rho_ground_txy = curr_rho_ground_txy
             prev_rho_other_txy = curr_rho_other_txy
             prev_rho_2s_txy = curr_rho_2s_txy
@@ -341,8 +288,6 @@ class XLO_sample:
         self.Omega_pstxyz = np.stack([Omega_pstxyz_z0, Omega_pstxyz_zlast], axis=-1)
 
         self.rho_ground_txyz = curr_rho_ground_txy[:, :, :, np.newaxis]
-        self.J_P_txyz = np.stack([J_P_txyz_z0, J_P_txyz_zlast], axis=-1)
-        self.Pfield_txyz = np.stack([Pfield_txyz_z0, Pfield_txyz_zlast], axis=-1)
 
         self.rho_2s_txyz = curr_rho_2s_txy[:, :, :, np.newaxis]
         self.rho_other_txyz = curr_rho_other_txy[:, :, :, np.newaxis]

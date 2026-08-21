@@ -5,9 +5,9 @@ from . import tools
 
 @njit(cache=True, fastmath=True)
 def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus, Tijs_minus,
-                             Mij, Gamma_sp_Gij, S_ground_Fi0, S_ground_Fif, S_ion_Fi0, S_ion_Fif,
+                             Mij, Gamma_sp_Gij, S_ground_Fif, S_ion_Fif,
                              auger_feeding_diag,
-                             rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, J_P_xy):
+                             rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy):
     nlevel = rho_ijxy.shape[0]
     s_dim = Tijs_plus.shape[2]
     nx = rho_ijxy.shape[2]
@@ -29,19 +29,16 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
     for i in range(nlevel):
         for x in range(nx):
             for y in range(ny):
-                diag_sum = 0.0j
+                pump_i = 0.0j
                 for s in range(nlevel):
-                    diag_sum += Gamma_sp_Gij[i, s] * rho_ijxy[s, s, x, y]
+                    pump_i += Gamma_sp_Gij[i, s] * rho_ijxy[s, s, x, y]
 
-                pump_i = diag_sum + S_ground_Fi0[i] * J_P_xy[x, y] * rho_ground_xy[x, y]
                 pump_i += S_ground_Fif[0, i] * J_Omega_minus_xy[x, y] * rho_ground_xy[x, y]
                 pump_i += S_ground_Fif[1, i] * J_Omega_plus_xy[x, y] * rho_ground_xy[x, y]
                 pump_i += auger_feeding_diag[i] * rho_2s_xy[x, y]
                 pump_term[i, x, y] = pump_i
 
-                gion = S_ion_Fi0[i] * J_P_xy[x, y]
-                gion += S_ion_Fif[0, i] * J_Omega_minus_xy[x, y]
-                gion += S_ion_Fif[1, i] * J_Omega_plus_xy[x, y]
+                gion = S_ion_Fif[0, i] * J_Omega_minus_xy[x, y] + S_ion_Fif[1, i] * J_Omega_plus_xy[x, y]
                 gamma_ion[i, x, y] = gion
 
     drho = np.zeros((nlevel, nlevel, nx, ny), dtype=np.complex128)
@@ -80,37 +77,16 @@ def MB_nlevel_regular(t, rho_ijxy, params):
 
     """    
     
-    X, Omega_psxy, it, iz, rho_ground_xy, rho_2s_xy, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy  = params
+    X, Omega_psxy, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy  = params
 
     Omega_plus_sxy = Omega_psxy[0, :, :, :]
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
-
-    ######### Old unoptimized version
-
-    # Hint = 1j * (np.einsum('ijs, sxy->ijxy', X.Tijs_plus, Omega_plus_sxy) + np.einsum('ijs, sxy->ijxy', X.Tijs_minus, Omega_minus_sxy)) 
-    # drho_MB = np.einsum('isxy,sjxy->ijxy', Hint, rho_ijxy) - np.einsum('isxy,sjxy->ijxy', rho_ijxy, Hint)
-
-    # drho_decay = np.einsum('ij, ijxy->ijxy', -X.Mij, rho_ijxy)
-    # drho_spontaneous = np.einsum('ij, ixy->ijxy', X.delta_ij, np.einsum('is, ssxy->ixy', X.Gamma_sp_fsm1N * X.Gij, rho_ijxy))
-
-    # drho_pump = np.einsum('ij, ixy->ijxy', X.delta_ij, np.einsum('fi, fxy->ixy', X.S_ground_Fi[:, :-2], np.einsum('fxy, xy-> fxy', [J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy], rho_ground_xy)))
-
-    # gamma_ion_ixy = np.einsum('fi, fxy->ixy', X.S_ion_Fi[:, :], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy]))
-    # drho_ion = - 1.0 / 2.0 * (np.einsum('ixy, ijxy->ijxy', gamma_ion_ixy, rho_ijxy) + np.einsum('jxy, ijxy->ijxy', gamma_ion_ixy, rho_ijxy))
-
-    # drho_auger_feeding = np.einsum('ij,xy->ijxy', X.auger_feeding_matrix, rho_2s_xy)
-
-    # return drho_MB + drho_decay + drho_spontaneous + drho_pump + drho_ion + drho_auger_feeding
-
-    #########
-
-    # New version without einsum, optimized with numba
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
-        X.Mij, X.Gamma_sp_Gij, X.S_ground_Fi[0, :-1], X.S_ground_Fi[1:, :-1],
-        X.S_ion_Fi[0, :], X.S_ion_Fi[1:, :], np.diag(X.auger_feeding_matrix),
-        rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, J_P_xy,
+        X.Mij, X.Gamma_sp_Gij, X.S_ground_Fi[:, :-1],  X.S_ion_Fi[:, :], 
+        np.diag(X.auger_feeding_matrix), rho_ground_xy, rho_2s_xy, 
+        J_Omega_minus_xy, J_Omega_plus_xy,
     )
 
 
@@ -131,10 +107,10 @@ def MB_other_regular(t, rho_other_xy, params):
 
     """
       
-    X, Omega_psxy, it, iz, rho_ground_xy, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
+    X, rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
     
-    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -1], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
-    drho_ion = -np.einsum('f, fxy->xy', X.S_other_F[:], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_other_xy
+    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -1], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    drho_ion = -np.einsum('f, fxy->xy', X.S_other_F[:], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_other_xy
 
     return drho_pump + drho_ion
 
@@ -156,10 +132,10 @@ def MB_2s_regular(t, rho_2s_xy, params):
 
     """
       
-    X, Omega_psxy, it, iz, rho_ground_xy, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
+    X, rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
     
-    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -2], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
-    drho_ion = -np.einsum('f, fxy->xy', X.S_2s_F[:], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_2s_xy
+    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -2], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    drho_ion = -np.einsum('f, fxy->xy', X.S_2s_F[:], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_2s_xy
     drho_2s_decay = -X.GammaL1fsm1N * rho_2s_xy
 
     return drho_pump + drho_ion + drho_2s_decay
@@ -185,16 +161,16 @@ def MB_ground_regular(t, rho_ground_xy, params):
 
     """
     
-    X, J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy, it, iz = params
+    X, J_Omega_minus_xy, J_Omega_plus_xy = params
 
-    drho = -np.einsum('fi, fxy->xy', X.S_ground_Fi[:, :], np.array([J_P_xy, J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    drho = -np.einsum('fi, fxy->xy', X.S_ground_Fi[:, :], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
 
     return drho
 
 
 
 
-def Omega_source_regular(rho_ijxy, params):
+def Omega_source_regular(X, rho_ijxy):
     """
     Calculate the classical contribution to ASE field at a given point of space and time (t,z).
 
@@ -210,9 +186,7 @@ def Omega_source_regular(rho_ijxy, params):
     np.ndarray
 
     """
-    
-    X, it, iz = params
-    
+        
     rho_ijxy_hermitian = rho_ijxy + np.conj(np.swapaxes(rho_ijxy, 0, 1))
     
     Omega_plus_source = np.einsum('ijs, jixy-> sxy', X.Tijs_minus, rho_ijxy_hermitian)
@@ -221,44 +195,7 @@ def Omega_source_regular(rho_ijxy, params):
     return X.field_source_factor * np.einsum('p, psxy -> psxy', X.e_sign, np.asarray([Omega_plus_source, Omega_minus_source]))
 
 
-def pump_two_level(t, Rho, params):
-
-    rho_0, rho_i = Rho
-    X, j0, i, j = params
-
-    f1 = -X.sigma_ground_pump * rho_0[:, :] * j0[i, :, :]
-    f2 = X.sigma1_pump_1s * rho_0[:, :] * j0[i, :, :] 
-    
-    return np.array([f1, f2])
-
-
-def absorption_Omega(rho_ijxyz, rho_other_xyz, params):
-    """
-    Calculate the absorption coefficient of the seed field due to photoionization of the ground and all ionic states, and the compound. The ground state population is pre-configured.
-
-    Parameters
-    ----------
-    rho_ijxyz:
-        Density matrix at given t,z
-    rho_other_xyz:
-        Additional ionic population at given t,z
-    params: list
-        List containing the XLO_sim object, t index and z index
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-    
-    X, it, iz = params
-
-    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', X.rho_ground_txyz[it, :, :, iz-1:iz+1], X.S_ground_Fi[1:, :]) + X.n * np.einsum('s, xyz->sxyz', X.S_other_F[1:],  rho_other_xyz) + X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[1:, :], rho_ijxyz) + X.n * X.sigma_compound_Ka1
-
-    return np.array([kappa_Omega_sxyz, kappa_Omega_sxyz])
-
-
-def absorption(rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, params):
+def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz):
     """
     Calculate the absorption coefficient of the pump or seed field due to photoionization of the ground and all ionic states, and the compound. The ground state population is not pre-configured.
     Parameters
@@ -271,8 +208,6 @@ def absorption(rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, params):
         2s hole level population at given t,z
     rho_ijxyz: np.ndarray
         Density matrix at given t,z
-    params: list
-        List containing the XLO_sim object, t index, z index, and field name
 
     Returns
     -------
@@ -280,22 +215,10 @@ def absorption(rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, params):
 
     """
     
-    X, it, iz, field = params
+    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', rho_ground_xyz, X.S_ground_Fi[:, :]) + \
+                        X.n * np.einsum('xyz, s->sxyz', rho_other_xyz, X.S_other_F[:]) + \
+                        X.n * np.einsum('xyz, s->sxyz', rho_2s_xyz, X.S_2s_F[:]) + \
+                        X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[:, :], rho_ijxyz) + \
+                        X.n * X.sigma_compound_Ka1
 
-    if field == 'pump':
-        kappa_P_xyz =   X.n * X.sigma_ground_pump * rho_ground_xyz + \
-                        X.n * X.S_other_F[0] * rho_other_xyz + \
-                        X.n * X.S_2s_F[0] * rho_2s_xyz + \
-                        X.n * np.einsum('i, iixyz->xyz', X.S_ion_Fi[0, :], rho_ijxyz) + \
-                        X.n * X.sigma_compound_pump
-
-        return kappa_P_xyz
-
-    else:
-        kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', rho_ground_xyz, X.S_ground_Fi[1:, :]) + \
-                            X.n * np.einsum('xyz, s->sxyz', rho_other_xyz, X.S_other_F[1:]) + \
-                            X.n * np.einsum('xyz, s->sxyz', rho_2s_xyz, X.S_2s_F[1:]) + \
-                            X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[1:, :], rho_ijxyz) + \
-                            X.n * X.sigma_compound_Ka1
-
-        return np.array([kappa_Omega_sxyz, kappa_Omega_sxyz])
+    return np.array([kappa_Omega_sxyz, kappa_Omega_sxyz])

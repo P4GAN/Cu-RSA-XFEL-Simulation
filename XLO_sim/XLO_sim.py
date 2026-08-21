@@ -33,15 +33,8 @@ class XLO_sim:
             # reproduces the same z-marching physics storing only those.
             self.keep_z_history = True
 
-        self.sigma_ground_pump = self.sigma1_pump_1s + self.sigma1_pump_2p3 + self.sigma1_pump_other
-        self.sigma_compound_pump = sum(element['N_atoms'] * element['sigma_compound_pump'] for element in self.compound.values())
         self.sigma_compound_Ka1 = sum(element['N_atoms'] * element['sigma_compound_Ka1'] for element in self.compound.values())
             
-        self.is_kfilter = self.config['enable_kfilter']
-
-        self.lambdaPump = 2.0 * np.pi * self.c * self.hbar / self.hwPump
-        self.kp = 2.0 * np.pi / self.lambdaPump
-        
         self.lambdaKalpha1N = 2.0 * np.pi * self.c * self.hbar / self.hwKalpha1N
         self.k0 = 2.0 * np.pi / self.lambdaKalpha1N
 
@@ -54,81 +47,12 @@ class XLO_sim:
         self.t0 = self.tmax / 2.0
                
         self.optics = XLO_optics.XLO_optics(self)
-
-        if self.auto_grid == True:
-            print('Autogrid is enabled. Analyzing geometry...')
-            print('theta_geom (mrad): ', self.theta_geom * 1e3, '; theta_pump (mrad): ', self.theta_pump * 1e3, '; theta_max (mrad): ', self.theta_max * 1e3)
-            self.xmax = 2.0 * self.sigma_r + self.zmax * self.theta_max + self.lambdaPump/ 2.0 / self.sigma_r * self.zmax
-            self.ymax = 2.0 * self.sigma_r + self.zmax * self.theta_max + self.lambdaPump/ 2.0 / self.sigma_r * self.zmax
-            print('Resized xmax, ymax to: ', self.xmax, self.ymax)
-            
-            self.xgrid = int(2.0 * self.xmax / (self.lambdaKalpha1N / 5.0 / self.theta_max))
-            self.ygrid = int(2.0 * self.ymax / (self.lambdaKalpha1N / 5.0 / self.theta_max))
-            print('Resized xgrid, ygrid to: ', self.xgrid, self.ygrid)
-
             
         domains_txy, meshes_txy, step_sizes_txy = self.optics.nd_space((0, -self.xmax, -self.ymax), (self.tmax, self.xmax, self.ymax), (self.tgrid, self.xgrid, self.ygrid))
         
         self.t_mesh, self.x_mesh, self.y_mesh = meshes_txy
         self.t = domains_txy[0]
         self.dt, self.dx, self.dy = step_sizes_txy
-
-        self.t_pump_max = 0
-        if self.pump_pulse_format == "None":
-            self.pump_pulse_3D = np.zeros((self.tgrid, self.xgrid, self.ygrid))
-        
-        if self.pump_pulse_format == 'Gaussian':            
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D(self)          
-            
-        if self.pump_pulse_format == 'Gaussian_pulse_aniso_pump':            
-            self.pump_pulse_3D = tools.Gaussian_pulse_aniso_pump(self)       
-            self.t_pump_max = self.tmax / 2
-            
-        if self.pump_pulse_format == 'Gaussian_shifted':
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted(self)      
-
-        if self.pump_pulse_format == 'Gaussian_shifted_splitted':
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted_splitted(self)        
-            
-        if self.pump_pulse_format == 'Gaussian_pulse_3D_t_shifted_chirped':
-            self.pump_pulse_3D = tools.Gaussian_pulse_3D_t_shifted_chirped(self)  
-            
-        if self.pump_pulse_format == 'Ocelot_SASE_pulse_pump_txy':
-            self.pump_pulse_3D = tools.Ocelot_SASE_pulse_pump_txy(self)                
-            self.t_pump_max = self.tmax / 2
-            
-        if self.pump_pulse_format == 'SASE':
-            self.N_modes = self.config['N_modes']
-            self.sigma_coh = self.config['sigma_coh']
-            self.pump_pulse_3D = tools.SASE_pulse_3D_with_q(self)
-
-        if self.pump_pulse_format == 'loadh5':
-            print('loading from h5')
-            h5f = h5py.File(self.pump_h5file_name, 'r')
-            self.pump_pulse_3D= h5f['pulse'][:]
-            h5f.close()
-            pulse_shape=self.pump_pulse_3D.shape
-            
-            if(pulse_shape[0]!=self.tgrid) :
-                print('pulse t grid ' , pulse_shape[0], ' tgrid ', self.tgrid)
-                raise Exception('loaded pulse time grid must equal configured grid size')
-            if(pulse_shape[1]!=self.xgrid) :
-                print('pulse x grid ' , pulse_shape[1], ' xgrid ', self.xgrid)
-                raise Exception('loaded pulse x grid must equal configured grid size')
-            if(pulse_shape[2]!=self.ygrid) :
-                print('pulse y grid ' , pulse_shape[2], ' ygrid ', self.ygrid)
-                raise Exception('loaded pulse y grid must equal configured grid size')
-            print('Using Loaded pump profile from h5 file')
-            
-        if self.pump_pulse_format == 'GenesisV2':
-            self.fname_GenV2 = self.config['fname_GenV2']
-            self.ncar_GenV2 = self.config['ncar_GenV2']
-            mag_factor = self.config['mag_factor_GenV2']
-            crop_t = self.config['crop_t']
-            crop_x = self.config['crop_x']
-            self.dgrid_GenV2 = self.config['dgrid_GenV2'] / mag_factor
-            self.zsep_GenV2 = self.config['zsep_GenV2']
-            self.pump_pulse_3D = tools.pump_from_file_genesis2_DFL(self, crop_t, crop_x)
 
         self.GammaKfsm1N = self.config['GammaKeVN'] / self.hbar
         self.GammaL3fsm1N = self.config['GammaL3eVN'] / self.hbar
@@ -150,21 +74,17 @@ class XLO_sim:
         self.flux_factor = 3.0 * self.lambdaKalpha1N ** 2 * self.Gamma_sp_fsm1N / 8.0 / np.pi
         self.field_source_factor = 1j * 3.0 * self.lambdaKalpha1N**2 * self.Gamma_sp_fsm1N * self.n / 16.0 / np.pi 
         self.Gamma_ij = 0.5 * (self.GammaKfsm1N + self.GammaL3fsm1N) + self.additional_dephasing
-        self.convert_pump_phnm2fs_Wcm2 = (self.hwPump     * 1.602e-19 / (1e-9)**2 / 1e-15) / (1 / (1e-2)**2)
         self.convert_SF_phnm2fs_Wcm2   = (self.hwKalpha1N * 1.602e-19 / (1e-9)**2 / 1e-15) / (1 / (1e-2)**2)
-        
-        self.noise_f_factor = np.sqrt((3.0/(8.0 * np.pi)) * (self.lambdaKalpha1N**2 / (2.0 * self.dx * self.dy)) * self.Gamma_sp_fsm1N * self.dt)
-        self.dV = self.dx * self.dy * self.dz
-        
+                
         self.e_sign = np.asarray([1, -1])
         self.e_pol = np.asarray([1, 1])
         
         Tijs = np.zeros((self.nlevel, self.nlevel, 2), dtype=complex)
         Gij = np.zeros((self.nlevel, self.nlevel), dtype=complex)
-        S_ground_Fi = np.zeros((3, self.nlevel+2)) # Includes transition to 2s hole and other
-        S_ion_Fi = np.zeros((3, self.nlevel))
-        S_other_F = np.zeros(3)
-        S_2s_F = np.zeros(3)
+        S_ground_Fi = np.zeros((2, self.nlevel+2)) # Includes transition to 2s hole and other
+        S_ion_Fi = np.zeros((2, self.nlevel))
+        S_other_F = np.zeros(2)
+        S_2s_F = np.zeros(2)
 
         if (self.nlevel)==6:
                         
@@ -184,49 +104,33 @@ class XLO_sim:
             Gij[2,5] = 2.0 / 9.0
             Gij[3,5] = 1.0 / 3.0
 
-            S_ground_Fi[0, 0] = self.sigma1_pump_2p3 * 0.27
-            S_ground_Fi[0, 1] = self.sigma1_pump_2p3 * 0.23
-            S_ground_Fi[0, 2] = self.sigma1_pump_2p3 * 0.23
-            S_ground_Fi[0, 3] = self.sigma1_pump_2p3 * 0.27
-            S_ground_Fi[0, 4] = self.sigma1_pump_1s * 0.5
-            S_ground_Fi[0, 5] = self.sigma1_pump_1s * 0.5
-            S_ground_Fi[0, 6] = self.sigma1_pump_2s
-            S_ground_Fi[0, 7] = self.sigma1_pump_other
+            S_ground_Fi[0, 0] = self.sigma1_Ka1_2p3 * 0.12
+            S_ground_Fi[0, 1] = self.sigma1_Ka1_2p3 * 0.18
+            S_ground_Fi[0, 2] = self.sigma1_Ka1_2p3 * 0.28
+            S_ground_Fi[0, 3] = self.sigma1_Ka1_2p3 * 0.42
+            S_ground_Fi[0, 6] = self.sigma1_Ka1_2s
+            S_ground_Fi[0, 7] = self.sigma1_Ka1_other
 
-            S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 * 0.12
-            S_ground_Fi[1, 1] = self.sigma1_Ka1_2p3 * 0.18
-            S_ground_Fi[1, 2] = self.sigma1_Ka1_2p3 * 0.28
-            S_ground_Fi[1, 3] = self.sigma1_Ka1_2p3 * 0.42
+            S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 * 0.42
+            S_ground_Fi[1, 1] = self.sigma1_Ka1_2p3 * 0.28
+            S_ground_Fi[1, 2] = self.sigma1_Ka1_2p3 * 0.18
+            S_ground_Fi[1, 3] = self.sigma1_Ka1_2p3 * 0.12
             S_ground_Fi[1, 6] = self.sigma1_Ka1_2s
             S_ground_Fi[1, 7] = self.sigma1_Ka1_other
 
-            S_ground_Fi[2, 0] = self.sigma1_Ka1_2p3 * 0.42
-            S_ground_Fi[2, 1] = self.sigma1_Ka1_2p3 * 0.28
-            S_ground_Fi[2, 2] = self.sigma1_Ka1_2p3 * 0.18
-            S_ground_Fi[2, 3] = self.sigma1_Ka1_2p3 * 0.12
-            S_ground_Fi[2, 6] = self.sigma1_Ka1_2s
-            S_ground_Fi[2, 7] = self.sigma1_Ka1_other
+            S_ion_Fi[0, 0] = self.sigma2_Ka1_2p3 * 0.70
+            S_ion_Fi[0, 1] = self.sigma2_Ka1_2p3 * 0.83
+            S_ion_Fi[0, 2] = self.sigma2_Ka1_2p3 * 1.06
+            S_ion_Fi[0, 3] = self.sigma2_Ka1_2p3 * 1.41
+            S_ion_Fi[0, 4] = self.sigma2_Ka1_1s * 0.75
+            S_ion_Fi[0, 5] = self.sigma2_Ka1_1s * 1.25
 
-            S_ion_Fi[0, 0] = self.sigma2_pump_2p3 * 1.05
-            S_ion_Fi[0, 1] = self.sigma2_pump_2p3 * 0.95
-            S_ion_Fi[0, 2] = self.sigma2_pump_2p3 * 0.95
-            S_ion_Fi[0, 3] = self.sigma2_pump_2p3 * 1.05
-            S_ion_Fi[0, 4] = self.sigma2_pump_1s * 1.0
-            S_ion_Fi[0, 5] = self.sigma2_pump_1s * 1.0
-
-            S_ion_Fi[1, 0] = self.sigma2_Ka1_2p3 * 0.70
-            S_ion_Fi[1, 1] = self.sigma2_Ka1_2p3 * 0.83
-            S_ion_Fi[1, 2] = self.sigma2_Ka1_2p3 * 1.06
-            S_ion_Fi[1, 3] = self.sigma2_Ka1_2p3 * 1.41
-            S_ion_Fi[1, 4] = self.sigma2_Ka1_1s * 0.75
-            S_ion_Fi[1, 5] = self.sigma2_Ka1_1s * 1.25
-
-            S_ion_Fi[2, 0] = self.sigma2_Ka1_2p3 * 1.41
-            S_ion_Fi[2, 1] = self.sigma2_Ka1_2p3 * 1.06
-            S_ion_Fi[2, 2] = self.sigma2_Ka1_2p3 * 0.83
-            S_ion_Fi[2, 3] = self.sigma2_Ka1_2p3 * 0.70
-            S_ion_Fi[2, 4] = self.sigma2_Ka1_1s * 1.25
-            S_ion_Fi[2, 5] = self.sigma2_Ka1_1s * 0.75
+            S_ion_Fi[1, 0] = self.sigma2_Ka1_2p3 * 1.41
+            S_ion_Fi[1, 1] = self.sigma2_Ka1_2p3 * 1.06
+            S_ion_Fi[1, 2] = self.sigma2_Ka1_2p3 * 0.83
+            S_ion_Fi[1, 3] = self.sigma2_Ka1_2p3 * 0.70
+            S_ion_Fi[1, 4] = self.sigma2_Ka1_1s * 1.25
+            S_ion_Fi[1, 5] = self.sigma2_Ka1_1s * 0.75
 
             self.ei_L3 = np.asarray([1, 1, 1, 1, 0, 0])
             self.ei_K = np.asarray([0, 0, 0, 0, 1, 1])
@@ -239,38 +143,28 @@ class XLO_sim:
 
             Gij[0,1] = 2.0 / 3.0
 
-            S_ground_Fi[0, 0] = self.sigma1_pump_2p3
-            S_ground_Fi[0, 1] = self.sigma1_pump_1s
-            S_ground_Fi[0, 2] = self.sigma1_pump_2s
-            S_ground_Fi[0, 3] = self.sigma1_pump_other
+            S_ground_Fi[0, 0] = self.sigma1_Ka1_2p3 
+            S_ground_Fi[0, 2] = self.sigma1_Ka1_2s
+            S_ground_Fi[0, 3] = self.sigma1_Ka1_other
 
             S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 
             S_ground_Fi[1, 2] = self.sigma1_Ka1_2s
             S_ground_Fi[1, 3] = self.sigma1_Ka1_other
 
-            S_ground_Fi[2, 0] = self.sigma1_Ka1_2p3 
-            S_ground_Fi[2, 2] = self.sigma1_Ka1_2s
-            S_ground_Fi[2, 3] = self.sigma1_Ka1_other
-
-            S_ion_Fi[0, 0] = self.sigma2_pump_2p3 
-            S_ion_Fi[0, 1] = self.sigma2_pump_1s
+            S_ion_Fi[0, 0] = self.sigma2_Ka1_2p3 
+            S_ion_Fi[0, 1] = self.sigma2_Ka1_1s 
 
             S_ion_Fi[1, 0] = self.sigma2_Ka1_2p3 
             S_ion_Fi[1, 1] = self.sigma2_Ka1_1s 
 
-            S_ion_Fi[2, 0] = self.sigma2_Ka1_2p3 
-            S_ion_Fi[2, 1] = self.sigma2_Ka1_1s 
-
             self.ei_L3 = np.asarray([1, 0])
             self.ei_K = np.asarray([0, 1])
 
-        S_other_F[0] = self.sigma2_pump_other
+        S_other_F[0] = self.sigma2_Ka1_other
         S_other_F[1] = self.sigma2_Ka1_other
-        S_other_F[2] = self.sigma2_Ka1_other
 
-        S_2s_F[0] = self.sigma2_pump_2s
+        S_2s_F[0] = self.sigma2_Ka1_2s
         S_2s_F[1] = self.sigma2_Ka1_2s
-        S_2s_F[2] = self.sigma2_Ka1_2s
             
         self.Tijs = Tijs
         self.Gij = Gij
@@ -327,19 +221,11 @@ class XLO_sim:
         self.rho_ground_txyz = self.sample.rho_ground_txyz
         self.rho_other_txyz = self.sample.rho_other_txyz
         self.rho_2s_txyz = self.sample.rho_2s_txyz
-        self.J_P_txyz = self.sample.J_P_txyz
-        self.nphoton_pump_z = tools.nphoton_pump_z(self)
 
         self.rho_ijtxyz = self.sample.rho_ijtxyz
         self.Omega_pstxyz = self.sample.Omega_pstxyz
-        self.nphoton_sz = tools.nphoton_sz(self)
-        self.nphoton_reg_sz = tools.nphoton_reg_sz(self)
-        self.nphoton_pump_z = tools.nphoton_pump_z(self)
-        if self.nphoton_pump_z[0] != 0.0:
-            self.pump_transmission = self.nphoton_pump_z[-1] / self.nphoton_pump_z[0]
-      
+
         if self.is_Cartesian_pol:
             Omega_pqtxy = tools.circular_to_linear(self, self.Omega_pstxyz[:, :, :, :, :, -1])
             self.Omega_qtxy = (Omega_pqtxy[0, :, :, :, :] + np.conj(Omega_pqtxy[1, :, :, :, :])) / 2.0
             
-        self.Pfield_txyz = self.sample.Pfield_txyz

@@ -119,103 +119,6 @@ def Gaussian_pulse_3D_t_shifted_splitted(X):
     
     return  p1 + p2
 
-def shift_P_txy(array, t_peak, tmax_fs):
-
-    tmax = array.shape[0]
-    
-    max_time_index = tmax // 2
-
-    t_peak_index = int(t_peak / tmax_fs * tmax)
-
-    shift_amount = t_peak_index - max_time_index
-    
-    
-    shifted_array = np.zeros_like(array)
-    if shift_amount > 0:
-        padded_array = np.pad(array, [(abs(shift_amount), 0), (0, 0), (0, 0)], mode='constant')
-        shifted_array += padded_array[0:tmax, :, :] 
-    else:
-        padded_array = np.pad(array, [(0, abs(shift_amount)), (0, 0), (0, 0)], mode='constant')
-        shifted_array += padded_array[abs(shift_amount)-1:-1, :, :]
-  
-    return shifted_array
-
-
-def Ocelot_SASE_pulse_pump_txy(X):
-    SASE = RadiationField()  # initialize RadiationField object
-    
-    # The transverse domain is considered to be space [m], since I hace input
-    # parameters in time [fs], the correct conversion is needed
-    
-    sigma_rx = X.pump_width_FWHM_x / (2 * np.sqrt(2*np.log(2))) 
-    sigma_ry = X.pump_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
-    sigma_t  = X.pump_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
-    
-    N_pump_photons = X.E_pump_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
-    print('number of pump photons = ' + f"{N_pump_photons:.1e}")
-    
-    kwargs={'xlamds':1e-9*X.lambdaPump,                     # [m] - central wavelength
-            'seed': X.random_seed,
-            'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
-            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
-            'power_rms':(1e-9*sigma_rx, 1e-9*sigma_ry, 1e-15*sigma_t*sp_const.c),   # rms size of radiation distribution
-            'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
-            'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
-            'power_waistpos':(0,0),                         # (Z_x,Z_y) [m] downstrean location of the waist of the beam
-            'wavelength':None,                              # central frequency of the radiation, if different from xlamds
-            'zsep':None,                                    # distance between slices in z as zsep*xlamds
-            'freq_chirp':0,                                 # dw/dt=[1/fs**2] - requency chirp of the beam around power_center[2]
-            'en_pulse':N_pump_photons*X.hwPump*sp_const.e,        # total energy or max power of the pulse, use only one
-            'power':None,
-            'rho':X.FEL_bandwidth/2
-            }
-    
-    SASE = imitate_sase_dfl(**kwargs);
-    
-    field_txy = SASE.fld
-    
-    # Normalization: it has to be compatible with the units used in the rest of
-    # the code. imitate_sase_dfl uses SI units [m, s, J], need to normalize with
-    # respect to [nm, fs, eV]
-    
-    dx = 1e9 * (SASE.Lx() / SASE.Nx())
-    dy = 1e9 * (SASE.Ly() / SASE.Ny())
-    dt = 1e15 * (SASE.Lz() / SASE.Nz()) / sp_const.c
-    
-    norm = np.sqrt(np.sum(np.abs(field_txy)**2 * dx * dy * dt))
-    
-    field_txy = field_txy / norm
-    
-    return np.sqrt(N_pump_photons) * field_txy
-
-
-def Gaussian_pulse_aniso_pump(X):
-          
-    sigma_rx = X.pump_width_FWHM_x / (2 * np.sqrt(2*np.log(2)))
-    sigma_ry = X.pump_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
-    sigma_t  = X.pump_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
-    
-    field_txy = np.sqrt( 
-        1 / (2.0 * np.pi * sigma_rx * sigma_ry) 
-        / (np.sqrt(2.0 * np.pi) * sigma_t) 
-        * np.exp(-1.0 * X.x_mesh**2 / 2.0 / sigma_rx**2) 
-        * np.exp(-1.0 * X.y_mesh**2 / 2.0 / sigma_ry**2) 
-        * np.exp(-(X.t_mesh - X.t0)**2 / 2.0 / sigma_t**2)
-    )
-    
-    norm = np.sqrt(np.sum(np.abs(field_txy)**2 * X.dx * X.dy * X.dt))
-    
-    print('norm = ',norm)
-    
-    field_txy = field_txy / norm
-    
-    N_pump_photons = X.E_pump_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
-    print('number of pump photons = ' + f"{N_pump_photons:.1e}")
-    
-        
-    return np.sqrt(N_pump_photons) * field_txy
-
-
 
 def Gaussian_pulse_aniso_seed(X):
           
@@ -285,39 +188,6 @@ def roll_zeropad(a, shift, axis=None):
     array([0, 0, 0, 1, 2, 3, 4, 5, 6, 7])
     >>> roll_zeropad(x, -2)
     array([2, 3, 4, 5, 6, 7, 8, 9, 0, 0])
-
-    >>> x2 = np.reshape(x, (2,5))
-    >>> x2
-    array([[0, 1, 2, 3, 4],
-           [5, 6, 7, 8, 9]])
-    >>> roll_zeropad(x2, 1)
-    array([[0, 0, 1, 2, 3],
-           [4, 5, 6, 7, 8]])
-    >>> roll_zeropad(x2, -2)
-    array([[2, 3, 4, 5, 6],
-           [7, 8, 9, 0, 0]])
-    >>> roll_zeropad(x2, 1, axis=0)
-    array([[0, 0, 0, 0, 0],
-           [0, 1, 2, 3, 4]])
-    >>> roll_zeropad(x2, -1, axis=0)
-    array([[5, 6, 7, 8, 9],
-           [0, 0, 0, 0, 0]])
-    >>> roll_zeropad(x2, 1, axis=1)
-    array([[0, 0, 1, 2, 3],
-           [0, 5, 6, 7, 8]])
-    >>> roll_zeropad(x2, -2, axis=1)
-    array([[2, 3, 4, 0, 0],
-           [7, 8, 9, 0, 0]])
-
-    >>> roll_zeropad(x2, 50)
-    array([[0, 0, 0, 0, 0],
-           [0, 0, 0, 0, 0]])
-    >>> roll_zeropad(x2, -50)
-    array([[0, 0, 0, 0, 0],
-           [0, 0, 0, 0, 0]])
-    >>> roll_zeropad(x2, 0)
-    array([[0, 1, 2, 3, 4],
-           [5, 6, 7, 8, 9]])
 
     """
     a = np.asanyarray(a)
@@ -405,7 +275,7 @@ def Ocelot_SASE_seed_111_dcm_pstxy(X):
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
             'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
             'power_rms':(1e-9*seed_sigma_rx, 1e-9*seed_sigma_ry, 1e-15*seed_sigma_t*sp_const.c),   # rms size of radiation distribution
-            'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
+            'power_center':(0,0,1e-15*X.t_peak*sp_const.c),  # (x,y,z) [m] - position of the radiation distribution
             'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
             'power_waistpos':(0,0),                         # (Z_x,Z_y) [m] downstrean location of the waist of the beam
             'wavelength':None,                              # central frequency of the radiation, if different from xlamds
@@ -464,7 +334,7 @@ def Ocelot_SASE_seed_pstxy(X):
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
             'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value)
             'power_rms':(1e-9*seed_sigma_rx, 1e-9*seed_sigma_ry, 1e-15*seed_sigma_t*sp_const.c),   # rms size of radiation distribution
-            'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
+            'power_center':(0,0,1e-15*X.t_peak*sp_const.c),  # (x,y,z) [m] - position of the radiation distribution
             'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
             'power_waistpos':(0,0),                         # (Z_x,Z_y) [m] downstrean location of the waist of the beam
             'wavelength':None,                              # central frequency of the radiation, if different from xlamds
@@ -495,79 +365,6 @@ def Ocelot_SASE_seed_pstxy(X):
         
     return Omega_seed_pstxy
 
-
-def Gaussian_pulse_3D_with_q(X, k=None, N_photons=None):
-    """
-    Generate a complex three-dimensional spatio-temporal Gaussian profile of field Rabi frequency expressed in terms of the q parameter.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-    k
-        Radiation wavenumber
-    N_photons
-        Integrated number of photons
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-
-    if (k is None):
-        k = X.kp
-        
-    if (N_photons is None):
-        N_photons = X.N_pump_photons
-        
-    qx = 1j * X.zR
-    qy = 1j * X.zR
-
-    ux = 1.0 / np.sqrt(qx) * np.exp(-1j * X.kp * X.x_mesh**2 / 2.0 / qx)
-    uy = 1.0 / np.sqrt(qy) * np.exp(-1j * X.kp * X.y_mesh**2 / 2.0 / qy)
-    ut = 1.0 / (np.sqrt(2.0 * np.pi) * X.sigma_t) * np.exp(-(X.t_mesh - X.t0)**2 / 2.0 / X.sigma_t**2)
-
-    eta = 2.0 * k * X.zR * X.sigma_t / np.sqrt(np.pi)
-    
-    return np.sqrt(eta) * np.sqrt(N_photons) * ux * uy * ut
-
-
-def Gaussian_pulse_3D_with_q_chirp(X, bt, v0, k=None):
-    """
-    Generate a complex three-dimensional spatio-temporal Gaussian profile of field Rabi frequency expressed in terms of the q parameter.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-    bt
-        phase terms
-    v0
-        phase terms
-    k
-        Radiation wavenumber
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-
-    if (k is None):
-        k = X.kp
-    
-    qx = 1j * X.zR
-    qy = 1j * X.zR
-    ux = 1.0 / np.sqrt(qx) * np.exp(-1j * X.kp * X.x_mesh**2 / 2.0 / qx)
-    uy = 1.0 / np.sqrt(qy) * np.exp(-1j * X.kp * X.y_mesh**2 / 2.0 / qy)
-    exponent =- (X.t_mesh - X.t0)**2 / 2.0 / X.sigma_t**2
-    exponent = exponent + 1j * bt * (X.t_mesh-X.t0)**2 + 2 * np.pi * 1j * v0 * (X.t_mesh-X.t0)
-    ut =  1.0 / (np.sqrt(2.0 * np.pi) * X.sigma_t) * np.exp(exponent)
-    eta = 2.0 * k * X.zR * X.sigma_t / np.sqrt(np.pi)
-
-    return np.sqrt(eta) * np.sqrt(X.N_pump_photons) * ux * uy * ut
-    
 
 def Gaussian_from_mesh(X, mesh, moments):
     
@@ -614,52 +411,6 @@ def Gaussian_seed_field_txy(X, Nphotons_spol, Nphotons_ppol, Dphi=0):
     Gaussian_seed_field[1, 1, :, :, :] = np.conj(field_ppol)
 
     return Gaussian_seed_field
-
-
-
-def SASE_pulse_3D_with_q(X, k=None):
-    """
-    Generate a complex three-dimensional spatio-temporal SASE profile of field Rabi frequency expressed in terms of the q parameter.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-    k
-        Radiation wavenumber
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-    
-    np.random.seed(seed)
-    
-
-    if (k is None):
-        k = X.kp
-
-    qx = 1j * X.zR
-    qy = 1j * X.zR
-
-    ux = np.exp(-1j * X.kp * X.x_mesh**2 / 2.0 / qx)
-    uy = np.exp(-1j * X.kp * X.y_mesh**2 / 2.0 / qy)
-
-    t0_array = np.random.normal(0.0, X.sigma_t, X.N_modes)
-    phi_mean = -1.0j * X.kp * X.c * np.mean(t0_array)
-
-    ut = np.einsum('ntxy, n->txy', np.exp(- (X.t_mesh[np.newaxis, :, :, :] - t0_array[:, np.newaxis, np.newaxis, np.newaxis] - X.t0)**2 / 4.0 / X.sigma_coh**2), np.exp(1.0j * X.kp * X.c * t0_array)) * np.exp(phi_mean)
-
-    scaling = X.N_modes
-    for i in range(X.N_modes):
-        for j in range(i+1, X.N_modes):
-            scaling += 2.0 * np.cos(X.kp * X.c * (t0_array[j] - t0_array[i])) * np.exp(-(t0_array[i] - t0_array[j])**2 / 8.0 / X.sigma_coh**2)
-    scaling *= np.sqrt(2.0 * np.pi) * X.sigma_coh
-
-    eta = X.kp / (np.pi * X.zR * scaling)
-    
-    return np.sqrt(eta) * np.sqrt(X.N_pump_photons) * ux * uy * ut
 
 
 def linear_to_circular(X, field_linear):
@@ -714,24 +465,6 @@ def nphoton_reg_sz(X):
     """
     
     return X.dt * X.dx * X.dy / (3.0 * X.lambdaKalpha1N**2 * X.Gamma_sp_fsm1N / 8.0 / np.pi) * 1.0 / 2.0 * (np.sum(X.Omega_pstxyz[0,:,1:,:,:,:] * X.Omega_pstxyz[1,:,:-1,:,:,:], axis=(1, 2, 3)) + np.sum(X.Omega_pstxyz[0,:,:-1,:,:,:] * X.Omega_pstxyz[1,:,1:,:,:,:], axis=(1, 2, 3)))
-
-
-def nphoton_pump_z(X):
-    """
-    Calculate the number of pump photons as function of the target position z.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-    
-    return X.dt * X.dx * X.dy * np.sum(X.J_P_txyz, axis=(0, 1, 2))
 
 
 def random_vector_normal(size, seed=None):
@@ -893,7 +626,7 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad, window_alpha=0.25):
     Applies a Tukey window to the t and y axes, zero-pads them, then FFTs
     along them and applies a linear phase correction for the fact that the
     simulation window is not centered at t=0/y=0 (it is centered at
-    X.t_pump_max/X.ymax), so the resulting energy/angle map has the correct
+    X.t_peak/X.ymax), so the resulting energy/angle map has the correct
     phase reference.
 
     The window is needed because zero-padding a field that has not decayed
@@ -929,7 +662,7 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad, window_alpha=0.25):
     """
 
     coeffs = (2.0 * np.pi * X.hbar, 2.0 * np.pi / X.k0)
-    shifts = (X.t_pump_max + tpad * X.dt, X.ymax + ypad * X.dy)
+    shifts = (X.t_peak + tpad * X.dt, X.ymax + ypad * X.dy)
     field_psxty = np.einsum('pstxy->psxty',field_pstxy)
 
     window_t = sp_sign.windows.tukey(X.tgrid, alpha=window_alpha)

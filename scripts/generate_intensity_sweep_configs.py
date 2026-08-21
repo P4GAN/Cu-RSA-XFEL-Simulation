@@ -18,11 +18,11 @@ import os
 
 import yaml
 
-DEFAULT_E_SEED_VALUES = [200, 150, 100, 70, 40, 20, 10, 5, 1, 0.1]
+DEFAULT_E_SEED_VALUES = [40, 30, 20, 9, 5, 2, 1, 0.1]
 
 # Must match CHUNKS_PER_CONFIG in submit_intensity_sweep.sh -- used below only
 # to print the matching sbatch --array bound.
-CHUNKS_PER_CONFIG = 4
+CHUNKS_PER_CONFIG = 10
 
 
 def yaml_modify_seed_energy(input_yaml_path, output_yaml_path, new_seed_energy):

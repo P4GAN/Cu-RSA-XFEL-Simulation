@@ -459,7 +459,7 @@ def Ocelot_SASE_seed_pstxy(X):
     kwargs={'xlamds':1e-9*X.lambdaKalpha1N,                     # [m] - central wavelength
             'seed': X.random_seed,
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
-            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
+            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value)
             'power_rms':(1e-9*seed_sigma_rx, 1e-9*seed_sigma_ry, 1e-15*seed_sigma_t*sp_const.c),   # rms size of radiation distribution
             'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
             'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
@@ -883,14 +883,23 @@ def transmittance_to_absorbance(T, base=np.e):
 
 
 
-def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
+def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad, window_alpha=0.25):
     """
     Fourier transform a field from the (time, y) domain to the (omega, theta_y) domain.
 
-    Zero-pads the t and y axes, then FFTs along them and applies a linear
-    phase correction for the fact that the simulation window is not centered
-    at t=0/y=0 (it is centered at X.t_pump_max/X.ymax), so the resulting
-    energy/angle map has the correct phase reference.
+    Applies a Tukey window to the t and y axes, zero-pads them, then FFTs
+    along them and applies a linear phase correction for the fact that the
+    simulation window is not centered at t=0/y=0 (it is centered at
+    X.t_pump_max/X.ymax), so the resulting energy/angle map has the correct
+    phase reference.
+
+    The window is needed because zero-padding a field that has not decayed
+    to (numerical) zero by the edge of the simulation grid creates a step
+    discontinuity there; that discontinuity's Fourier transform decays only
+    algebraically (Gibbs-type leakage), contaminating the spectrum/angular
+    map at large detuning/angle with a numerical artifact rather than the
+    physical (typically much faster decaying) tail. Tapering the field to
+    zero before padding removes that discontinuity.
 
     Parameters
     ----------
@@ -902,6 +911,9 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
         Zero-padding added on each side of the y axis before the FFT (sets theta_y resolution).
     tpad : int
         Zero-padding added on each side of the t axis before the FFT (sets omega resolution).
+    window_alpha : float
+        Shape parameter of the Tukey window applied to the t and y axes
+        before padding (0 = no tapering/rectangular window, 1 = Hann window).
 
     Returns
     -------
@@ -916,6 +928,12 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
     coeffs = (2.0 * np.pi * X.hbar, 2.0 * np.pi / X.k0)
     shifts = (X.t_pump_max + tpad * X.dt, X.ymax + ypad * X.dy)
     field_psxty = np.einsum('pstxy->psxty',field_pstxy)
+
+    window_t = sp_sign.windows.tukey(X.tgrid, alpha=window_alpha)
+    window_y = sp_sign.windows.tukey(X.ygrid, alpha=window_alpha)
+    field_psxty = field_psxty * window_t[np.newaxis, np.newaxis, np.newaxis, :, np.newaxis] \
+                               * window_y[np.newaxis, np.newaxis, np.newaxis, np.newaxis, :]
+
     pad_shape = [(0, 0), (0, 0), (0, 0), (tpad, tpad), (ypad, ypad)]
     domains_sim, meshes_sim, step_sizes_sim = X.optics.nd_kspace(coeffs, (X.tgrid, X.ygrid), (tpad, ypad), (X.dt, X.dy))
     phasors = [np.exp(1j * 2.0 * np.pi * mesh * shift / coeff) for coeff, mesh, shift in zip(coeffs, meshes_sim, shifts)]
@@ -931,7 +949,7 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
 
 
 
-def SF_spectrum_w(X, zint, ypad, tpad):
+def SF_spectrum_w(X, zint, ypad, tpad, window_alpha=0.25):
     """
     Compute the spectral intensity of the in-sample field at a given depth z.
 
@@ -962,6 +980,8 @@ def SF_spectrum_w(X, zint, ypad, tpad):
         Zero-padding added to the y axis before the FFT (see `fft_field_t_y_to_w_thy`).
     tpad : int
         Zero-padding added to the t axis before the FFT (see `fft_field_t_y_to_w_thy`).
+    window_alpha : float
+        Tukey window shape parameter applied before padding/FFT (see `fft_field_t_y_to_w_thy`).
 
     Returns
     -------
@@ -975,7 +995,7 @@ def SF_spectrum_w(X, zint, ypad, tpad):
     """
 
     OmegaSF_z_pstxy = X.Omega_pstxyz[:, :, :, :, :, zint]
-    extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad)
+    extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad, window_alpha)
     I_SF_w_thy = np.real(
         np.einsum('sxwy,sxwy->wy', OmegaSF_z_psxwThy[0,:,:,:,:], np.conj(OmegaSF_z_psxwThy[0,:,:,:,:]))
     )

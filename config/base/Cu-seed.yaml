@@ -23,6 +23,7 @@ sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 4.15e-7
 sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
 
+additional_dephasing: 0
 
 #Chemical composition of the sample
 #Cu
@@ -86,7 +87,7 @@ pump_pulse_format: 'None'
 
 
 #seed parameters
-seed_pulse_format: 'Gaussian_pulse_aniso_seed_shifted'
+seed_pulse_format: 'Gaussian_pulse_aniso_seed'
 E_seed_uJ: 40
 seed_duration_FWHM_t: 0.5
 t_peak: 1.5

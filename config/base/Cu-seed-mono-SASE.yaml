@@ -49,6 +49,8 @@ GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
 GammaA_L1_to_L3M45eVN: 5.07 # 1.57
 
+additional_dephasing: 0
+
 #K alpha atomic transitions photon energy
 hwKalpha1N: 8047.91
 hwKalpha2N: 8027.98
@@ -63,8 +65,8 @@ ygrid: 8
 tmax: 60.0
 
 zmax: 20.0e+3
-xmax: 1000.0
-ymax: 1000.0
+xmax: 250.0
+ymax: 250.0
 
 xpad: 20
 ypad: 20

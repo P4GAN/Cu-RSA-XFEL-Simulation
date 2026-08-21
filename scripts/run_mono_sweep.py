@@ -50,6 +50,10 @@ def run_simulation(yaml_path, rep):
 
     X = XLO_sim(yaml_path)
     X.random_seed = rep
+    # This is a batch/statistics job: compute_run_outputs only ever reads the
+    # z=0/z=-1 planes, so skip storing the full z history (tens of GB/worker
+    # at production grid sizes -- see Sample._evaluate_n_level_3D_lean).
+    X.keep_z_history = False
     seed_field = tools.Ocelot_SASE_seed_111_dcm_pstxy(X)
     X.configure(seed_field)
     X.run_3D()

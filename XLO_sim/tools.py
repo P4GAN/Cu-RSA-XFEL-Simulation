@@ -586,7 +586,7 @@ def uniform_field_txy(X, Nphotons):
 
 def uniform_seed_field_txy(X, Nphotons_spol, Nphotons_ppol, Dphi=0):
 
-    uniform_seed_field = np.zeros_like(X.noise_pstxyz)[:, :, :, :, :, 0]
+    uniform_seed_field = np.zeros((2, 2, X.tgrid, X.xgrid, X.ygrid), dtype=complex)
 
     field_spol = uniform_field_txy(X, Nphotons_spol)
     field_ppol = np.exp(1j * Dphi) * uniform_field_txy(X, Nphotons_ppol)
@@ -603,7 +603,7 @@ def Gaussian_seed_field_txy(X, Nphotons_spol, Nphotons_ppol, Dphi=0):
 
     #what's wrong with this function?
 
-    Gaussian_seed_field = np.zeros_like(X.noise_pstxyz)[:, :, :, :, :, 0]
+    Gaussian_seed_field = np.zeros((2, 2, X.tgrid, X.xgrid, X.ygrid), dtype=complex)
 
     field_spol = Gaussian_pulse_3D_with_q(X, X.k0, Nphotons_spol)
     field_ppol = np.exp(1j * Dphi) * Gaussian_pulse_3D_with_q(X, X.k0, Nphotons_ppol)

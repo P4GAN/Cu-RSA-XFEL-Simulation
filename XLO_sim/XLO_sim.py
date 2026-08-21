@@ -21,8 +21,17 @@ class XLO_sim:
         for key, value in self.config.items():
             setattr(self, key, value)
 
-        if 'initial_population' not in self.config:
-            self.initial_population = 'ground'
+        if 'keep_z_history' not in self.config:
+            # True preserves the original behavior: every z plane of every
+            # field/density-matrix array is stored, which is what Plot.py and
+            # the analysis notebooks need to show propagation through the
+            # sample depth. At production grid sizes that's tens of GB per
+            # repetition (see Sample._evaluate_n_level_3D_full), so the batch
+            # run_*_sweep.py scripts set this to False on X before configure()/
+            # run_3D() -- they only ever read the z=0/z=-1 planes anyway (see
+            # tools.compute_run_outputs), and Sample._evaluate_n_level_3D_lean
+            # reproduces the same z-marching physics storing only those.
+            self.keep_z_history = True
 
         self.sigma_ground_pump = self.sigma1_pump_1s + self.sigma1_pump_2p3 + self.sigma1_pump_other
         self.sigma_compound_pump = sum(element['N_atoms'] * element['sigma_compound_pump'] for element in self.compound.values())

@@ -364,58 +364,6 @@ class XLO_plot:
 #         plt.show()
    
     
-    
-    
-    def plot_pump_J_P_txyz(self, X):
-        # def find_fwhm(x, y):
-        #     max_value = np.max(y)
-        #     max_index = np.argmax(y)
-        #     half_max = max_value / 2
-        #     idx_left = 0
-        #     idx_right = len(y) - 1
-        #     for i in range(0, max_index, 1):
-        #         if y[i] > half_max:
-        #             idx_left = i
-        #             break
-        #     for i in range(len(y)-1, max_index, -1):
-        #         if y[i] > half_max:
-        #             idx_right = i
-        #             break
-        #     return x[idx_right] - x[idx_left]
-
-        plt.figure(figsize=(10, 4))
-        plt.subplot(1, 2, 1)
-        plt.plot(X.t, X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),0])
-        plt.xlabel('t (fs)')
-        plt.ylabel(r'$j_{pump}$ (W/cm$^{2}$)')
-        plt.grid(True)
-
-        tint = np.abs(X.t - X.t_pump_max).argmin()
-        plt.subplot(1, 2, 2)
-        plt.imshow(X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[tint,:,:,0], aspect='auto', origin='lower', extent=[-X.xmax,X.xmax,-X.ymax,X.ymax])
-        plt.xlabel('x (nm)')
-        plt.ylabel('y (nm)')
-        plt.title(f't = {(X.t[tint]):.2f} fs, z=0')
-        plt.colorbar(label=r'$j_{pump}$ (W/cm$^{2}$)')
-
-        plt.tight_layout()
-        plt.show()
-
-        x_x = np.linspace(-X.xmax,X.xmax,X.xgrid)
-        print(f'FWHM x = {tools.find_fwhm(x_x, X.J_P_txyz[int(X.tgrid/2),:,int(X.ygrid/2),0]):.0f} nm, nominal {X.pump_width_FWHM:.0f} nm')
-        print(f'FWHM t = {tools.find_fwhm(X.t, X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),0]):.3f} fs, nominal {X.pump_duration_FWHM_t:.3f} fs')
-        print(f'pump photons = {np.sum(X.dx * X.dy * X.dt * X.J_P_txyz[:,:,:,0]):.2e}, nominal {X.N_pump_photons:.1e}')
-
-        sigma_x = X.pump_width_FWHM / 2.355
-        fwhm_kx = 1.1774 / sigma_x
-        fwhm_th = fwhm_kx / X.kp
-        print(f'expected pump intensity angular FWHM = {(fwhm_th * 1e3):.2f} mrad')
-
-        fwhm_w_fsm1 = 1.1774 / (X.pump_duration_FWHM_t/2.355)
-        fwhm_w_eV = 0.6582 * fwhm_w_fsm1
-        print(f'expected pump intensity spectral FWHM = {fwhm_w_eV:.2f} eV')
-        
-
     def plot_z_t__j_rho_g_rho_ee(self, X, folder_figs_path, folder_data_path):
 
         name = 'z-t__j-rho_g-rho_ee'
@@ -866,7 +814,7 @@ class XLO_plot:
             extent_thxy, OmegaSF_z_pstThxThy = FFT_thxy(OmegaSF_z_pstxy)
             extent_w_thy, OmegaSF_z_psxwThy = FFT_w_thy(OmegaSF_z_pstxy)
 
-            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]#np.sqrt(X.J_P_txyz[:,:,:,zint])
+            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]
             extent_w_thy, OmegaPump_z_xwThy = FFT_pump_w_thy(OmegaPump_z_txy)
 
 
@@ -1189,7 +1137,6 @@ class XLO_plot:
             P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', X.Tijs_minus, X.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', X.rho_ijtxyz, X.Tijs_plus) ])
 
             P_t = P_pstxyz[0,0,:,int(X.xgrid/2),int(X.ygrid/2),zint]
-            # j_t = X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),zint]
             r0_t = X.rho_ground_txyz[:,int(X.xgrid/2),int(X.ygrid/2),zint]
             t_axis = X.t
 
@@ -1347,7 +1294,7 @@ class XLO_plot:
             extent_thxy, OmegaSF_z_pstThxThy = FFT_thxy(OmegaSF_z_pstxy)
             extent_w_thy, OmegaSF_z_psxwThy = FFT_w_thy(OmegaSF_z_pstxy)
 
-            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]#np.sqrt(X.J_P_txyz[:,:,:,zint])
+            OmegaPump_z_txy = X.Pfield_txyz[:,:,:,zint]
             extent_w_thy, OmegaPump_z_xwThy = FFT_pump_w_thy(OmegaPump_z_txy)
 
 
@@ -1405,9 +1352,6 @@ class XLO_plot:
             name = "x-y__I-j-rho_ee"
             np.savetxt(folder_data_path + '/' + name + '_zar', z_str_ar, fmt='%s')
 
-            # tint_max_j = np.unravel_index(np.argmax(X.J_P_txyz), X.J_P_txyz.shape)[0]
-            # print(f'peak of pump at   {(X.t[tint_max_j]):.3f} fs')
-
             rho_ee_t = np.real(np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),1], X.Tijs_plus))
             tint_max_rho_ee = np.unravel_index(np.argmax(rho_ee_t), rho_ee_t.shape)[0]
             print(f'peak of rho_ee at {(X.t[tint_max_rho_ee]):.3f} fs')
@@ -1430,10 +1374,8 @@ class XLO_plot:
                        )
                 E_xy = np.einsum('ijs, jkxy, kis-> xy', X.Tijs_minus, X.rho_ijtxyz[:,:,tint_max_rho_ee,:,:,zint], X.Tijs_plus)
                 G_xy = np.einsum('ijs, jkxy, kis-> xy', X.Tijs_plus, X.rho_ijtxyz[:,:,tint_max_rho_ee,:,:,zint], X.Tijs_minus)
-                # j_xy = X.convert_pump_phnm2fs_Wcm2 * X.J_P_txyz[tint_max_j,:,:,zint]
                 extentV = [-X.xmax,X.xmax,-X.ymax,X.ymax]
                 t_max_I = X.t[tint_max_I]
-                # t_max_j = X.t[tint_max_j]
                 t_max_rho_ee = X.t[tint_max_rho_ee]
 
                 plt.figure(figsize=(16, 4))

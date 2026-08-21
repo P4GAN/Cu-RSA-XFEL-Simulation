@@ -3,7 +3,7 @@ import time
 from XLO_sim.XLO_sim import XLO_sim
 from XLO_sim import tools
 
-n_repetitions = 10
+n_repetitions = 1
 
 start_time = time.perf_counter()
 

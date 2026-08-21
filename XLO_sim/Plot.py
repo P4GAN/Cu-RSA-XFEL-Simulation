@@ -1186,7 +1186,7 @@ class XLO_plot:
             E_t = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),zint], X.Tijs_plus)
             G_t = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, X.rho_ijtxyz[:,:,:,int(X.xgrid/2),int(X.ygrid/2),zint], X.Tijs_minus)
 
-            P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', self.Tijs_minus, self.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', self.rho_ijtxyz, self.Tijs_plus) ])
+            P_pstxyz = np.array([ np.einsum('ijs,jitxyz->stxyz', X.Tijs_minus, X.rho_ijtxyz) , np.einsum('ijtxyz,jis->stxyz', X.rho_ijtxyz, X.Tijs_plus) ])
 
             P_t = P_pstxyz[0,0,:,int(X.xgrid/2),int(X.ygrid/2),zint]
             # j_t = X.J_P_txyz[:,int(X.xgrid/2),int(X.ygrid/2),zint]

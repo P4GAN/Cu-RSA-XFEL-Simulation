@@ -459,7 +459,7 @@ def Ocelot_SASE_seed_pstxy(X):
     kwargs={'xlamds':1e-9*X.lambdaKalpha1N,                     # [m] - central wavelength
             'seed': X.random_seed,
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
-            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
+            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value)
             'power_rms':(1e-9*seed_sigma_rx, 1e-9*seed_sigma_ry, 1e-15*seed_sigma_t*sp_const.c),   # rms size of radiation distribution
             'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
             'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
@@ -883,14 +883,23 @@ def transmittance_to_absorbance(T, base=np.e):
 
 
 
-def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
+def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad, window_alpha=0.25):
     """
     Fourier transform a field from the (time, y) domain to the (omega, theta_y) domain.
 
-    Zero-pads the t and y axes, then FFTs along them and applies a linear
-    phase correction for the fact that the simulation window is not centered
-    at t=0/y=0 (it is centered at X.t_pump_max/X.ymax), so the resulting
-    energy/angle map has the correct phase reference.
+    Applies a Tukey window to the t and y axes, zero-pads them, then FFTs
+    along them and applies a linear phase correction for the fact that the
+    simulation window is not centered at t=0/y=0 (it is centered at
+    X.t_pump_max/X.ymax), so the resulting energy/angle map has the correct
+    phase reference.
+
+    The window is needed because zero-padding a field that has not decayed
+    to (numerical) zero by the edge of the simulation grid creates a step
+    discontinuity there; that discontinuity's Fourier transform decays only
+    algebraically (Gibbs-type leakage), contaminating the spectrum/angular
+    map at large detuning/angle with a numerical artifact rather than the
+    physical (typically much faster decaying) tail. Tapering the field to
+    zero before padding removes that discontinuity.
 
     Parameters
     ----------
@@ -902,6 +911,9 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
         Zero-padding added on each side of the y axis before the FFT (sets theta_y resolution).
     tpad : int
         Zero-padding added on each side of the t axis before the FFT (sets omega resolution).
+    window_alpha : float
+        Shape parameter of the Tukey window applied to the t and y axes
+        before padding (0 = no tapering/rectangular window, 1 = Hann window).
 
     Returns
     -------
@@ -916,6 +928,12 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
     coeffs = (2.0 * np.pi * X.hbar, 2.0 * np.pi / X.k0)
     shifts = (X.t_pump_max + tpad * X.dt, X.ymax + ypad * X.dy)
     field_psxty = np.einsum('pstxy->psxty',field_pstxy)
+
+    window_t = sp_sign.windows.tukey(X.tgrid, alpha=window_alpha)
+    window_y = sp_sign.windows.tukey(X.ygrid, alpha=window_alpha)
+    field_psxty = field_psxty * window_t[np.newaxis, np.newaxis, np.newaxis, :, np.newaxis] \
+                               * window_y[np.newaxis, np.newaxis, np.newaxis, np.newaxis, :]
+
     pad_shape = [(0, 0), (0, 0), (0, 0), (tpad, tpad), (ypad, ypad)]
     domains_sim, meshes_sim, step_sizes_sim = X.optics.nd_kspace(coeffs, (X.tgrid, X.ygrid), (tpad, ypad), (X.dt, X.dy))
     phasors = [np.exp(1j * 2.0 * np.pi * mesh * shift / coeff) for coeff, mesh, shift in zip(coeffs, meshes_sim, shifts)]
@@ -931,7 +949,7 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
 
 
 
-def SF_spectrum_w(X, zint, ypad, tpad):
+def SF_spectrum_w(X, zint, ypad, tpad, window_alpha=0.25):
     """
     Compute the spectral intensity of the in-sample field at a given depth z.
 
@@ -962,6 +980,8 @@ def SF_spectrum_w(X, zint, ypad, tpad):
         Zero-padding added to the y axis before the FFT (see `fft_field_t_y_to_w_thy`).
     tpad : int
         Zero-padding added to the t axis before the FFT (see `fft_field_t_y_to_w_thy`).
+    window_alpha : float
+        Tukey window shape parameter applied before padding/FFT (see `fft_field_t_y_to_w_thy`).
 
     Returns
     -------
@@ -975,7 +995,7 @@ def SF_spectrum_w(X, zint, ypad, tpad):
     """
 
     OmegaSF_z_pstxy = X.Omega_pstxyz[:, :, :, :, :, zint]
-    extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad)
+    extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad, window_alpha)
     I_SF_w_thy = np.real(
         np.einsum('sxwy,sxwy->wy', OmegaSF_z_psxwThy[0,:,:,:,:], np.conj(OmegaSF_z_psxwThy[0,:,:,:,:]))
     )
@@ -1050,22 +1070,35 @@ def accumulate_run_outputs(results):
     into one dict of summary statistics, saved once per SLURM array task
     instead of once per repetition.
 
-    Every non-axis array is reduced to '<key>_sum' (sum over repetitions)
-    and '<key>_sumsq' (sum of |value|**2 -- real-valued even for complex
-    inputs, since what convergence/error-bar checks need here is the spread
-    of each quantity's magnitude, not its complex-valued "variance"), plus
-    an 'n_reps' count. Because sums are additive, multiple chunks' saved
-    accumulators (e.g. from different array tasks writing into the same
-    runs_.../ folder) can be combined losslessly later by summing again and
-    dividing by the combined n_reps -- see data_from_folder().
+    Every non-axis array is reduced to '<key>_sum' (sum over repetitions,
+    NaN entries excluded), '<key>_sumsq' (sum of |value|**2 over the same
+    non-NaN entries -- real-valued even for complex inputs, since what
+    convergence/error-bar checks need here is the spread of each
+    quantity's magnitude, not its complex-valued "variance"), and
+    '<key>_count' (element-wise count of repetitions that contributed a
+    non-NaN value -- an array, not a scalar, since a numerically unstable
+    repetition can produce NaN at only some (t/w) indices of a key while
+    leaving the rest finite). 'n_reps' is the plain repetition count
+    (attempted, not just valid). Because sums/counts are additive, multiple
+    chunks' saved accumulators (e.g. from different array tasks writing
+    into the same runs_.../ folder) can be combined losslessly later by
+    summing again and dividing sum by count -- see data_from_folder().
     """
     acc = {"n_reps": len(results)}
     for key in results[0]:
         if key in RUN_OUTPUT_AXIS_KEYS:
             acc[key] = results[0][key]
-        else:
-            acc[f"{key}_sum"] = sum(r[key] for r in results)
-            acc[f"{key}_sumsq"] = sum(np.abs(r[key]) ** 2 for r in results)
+            continue
+        stacked = np.stack([r[key] for r in results])
+        valid = ~np.isnan(stacked)
+        n_bad = int((~valid).sum())
+        if n_bad:
+            print(f"Warning: {key} has {n_bad} NaN value(s) across {len(results)} repetitions "
+                  f"-- excluded from the accumulated sum", flush=True)
+        finite = np.where(valid, stacked, 0)
+        acc[f"{key}_sum"] = finite.sum(axis=0)
+        acc[f"{key}_sumsq"] = (np.abs(finite) ** 2).sum(axis=0)
+        acc[f"{key}_count"] = valid.sum(axis=0)
     return acc
 
 
@@ -1075,9 +1108,17 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
 
     Each runs_.../ subfolder may contain several chunk .npz files (one per
     SLURM array task that contributed repetitions to that group); their
-    sum/sumsq/n_reps are combined by summing and dividing by the combined
-    n_reps, so a group's mean is correct even if its chunks covered
-    different repetition counts.
+    sum/sumsq/count are combined by summing and dividing sum (and sumsq) by
+    the combined element-wise count, so a group's mean is correct even if
+    its chunks covered different repetition counts or had NaN entries
+    excluded at different (t/w) indices.
+
+    Chunk files predate '<key>_count' (see accumulate_run_outputs) fall
+    back to that chunk's plain n_reps as the divisor for every element of
+    that key; if such an old chunk's sum/sumsq themselves contain NaN (from
+    before the run-level NaN fix), that chunk's contribution is dropped at
+    just the affected elements rather than poisoning the whole group's
+    mean.
 
     Parameters
     ----------
@@ -1132,24 +1173,34 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
         group_values = tuple(yaml_data[k] for k in group_keys)
         aux_data = [yaml_data[k] for k in aux_keys]
 
-        sums, sumsqs, axes = {}, {}, {}
+        sums, sumsqs, counts, axes = {}, {}, {}, {}
         n_reps = 0
         for file_name in os.listdir(runs_path):
             if not file_name.endswith('.npz'):
                 continue
             data = np.load(os.path.join(runs_path, file_name))
-            n_reps += int(data['n_reps'])
+            file_n_reps = int(data['n_reps'])
+            n_reps += file_n_reps
+
+            sum_keys = {n[:-len('_sum')] for n in data.files if n.endswith('_sum')}
+            for key in sum_keys:
+                chunk_sum = data[f"{key}_sum"]
+                chunk_count = (data[f"{key}_count"] if f"{key}_count" in data.files
+                               else np.full(chunk_sum.shape, file_n_reps, dtype=float))
+                bad = np.isnan(chunk_sum)
+                if np.any(bad):
+                    chunk_sum = np.where(bad, 0, chunk_sum)
+                    chunk_count = np.where(bad, 0, chunk_count)
+                sums[key] = sums.get(key, 0) + chunk_sum
+                counts[key] = counts.get(key, 0) + chunk_count
+                if f"{key}_sumsq" in data.files:
+                    chunk_sumsq = np.where(bad, 0, data[f"{key}_sumsq"])
+                    sumsqs[key] = sumsqs.get(key, 0) + chunk_sumsq
+
             for array_name in data.files:
-                if array_name == 'n_reps':
+                if array_name in ('n_reps',) or array_name.endswith(('_sum', '_sumsq', '_count')):
                     continue
-                if array_name.endswith('_sum'):
-                    key = array_name[:-len('_sum')]
-                    sums[key] = sums.get(key, 0) + data[array_name]
-                elif array_name.endswith('_sumsq'):
-                    key = array_name[:-len('_sumsq')]
-                    sumsqs[key] = sumsqs.get(key, 0) + data[array_name]
-                else:
-                    axes[array_name] = data[array_name]
+                axes[array_name] = data[array_name]
 
         if n_reps == 0:
             print(f"No .npz chunk files found in {runs_path}")
@@ -1157,10 +1208,16 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
 
         group_arrays = dict(axes)
         for key, total_sum in sums.items():
-            mean = total_sum / n_reps
+            count = counts[key]
+            n_starved = int((count == 0).sum())
+            if n_starved:
+                print(f"Warning: {key} in {runs_path} has {n_starved} element(s) with no valid "
+                      f"(non-NaN) repetitions -- left as NaN")
+            count_safe = np.where(count > 0, count, 1)
+            mean = np.where(count > 0, total_sum / count_safe, np.nan)
             group_arrays[key] = mean
             if key in sumsqs:
-                variance = sumsqs[key] / n_reps - np.abs(mean) ** 2
+                variance = np.where(count > 0, sumsqs[key] / count_safe - np.abs(mean) ** 2, np.nan)
                 group_arrays[f"{key}_std"] = np.sqrt(np.clip(variance, 0, None))
 
         node = accumulated

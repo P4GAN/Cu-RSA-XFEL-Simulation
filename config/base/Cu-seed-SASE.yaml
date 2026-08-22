@@ -38,7 +38,7 @@ GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
 GammaA_L1_to_L3M45eVN: 5.07 # 1.57
 
-additional_dephasing: 10
+additional_dephasing: 0
 
 #K alpha atomic transitions photon energy
 hwKalpha1N: 8047.91

@@ -71,7 +71,8 @@ def run_simulation(yaml_path, rep):
     X.run_3D()
 
     out = tools.compute_run_outputs(X, TPAD, YPAD)
-    print(f"repetition {rep + 1} done ({time.perf_counter() - t0:.1f}s)", flush=True)
+    print(f"repetition {rep + 1} done ({tools.format_duration(time.perf_counter() - t0)}, "
+          f"worker peak mem {tools.peak_memory_gb():.2f} GB)", flush=True)
     return out
 
 

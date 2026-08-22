@@ -1,4 +1,6 @@
 import os
+import resource
+import sys
 import time
 import multiprocessing as mp
 from collections import OrderedDict
@@ -838,6 +840,28 @@ def accumulate_run_outputs(results):
     return acc
 
 
+def format_duration(seconds):
+    """Format a duration in seconds as e.g. '1h 02m 05.3s', '2m 05.3s', or '45.3s'."""
+    hours, rem = divmod(float(seconds), 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{int(hours)}h {int(minutes):02d}m {secs:04.1f}s"
+    if minutes:
+        return f"{int(minutes)}m {secs:04.1f}s"
+    return f"{secs:.1f}s"
+
+
+def peak_memory_gb(who=resource.RUSAGE_SELF):
+    """Peak RSS so far, in GiB, for this process (default) or its terminated
+    children (who=resource.RUSAGE_CHILDREN -- only reflects a child once it has
+    exited and been reaped, e.g. after ProcessPoolExecutor.shutdown(wait=True)).
+    resource.getrusage's ru_maxrss is KiB on Linux (the SLURM/Maxwell case this
+    matters for) but bytes on macOS/BSD -- normalized here either way."""
+    ru_maxrss = resource.getrusage(who).ru_maxrss
+    kb = ru_maxrss / 1024 if sys.platform == "darwin" else ru_maxrss
+    return kb / (1024 ** 2)
+
+
 def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, nproc,
                      checkpoint_every=None, ctx_method="fork"):
     """Run `reps` repetitions of `run_simulation(yaml_path, rep)` across a
@@ -912,12 +936,12 @@ def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, npro
                 elapsed = time.perf_counter() - chunk_t0
                 np.savez_compressed(partial_path, **accumulate_run_outputs(results))
                 print(f"checkpoint: {len(results)}/{len(reps)} repetitions done "
-                      f"({elapsed:.1f}s elapsed, {elapsed / len(results):.1f}s/rep avg) -> {partial_path}",
-                      flush=True)
+                      f"({format_duration(elapsed)} elapsed, {format_duration(elapsed / len(results))}/rep avg) "
+                      f"-> {partial_path}", flush=True)
     except Exception as e:
         elapsed = time.perf_counter() - chunk_t0
         print(f"{type(e).__name__} after {len(results)}/{len(reps)} completed repetitions "
-              f"({elapsed:.1f}s elapsed) -- a worker likely died (e.g. OOM-killed) or raised; "
+              f"({format_duration(elapsed)} elapsed) -- a worker likely died (e.g. OOM-killed) or raised; "
               f"see traceback below", flush=True)
         if results:
             np.savez_compressed(partial_path, **accumulate_run_outputs(results))
@@ -928,8 +952,12 @@ def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, npro
         executor.shutdown(wait=True)
 
     elapsed = time.perf_counter() - chunk_t0
-    print(f"chunk finished: {len(results)} repetitions in {elapsed:.1f}s "
-          f"({elapsed / max(1, len(results)):.1f}s/rep avg, {nproc} processes)", flush=True)
+    # RUSAGE_CHILDREN is only accurate once every worker has been reaped, which
+    # shutdown(wait=True) above just guaranteed -- this is the peak RSS any
+    # single worker process hit, maxed over every repetition this chunk ran.
+    print(f"chunk finished: {len(results)} repetitions in {format_duration(elapsed)} "
+          f"({format_duration(elapsed / max(1, len(results)))}/rep avg, {nproc} processes, "
+          f"peak worker mem {peak_memory_gb(resource.RUSAGE_CHILDREN):.2f} GB)", flush=True)
 
     date_string = np.datetime_as_string(np.datetime64('now'))
     final_path = os.path.join(run_path, f"{output_stem}_{date_string}.npz")

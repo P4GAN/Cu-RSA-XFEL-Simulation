@@ -138,8 +138,6 @@ class XLO_sim:
         if (self.nlevel)==2:
             Tijs[0,1,0] = np.sqrt(2.0/3.0)
             Tijs[1,0,0] = np.sqrt(2.0/3.0)
-            Tijs[0,1,1] = np.sqrt(2.0/3.0)   
-            Tijs[1,0,1] = np.sqrt(2.0/3.0) 
 
             Gij[0,1] = 2.0 / 3.0
 

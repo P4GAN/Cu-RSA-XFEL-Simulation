@@ -43,10 +43,8 @@ for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUME
     os.environ.setdefault(_var, "1")
 
 import argparse  # noqa: E402
-import multiprocessing as mp  # noqa: E402
 import shutil  # noqa: E402
-
-import numpy as np  # noqa: E402  (must come after the env vars above)
+import time  # noqa: E402
 
 from XLO_sim.XLO_sim import XLO_sim  # noqa: E402
 from XLO_sim import tools  # noqa: E402
@@ -60,15 +58,22 @@ def grid_tag(X):
 
 
 def run_simulation(yaml_path, rep):
-    print(f"repetition {rep + 1}", flush=True)
+    t0 = time.perf_counter()
 
     X = XLO_sim(yaml_path)
     X.random_seed = rep
+    # This is a batch/statistics job: compute_run_outputs only ever reads the
+    # z=0/z=-1 planes, so skip storing the full z history (tens of GB/worker
+    # at production grid sizes -- see Sample._evaluate_n_level_3D_lean).
+    X.keep_z_history = False
     seed_field = tools.Ocelot_SASE_seed_pstxy(X)
     X.configure(seed_field)
     X.run_3D()
 
-    return tools.compute_run_outputs(X, TPAD, YPAD)
+    out = tools.compute_run_outputs(X, TPAD, YPAD)
+    print(f"repetition {rep + 1} done ({tools.format_duration(time.perf_counter() - t0)}, "
+          f"worker peak mem {tools.peak_memory_gb():.2f} GB)", flush=True)
+    return out
 
 
 def main():
@@ -93,18 +98,9 @@ def main():
     print(f"Running {len(reps)} repetitions ({args.rep_start}-{args.rep_end}) for {args.yaml} "
           f"on {nproc} processes -> {run_path}", flush=True)
 
-    # 'fork' is Linux's default anyway, set explicitly to match the notebook's
-    # behavior and keep this runnable interactively on macOS during testing.
-    ctx = mp.get_context("fork")
-    with ctx.Pool(processes=nproc) as pool:
-        results = pool.starmap(run_simulation, [(args.yaml, rep) for rep in reps])
-
-    acc = tools.accumulate_run_outputs(results)
-    date_string = np.datetime_as_string(np.datetime64('now'))
-    np.savez_compressed(
-        os.path.join(run_path, f"run_at_{grid_tag(X)}__reps_{args.rep_start}-{args.rep_end}_{date_string}.npz"),
-        **acc,
-    )
+    output_stem = f"run_at_{grid_tag(X)}__reps_{args.rep_start}-{args.rep_end}"
+    final_path = tools.run_sweep_chunk(run_simulation, args.yaml, reps, run_path, output_stem, nproc)
+    print(f"Saved {final_path}", flush=True)
 
 
 if __name__ == "__main__":

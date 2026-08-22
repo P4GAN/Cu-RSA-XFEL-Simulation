@@ -156,7 +156,7 @@ class XLO_optics:
         return np.pad(wavefront, shape, mode='constant', constant_values=(0.0 + 1j*0.0, 0.0 + 1j*0.0))
     
     
-    def k_filter(self, X, wavefront_fft_p, kmax_x, kmax_y, mode='ASE'):
+    def k_filter(self, X, wavefront_fft_p, kmax_x, kmax_y):
         
         kmax_ind_x = kmax_x / self.dkx
         kmax_ind_y = kmax_y / self.dky
@@ -166,39 +166,21 @@ class XLO_optics:
         
         kpad_m_y = int((X.ygrid + 2*X.ypad)/2 - kmax_ind_y)
         kpad_p_y = int((X.ygrid + 2*X.ypad)/2 + kmax_ind_y)
-
         
-        if mode=='ASE':
-        
-            if (kpad_m_x>0):
-    
-                wavefront_fft_p = np.fft.fftshift(wavefront_fft_p, axes=(2,3))
-                wavefront_fft_p[:, :, 0:kpad_m_x, :] = 0.0 + 0.0 * 1j
-                wavefront_fft_p[:, :, kpad_p_x:X.xgrid + 2 * X.xpad, :] = 0.0 + 0.0 * 1j
-                wavefront_fft_p = np.fft.ifftshift(wavefront_fft_p, axes=(2,3))
-    
-            if (kpad_m_y>0):
-                
-                wavefront_fft_p = np.fft.fftshift(wavefront_fft_p, axes=(2,3))
-                wavefront_fft_p[:, :, :, 0:kpad_m_y] = 0.0 + 0.0 * 1j
-                wavefront_fft_p[:, :, :, kpad_p_y:X.ygrid + 2 * X.ypad] = 0.0 + 0.0 * 1j
-                wavefront_fft_p = np.fft.ifftshift(wavefront_fft_p, axes=(2,3))
-                
+        if (kpad_m_x>0):
 
-        if mode=='pump':
+            wavefront_fft_p = np.fft.fftshift(wavefront_fft_p, axes=(2,3))
+            wavefront_fft_p[:, :, 0:kpad_m_x, :] = 0.0 + 0.0 * 1j
+            wavefront_fft_p[:, :, kpad_p_x:X.xgrid + 2 * X.xpad, :] = 0.0 + 0.0 * 1j
+            wavefront_fft_p = np.fft.ifftshift(wavefront_fft_p, axes=(2,3))
 
-            if (kpad_m_x>0):
-                
-                wavefront_fft_p = np.fft.fftshift(wavefront_fft_p)
-                wavefront_fft_p[0:kpad_m_x, :] = 0.0 + 0.0 * 1j
-                wavefront_fft_p[kpad_p_x:X.xgrid + 2 * X.xpad, :] = 0.0 + 0.0 * 1j
-                wavefront_fft_p = np.fft.ifftshift(wavefront_fft_p)
-                
-            if (kpad_m_y>0):
-                
-                wavefront_fft_p[:, 0:kpad_m_y] = 0.0 + 0.0 * 1j
-                wavefront_fft_p[:,kpad_p_y:X.xgrid + 2 * X.ypad] = 0.0 + 0.0 * 1j
-                wavefront_fft_p = np.fft.ifftshift(wavefront_fft_p)
+        if (kpad_m_y>0):
+            
+            wavefront_fft_p = np.fft.fftshift(wavefront_fft_p, axes=(2,3))
+            wavefront_fft_p[:, :, :, 0:kpad_m_y] = 0.0 + 0.0 * 1j
+            wavefront_fft_p[:, :, :, kpad_p_y:X.ygrid + 2 * X.ypad] = 0.0 + 0.0 * 1j
+            wavefront_fft_p = np.fft.ifftshift(wavefront_fft_p, axes=(2,3))
+            
 
         return wavefront_fft_p
 
@@ -266,19 +248,10 @@ class XLO_optics:
         wavefront_fft = self.my_fft(wavefront_pad)        
         wavefront_fft_p = self.drift_propagator_tensorial(X, wavefront_fft, zstep, X.lambdaKalpha1N)
 
-        if X.is_kfilter:
-            kmax_x = (np.pi * X.k0 / zpos / self.dkx) / (4.0 * np.pi**2)
-            kmax_y = (np.pi * X.k0 / zpos / self.dky) / (4.0 * np.pi**2)
-            wavefront_fft_p = self.k_filter(X, wavefront_fft_p, kmax_x, kmax_y)
-        
-#         import Plot as XLO_plot
-#         Plot = XLO_plot.XLO_plot()
-#         Plot.plot_complex2d(self.my_ifft(wavefront_fft_p)[0, 1, self.xpad: self.xpad + X.xgrid, self.ypad:self.ypad + X.ygrid], [-X.xmax, X.xmax, -X.ymax, X.ymax], ['X (nm)', 'Y (nm)'])
-        
         return  self.my_ifft(wavefront_fft_p)[:, :, self.xpad: self.xpad + X.xgrid, self.ypad:self.ypad + X.ygrid]
     
     
-    def Fresnel_propagator_with_absorption(self, X, wavefront, zstep, zpos, kappa, lambda_rad, mode='ASE'):
+    def Fresnel_propagator_with_absorption(self, X, wavefront, zstep, zpos, kappa, lambda_rad):
         """
         Calculate the regular part of the pump or seed field propagation for a step in z direction with absorption.
 
@@ -296,8 +269,6 @@ class XLO_optics:
             Absorption coefficient of the chosen field at given t, and beginning and end of the current step in z direction
         lambda_rad: float
             Field wavelength
-        mode: string
-            The type of the field to propagate. If mode=="pump", the pump field is propagated, otherwise it is the ASE field
 
         Returns
         -------
@@ -308,49 +279,20 @@ class XLO_optics:
         if (zpos == 0):
             zpos = X.dz
         
-        if (mode=='pump'):
             
-            pad_shape = [(self.xpad, self.xpad), (self.ypad, self.ypad)]
-            kappa_pad_shape = [(self.xpad, self.xpad), (self.ypad, self.ypad), (0, 0)]
-            
-            wavefront_pad = self.my_pad(wavefront, pad_shape)
-            kappa_exp_pad = np.exp(-self.my_pad(kappa, kappa_pad_shape) * X.dz / 4.0)
-            wavefront_fft = self.my_fft(wavefront_pad * kappa_exp_pad[:, :, 0])
-            
-            wavefront_fft_p = self.drift_propagator(wavefront_fft, zstep, lambda_rad)
-            
-            if X.is_kfilter:
-                kmax_x = (np.pi * X.k0 / zpos / self.dkx) / (4.0 * np.pi**2)
-                kmax_y = (np.pi * X.k0 / zpos / self.dky) / (4.0 * np.pi**2)
-                wavefront_fft_p = self.k_filter(X, wavefront_fft_p, kmax_x, kmax_y, 'pump')
-            
-            return (self.my_ifft(wavefront_fft_p) * kappa_exp_pad[:, :, 1])[self.xpad: self.xpad + X.xgrid, self.ypad:self.ypad + X.ygrid]
-            
-        if (mode=='ASE'):
-            
-            if (X.enable_self_diffraction == False):
-                return wavefront * np.exp(-kappa[:, :, :, :, 0] * X.dz / 2.0)
-            
-            pad_shape = [(0, 0), (0, 0), (self.xpad, self.xpad), (self.ypad, self.ypad)]
-            kappa_pad_shape = [(0, 0), (0, 0), (self.xpad, self.xpad), (self.ypad, self.ypad), (0, 0)]
-
-            wavefront_pad = self.my_pad(wavefront, pad_shape)
-            kappa_exp_pad = np.exp(-self.my_pad(kappa, kappa_pad_shape) * X.dz / 4.0)
-            wavefront_fft = self.my_fft(wavefront_pad * kappa_exp_pad[:, :, :, :, 0])
-            
-            wavefront_fft_p = self.drift_propagator_tensorial(X, wavefront_fft, zstep, lambda_rad)
-            
-            if X.is_kfilter:
-                kmax_x = (np.pi * X.k0 / zpos / self.dkx) / (4.0 * np.pi**2)
-                kmax_y = (np.pi * X.k0 / zpos / self.dky) / (4.0 * np.pi**2)
-                wavefront_fft_p = self.k_filter(X, wavefront_fft_p, kmax_x, kmax_y)
-            
-            return (self.my_ifft(wavefront_fft_p) * kappa_exp_pad[:, :, :, :, 1])[:, :, self.xpad: self.xpad + X.xgrid, self.ypad:self.ypad + X.ygrid]
+        if (X.enable_self_diffraction == False):
+            return wavefront * np.exp(-kappa[:, :, :, :, 0] * X.dz / 2.0)
         
-        else:
-            
-            print('Unknown field type to propagate')
-            return
+        pad_shape = [(0, 0), (0, 0), (self.xpad, self.xpad), (self.ypad, self.ypad)]
+        kappa_pad_shape = [(0, 0), (0, 0), (self.xpad, self.xpad), (self.ypad, self.ypad), (0, 0)]
+
+        wavefront_pad = self.my_pad(wavefront, pad_shape)
+        kappa_exp_pad = np.exp(-self.my_pad(kappa, kappa_pad_shape) * X.dz / 4.0)
+        wavefront_fft = self.my_fft(wavefront_pad * kappa_exp_pad[:, :, :, :, 0])
+        
+        wavefront_fft_p = self.drift_propagator_tensorial(X, wavefront_fft, zstep, lambda_rad)
+
+        return (self.my_ifft(wavefront_fft_p) * kappa_exp_pad[:, :, :, :, 1])[:, :, self.xpad: self.xpad + X.xgrid, self.ypad:self.ypad + X.ygrid]
         
         
     def Greens_function_numerical_3D(self, X):

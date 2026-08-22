@@ -1,5 +1,10 @@
 import os
+import resource
+import sys
+import time
+import multiprocessing as mp
 from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import yaml
@@ -116,103 +121,6 @@ def Gaussian_pulse_3D_t_shifted_splitted(X):
     
     return  p1 + p2
 
-def shift_P_txy(array, t_peak, tmax_fs):
-
-    tmax = array.shape[0]
-    
-    max_time_index = tmax // 2
-
-    t_peak_index = int(t_peak / tmax_fs * tmax)
-
-    shift_amount = t_peak_index - max_time_index
-    
-    
-    shifted_array = np.zeros_like(array)
-    if shift_amount > 0:
-        padded_array = np.pad(array, [(abs(shift_amount), 0), (0, 0), (0, 0)], mode='constant')
-        shifted_array += padded_array[0:tmax, :, :] 
-    else:
-        padded_array = np.pad(array, [(0, abs(shift_amount)), (0, 0), (0, 0)], mode='constant')
-        shifted_array += padded_array[abs(shift_amount)-1:-1, :, :]
-  
-    return shifted_array
-
-
-def Ocelot_SASE_pulse_pump_txy(X):
-    SASE = RadiationField()  # initialize RadiationField object
-    
-    # The transverse domain is considered to be space [m], since I hace input
-    # parameters in time [fs], the correct conversion is needed
-    
-    sigma_rx = X.pump_width_FWHM_x / (2 * np.sqrt(2*np.log(2))) 
-    sigma_ry = X.pump_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
-    sigma_t  = X.pump_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
-    
-    N_pump_photons = X.E_pump_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
-    print('number of pump photons = ' + f"{N_pump_photons:.1e}")
-    
-    kwargs={'xlamds':1e-9*X.lambdaPump,                     # [m] - central wavelength
-            'seed': X.random_seed,
-            'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
-            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
-            'power_rms':(1e-9*sigma_rx, 1e-9*sigma_ry, 1e-15*sigma_t*sp_const.c),   # rms size of radiation distribution
-            'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
-            'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
-            'power_waistpos':(0,0),                         # (Z_x,Z_y) [m] downstrean location of the waist of the beam
-            'wavelength':None,                              # central frequency of the radiation, if different from xlamds
-            'zsep':None,                                    # distance between slices in z as zsep*xlamds
-            'freq_chirp':0,                                 # dw/dt=[1/fs**2] - requency chirp of the beam around power_center[2]
-            'en_pulse':N_pump_photons*X.hwPump*sp_const.e,        # total energy or max power of the pulse, use only one
-            'power':None,
-            'rho':X.FEL_bandwidth/2
-            }
-    
-    SASE = imitate_sase_dfl(**kwargs);
-    
-    field_txy = SASE.fld
-    
-    # Normalization: it has to be compatible with the units used in the rest of
-    # the code. imitate_sase_dfl uses SI units [m, s, J], need to normalize with
-    # respect to [nm, fs, eV]
-    
-    dx = 1e9 * (SASE.Lx() / SASE.Nx())
-    dy = 1e9 * (SASE.Ly() / SASE.Ny())
-    dt = 1e15 * (SASE.Lz() / SASE.Nz()) / sp_const.c
-    
-    norm = np.sqrt(np.sum(np.abs(field_txy)**2 * dx * dy * dt))
-    
-    field_txy = field_txy / norm
-    
-    return np.sqrt(N_pump_photons) * field_txy
-
-
-def Gaussian_pulse_aniso_pump(X):
-          
-    sigma_rx = X.pump_width_FWHM_x / (2 * np.sqrt(2*np.log(2)))
-    sigma_ry = X.pump_width_FWHM_y / (2 * np.sqrt(2*np.log(2)))
-    sigma_t  = X.pump_duration_FWHM_t / (2 * np.sqrt(2*np.log(2)))
-    
-    field_txy = np.sqrt( 
-        1 / (2.0 * np.pi * sigma_rx * sigma_ry) 
-        / (np.sqrt(2.0 * np.pi) * sigma_t) 
-        * np.exp(-1.0 * X.x_mesh**2 / 2.0 / sigma_rx**2) 
-        * np.exp(-1.0 * X.y_mesh**2 / 2.0 / sigma_ry**2) 
-        * np.exp(-(X.t_mesh - X.t0)**2 / 2.0 / sigma_t**2)
-    )
-    
-    norm = np.sqrt(np.sum(np.abs(field_txy)**2 * X.dx * X.dy * X.dt))
-    
-    print('norm = ',norm)
-    
-    field_txy = field_txy / norm
-    
-    N_pump_photons = X.E_pump_uJ * 1e-6 / (X.hwKalpha1N * sp_const.e)
-    print('number of pump photons = ' + f"{N_pump_photons:.1e}")
-    
-        
-    return np.sqrt(N_pump_photons) * field_txy
-
-
 
 def Gaussian_pulse_aniso_seed(X):
           
@@ -282,39 +190,6 @@ def roll_zeropad(a, shift, axis=None):
     array([0, 0, 0, 1, 2, 3, 4, 5, 6, 7])
     >>> roll_zeropad(x, -2)
     array([2, 3, 4, 5, 6, 7, 8, 9, 0, 0])
-
-    >>> x2 = np.reshape(x, (2,5))
-    >>> x2
-    array([[0, 1, 2, 3, 4],
-           [5, 6, 7, 8, 9]])
-    >>> roll_zeropad(x2, 1)
-    array([[0, 0, 1, 2, 3],
-           [4, 5, 6, 7, 8]])
-    >>> roll_zeropad(x2, -2)
-    array([[2, 3, 4, 5, 6],
-           [7, 8, 9, 0, 0]])
-    >>> roll_zeropad(x2, 1, axis=0)
-    array([[0, 0, 0, 0, 0],
-           [0, 1, 2, 3, 4]])
-    >>> roll_zeropad(x2, -1, axis=0)
-    array([[5, 6, 7, 8, 9],
-           [0, 0, 0, 0, 0]])
-    >>> roll_zeropad(x2, 1, axis=1)
-    array([[0, 0, 1, 2, 3],
-           [0, 5, 6, 7, 8]])
-    >>> roll_zeropad(x2, -2, axis=1)
-    array([[2, 3, 4, 0, 0],
-           [7, 8, 9, 0, 0]])
-
-    >>> roll_zeropad(x2, 50)
-    array([[0, 0, 0, 0, 0],
-           [0, 0, 0, 0, 0]])
-    >>> roll_zeropad(x2, -50)
-    array([[0, 0, 0, 0, 0],
-           [0, 0, 0, 0, 0]])
-    >>> roll_zeropad(x2, 0)
-    array([[0, 1, 2, 3, 4],
-           [5, 6, 7, 8, 9]])
 
     """
     a = np.asanyarray(a)
@@ -402,7 +277,7 @@ def Ocelot_SASE_seed_111_dcm_pstxy(X):
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
             'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
             'power_rms':(1e-9*seed_sigma_rx, 1e-9*seed_sigma_ry, 1e-15*seed_sigma_t*sp_const.c),   # rms size of radiation distribution
-            'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
+            'power_center':(0,0,1e-15*X.t_peak*sp_const.c),  # (x,y,z) [m] - position of the radiation distribution
             'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
             'power_waistpos':(0,0),                         # (Z_x,Z_y) [m] downstrean location of the waist of the beam
             'wavelength':None,                              # central frequency of the radiation, if different from xlamds
@@ -459,9 +334,9 @@ def Ocelot_SASE_seed_pstxy(X):
     kwargs={'xlamds':1e-9*X.lambdaKalpha1N,                     # [m] - central wavelength
             'seed': X.random_seed,
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
-            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
+            'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value)
             'power_rms':(1e-9*seed_sigma_rx, 1e-9*seed_sigma_ry, 1e-15*seed_sigma_t*sp_const.c),   # rms size of radiation distribution
-            'power_center':(0,0,None),                      # (x,y,z) [m] - position of the radiation distribution
+            'power_center':(0,0,1e-15*X.t_peak*sp_const.c),  # (x,y,z) [m] - position of the radiation distribution
             'power_angle':(0,0),                            # (x,y) [rad] - angle of further radiation propagation
             'power_waistpos':(0,0),                         # (Z_x,Z_y) [m] downstrean location of the waist of the beam
             'wavelength':None,                              # central frequency of the radiation, if different from xlamds
@@ -493,79 +368,6 @@ def Ocelot_SASE_seed_pstxy(X):
     return Omega_seed_pstxy
 
 
-def Gaussian_pulse_3D_with_q(X, k=None, N_photons=None):
-    """
-    Generate a complex three-dimensional spatio-temporal Gaussian profile of field Rabi frequency expressed in terms of the q parameter.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-    k
-        Radiation wavenumber
-    N_photons
-        Integrated number of photons
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-
-    if (k is None):
-        k = X.kp
-        
-    if (N_photons is None):
-        N_photons = X.N_pump_photons
-        
-    qx = 1j * X.zR
-    qy = 1j * X.zR
-
-    ux = 1.0 / np.sqrt(qx) * np.exp(-1j * X.kp * X.x_mesh**2 / 2.0 / qx)
-    uy = 1.0 / np.sqrt(qy) * np.exp(-1j * X.kp * X.y_mesh**2 / 2.0 / qy)
-    ut = 1.0 / (np.sqrt(2.0 * np.pi) * X.sigma_t) * np.exp(-(X.t_mesh - X.t0)**2 / 2.0 / X.sigma_t**2)
-
-    eta = 2.0 * k * X.zR * X.sigma_t / np.sqrt(np.pi)
-    
-    return np.sqrt(eta) * np.sqrt(N_photons) * ux * uy * ut
-
-
-def Gaussian_pulse_3D_with_q_chirp(X, bt, v0, k=None):
-    """
-    Generate a complex three-dimensional spatio-temporal Gaussian profile of field Rabi frequency expressed in terms of the q parameter.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-    bt
-        phase terms
-    v0
-        phase terms
-    k
-        Radiation wavenumber
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-
-    if (k is None):
-        k = X.kp
-    
-    qx = 1j * X.zR
-    qy = 1j * X.zR
-    ux = 1.0 / np.sqrt(qx) * np.exp(-1j * X.kp * X.x_mesh**2 / 2.0 / qx)
-    uy = 1.0 / np.sqrt(qy) * np.exp(-1j * X.kp * X.y_mesh**2 / 2.0 / qy)
-    exponent =- (X.t_mesh - X.t0)**2 / 2.0 / X.sigma_t**2
-    exponent = exponent + 1j * bt * (X.t_mesh-X.t0)**2 + 2 * np.pi * 1j * v0 * (X.t_mesh-X.t0)
-    ut =  1.0 / (np.sqrt(2.0 * np.pi) * X.sigma_t) * np.exp(exponent)
-    eta = 2.0 * k * X.zR * X.sigma_t / np.sqrt(np.pi)
-
-    return np.sqrt(eta) * np.sqrt(X.N_pump_photons) * ux * uy * ut
-    
-
 def Gaussian_from_mesh(X, mesh, moments):
     
     omega_nn, th_nxx, th_nyy = mesh
@@ -583,7 +385,7 @@ def uniform_field_txy(X, Nphotons):
 
 def uniform_seed_field_txy(X, Nphotons_spol, Nphotons_ppol, Dphi=0):
 
-    uniform_seed_field = np.zeros_like(X.noise_pstxyz)[:, :, :, :, :, 0]
+    uniform_seed_field = np.zeros((2, 2, X.tgrid, X.xgrid, X.ygrid), dtype=complex)
 
     field_spol = uniform_field_txy(X, Nphotons_spol)
     field_ppol = np.exp(1j * Dphi) * uniform_field_txy(X, Nphotons_ppol)
@@ -600,7 +402,7 @@ def Gaussian_seed_field_txy(X, Nphotons_spol, Nphotons_ppol, Dphi=0):
 
     #what's wrong with this function?
 
-    Gaussian_seed_field = np.zeros_like(X.noise_pstxyz)[:, :, :, :, :, 0]
+    Gaussian_seed_field = np.zeros((2, 2, X.tgrid, X.xgrid, X.ygrid), dtype=complex)
 
     field_spol = Gaussian_pulse_3D_with_q(X, X.k0, Nphotons_spol)
     field_ppol = np.exp(1j * Dphi) * Gaussian_pulse_3D_with_q(X, X.k0, Nphotons_ppol)
@@ -611,52 +413,6 @@ def Gaussian_seed_field_txy(X, Nphotons_spol, Nphotons_ppol, Dphi=0):
     Gaussian_seed_field[1, 1, :, :, :] = np.conj(field_ppol)
 
     return Gaussian_seed_field
-
-
-
-def SASE_pulse_3D_with_q(X, k=None):
-    """
-    Generate a complex three-dimensional spatio-temporal SASE profile of field Rabi frequency expressed in terms of the q parameter.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-    k
-        Radiation wavenumber
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-    
-    np.random.seed(seed)
-    
-
-    if (k is None):
-        k = X.kp
-
-    qx = 1j * X.zR
-    qy = 1j * X.zR
-
-    ux = np.exp(-1j * X.kp * X.x_mesh**2 / 2.0 / qx)
-    uy = np.exp(-1j * X.kp * X.y_mesh**2 / 2.0 / qy)
-
-    t0_array = np.random.normal(0.0, X.sigma_t, X.N_modes)
-    phi_mean = -1.0j * X.kp * X.c * np.mean(t0_array)
-
-    ut = np.einsum('ntxy, n->txy', np.exp(- (X.t_mesh[np.newaxis, :, :, :] - t0_array[:, np.newaxis, np.newaxis, np.newaxis] - X.t0)**2 / 4.0 / X.sigma_coh**2), np.exp(1.0j * X.kp * X.c * t0_array)) * np.exp(phi_mean)
-
-    scaling = X.N_modes
-    for i in range(X.N_modes):
-        for j in range(i+1, X.N_modes):
-            scaling += 2.0 * np.cos(X.kp * X.c * (t0_array[j] - t0_array[i])) * np.exp(-(t0_array[i] - t0_array[j])**2 / 8.0 / X.sigma_coh**2)
-    scaling *= np.sqrt(2.0 * np.pi) * X.sigma_coh
-
-    eta = X.kp / (np.pi * X.zR * scaling)
-    
-    return np.sqrt(eta) * np.sqrt(X.N_pump_photons) * ux * uy * ut
 
 
 def linear_to_circular(X, field_linear):
@@ -711,24 +467,6 @@ def nphoton_reg_sz(X):
     """
     
     return X.dt * X.dx * X.dy / (3.0 * X.lambdaKalpha1N**2 * X.Gamma_sp_fsm1N / 8.0 / np.pi) * 1.0 / 2.0 * (np.sum(X.Omega_pstxyz[0,:,1:,:,:,:] * X.Omega_pstxyz[1,:,:-1,:,:,:], axis=(1, 2, 3)) + np.sum(X.Omega_pstxyz[0,:,:-1,:,:,:] * X.Omega_pstxyz[1,:,1:,:,:,:], axis=(1, 2, 3)))
-
-
-def nphoton_pump_z(X):
-    """
-    Calculate the number of pump photons as function of the target position z.
-
-    Parameters
-    ----------
-    X
-        XLO_sim object
-
-    Returns
-    -------
-    np.ndarray
-
-    """
-    
-    return X.dt * X.dx * X.dy * np.sum(X.J_P_txyz, axis=(0, 1, 2))
 
 
 def random_vector_normal(size, seed=None):
@@ -883,14 +621,23 @@ def transmittance_to_absorbance(T, base=np.e):
 
 
 
-def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
+def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad, window_alpha=0.25):
     """
     Fourier transform a field from the (time, y) domain to the (omega, theta_y) domain.
 
-    Zero-pads the t and y axes, then FFTs along them and applies a linear
-    phase correction for the fact that the simulation window is not centered
-    at t=0/y=0 (it is centered at X.t_pump_max/X.ymax), so the resulting
-    energy/angle map has the correct phase reference.
+    Applies a Tukey window to the t and y axes, zero-pads them, then FFTs
+    along them and applies a linear phase correction for the fact that the
+    simulation window is not centered at t=0/y=0 (it is centered at
+    X.t_peak/X.ymax), so the resulting energy/angle map has the correct
+    phase reference.
+
+    The window is needed because zero-padding a field that has not decayed
+    to (numerical) zero by the edge of the simulation grid creates a step
+    discontinuity there; that discontinuity's Fourier transform decays only
+    algebraically (Gibbs-type leakage), contaminating the spectrum/angular
+    map at large detuning/angle with a numerical artifact rather than the
+    physical (typically much faster decaying) tail. Tapering the field to
+    zero before padding removes that discontinuity.
 
     Parameters
     ----------
@@ -902,6 +649,9 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
         Zero-padding added on each side of the y axis before the FFT (sets theta_y resolution).
     tpad : int
         Zero-padding added on each side of the t axis before the FFT (sets omega resolution).
+    window_alpha : float
+        Shape parameter of the Tukey window applied to the t and y axes
+        before padding (0 = no tapering/rectangular window, 1 = Hann window).
 
     Returns
     -------
@@ -914,8 +664,14 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
     """
 
     coeffs = (2.0 * np.pi * X.hbar, 2.0 * np.pi / X.k0)
-    shifts = (X.t_pump_max + tpad * X.dt, X.ymax + ypad * X.dy)
+    shifts = (X.t_peak + tpad * X.dt, X.ymax + ypad * X.dy)
     field_psxty = np.einsum('pstxy->psxty',field_pstxy)
+
+    window_t = sp_sign.windows.tukey(X.tgrid, alpha=window_alpha)
+    window_y = sp_sign.windows.tukey(X.ygrid, alpha=window_alpha)
+    field_psxty = field_psxty * window_t[np.newaxis, np.newaxis, np.newaxis, :, np.newaxis] \
+                               * window_y[np.newaxis, np.newaxis, np.newaxis, np.newaxis, :]
+
     pad_shape = [(0, 0), (0, 0), (0, 0), (tpad, tpad), (ypad, ypad)]
     domains_sim, meshes_sim, step_sizes_sim = X.optics.nd_kspace(coeffs, (X.tgrid, X.ygrid), (tpad, ypad), (X.dt, X.dy))
     phasors = [np.exp(1j * 2.0 * np.pi * mesh * shift / coeff) for coeff, mesh, shift in zip(coeffs, meshes_sim, shifts)]
@@ -931,7 +687,7 @@ def fft_field_t_y_to_w_thy(X, field_pstxy, ypad, tpad):
 
 
 
-def SF_spectrum_w(X, zint, ypad, tpad):
+def SF_spectrum_w(X, zint, ypad, tpad, window_alpha=0.25):
     """
     Compute the spectral intensity of the in-sample field at a given depth z.
 
@@ -962,6 +718,8 @@ def SF_spectrum_w(X, zint, ypad, tpad):
         Zero-padding added to the y axis before the FFT (see `fft_field_t_y_to_w_thy`).
     tpad : int
         Zero-padding added to the t axis before the FFT (see `fft_field_t_y_to_w_thy`).
+    window_alpha : float
+        Tukey window shape parameter applied before padding/FFT (see `fft_field_t_y_to_w_thy`).
 
     Returns
     -------
@@ -975,7 +733,7 @@ def SF_spectrum_w(X, zint, ypad, tpad):
     """
 
     OmegaSF_z_pstxy = X.Omega_pstxyz[:, :, :, :, :, zint]
-    extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad)
+    extent_w_thy, OmegaSF_z_psxwThy = fft_field_t_y_to_w_thy(X, OmegaSF_z_pstxy, ypad, tpad, window_alpha)
     I_SF_w_thy = np.real(
         np.einsum('sxwy,sxwy->wy', OmegaSF_z_psxwThy[0,:,:,:,:], np.conj(OmegaSF_z_psxwThy[0,:,:,:,:]))
     )
@@ -1025,6 +783,8 @@ def compute_run_outputs(X, tpad, ypad):
         "womega_ar": womega_ar,
         "I_int_thy_w_0": I_int_thy_w_0,
         "I_int_thy_w_last": I_int_thy_w_last,
+        "I_thy0_w_0": I_thy0_w_0,
+        "I_thy0_w_last": I_thy0_w_last,
         "I_t_0": I_t_0,
         "I_t_last": I_t_last,
         "rho_ee_t_last": rho_ee_t_last,
@@ -1048,23 +808,163 @@ def accumulate_run_outputs(results):
     into one dict of summary statistics, saved once per SLURM array task
     instead of once per repetition.
 
-    Every non-axis array is reduced to '<key>_sum' (sum over repetitions)
-    and '<key>_sumsq' (sum of |value|**2 -- real-valued even for complex
-    inputs, since what convergence/error-bar checks need here is the spread
-    of each quantity's magnitude, not its complex-valued "variance"), plus
-    an 'n_reps' count. Because sums are additive, multiple chunks' saved
-    accumulators (e.g. from different array tasks writing into the same
-    runs_.../ folder) can be combined losslessly later by summing again and
-    dividing by the combined n_reps -- see data_from_folder().
+    Every non-axis array is reduced to '<key>_sum' (sum over repetitions,
+    NaN entries excluded), '<key>_sumsq' (sum of |value|**2 over the same
+    non-NaN entries -- real-valued even for complex inputs, since what
+    convergence/error-bar checks need here is the spread of each
+    quantity's magnitude, not its complex-valued "variance"), and
+    '<key>_count' (element-wise count of repetitions that contributed a
+    non-NaN value -- an array, not a scalar, since a numerically unstable
+    repetition can produce NaN at only some (t/w) indices of a key while
+    leaving the rest finite). 'n_reps' is the plain repetition count
+    (attempted, not just valid). Because sums/counts are additive, multiple
+    chunks' saved accumulators (e.g. from different array tasks writing
+    into the same runs_.../ folder) can be combined losslessly later by
+    summing again and dividing sum by count -- see data_from_folder().
     """
     acc = {"n_reps": len(results)}
     for key in results[0]:
         if key in RUN_OUTPUT_AXIS_KEYS:
             acc[key] = results[0][key]
-        else:
-            acc[f"{key}_sum"] = sum(r[key] for r in results)
-            acc[f"{key}_sumsq"] = sum(np.abs(r[key]) ** 2 for r in results)
+            continue
+        stacked = np.stack([r[key] for r in results])
+        valid = ~np.isnan(stacked)
+        n_bad = int((~valid).sum())
+        if n_bad:
+            print(f"Warning: {key} has {n_bad} NaN value(s) across {len(results)} repetitions "
+                  f"-- excluded from the accumulated sum", flush=True)
+        finite = np.where(valid, stacked, 0)
+        acc[f"{key}_sum"] = finite.sum(axis=0)
+        acc[f"{key}_sumsq"] = (np.abs(finite) ** 2).sum(axis=0)
+        acc[f"{key}_count"] = valid.sum(axis=0)
     return acc
+
+
+def format_duration(seconds):
+    """Format a duration in seconds as e.g. '1h 02m 05.3s', '2m 05.3s', or '45.3s'."""
+    hours, rem = divmod(float(seconds), 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{int(hours)}h {int(minutes):02d}m {secs:04.1f}s"
+    if minutes:
+        return f"{int(minutes)}m {secs:04.1f}s"
+    return f"{secs:.1f}s"
+
+
+def peak_memory_gb(who=resource.RUSAGE_SELF):
+    """Peak RSS so far, in GiB, for this process (default) or its terminated
+    children (who=resource.RUSAGE_CHILDREN -- only reflects a child once it has
+    exited and been reaped, e.g. after ProcessPoolExecutor.shutdown(wait=True)).
+    resource.getrusage's ru_maxrss is KiB on Linux (the SLURM/Maxwell case this
+    matters for) but bytes on macOS/BSD -- normalized here either way."""
+    ru_maxrss = resource.getrusage(who).ru_maxrss
+    kb = ru_maxrss / 1024 if sys.platform == "darwin" else ru_maxrss
+    return kb / (1024 ** 2)
+
+
+def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, nproc,
+                     checkpoint_every=None, ctx_method="fork"):
+    """Run `reps` repetitions of `run_simulation(yaml_path, rep)` across a
+    process pool and save the accumulated (sum/sumsq/count) result. Shared
+    by all run_*_sweep.py scripts.
+
+    Written to survive a failure mode seen on the SLURM cluster these run
+    on: a job whose per-repetition logs show every repetition has started
+    (or even finished), yet the job itself hangs past its --time limit
+    with nothing written to disk. Two things about the old
+    multiprocessing.Pool.starmap-based loop caused that:
+
+    - If a worker dies unexpectedly (most plausibly OOM-killed by the
+      kernel -- these sweeps run dozens of multi-GB worker processes per
+      node), Pool.starmap blocks forever waiting for a result that will
+      never arrive: nothing is logged, no exception is raised, and the
+      job just sits until SLURM's wall-clock kill fires. This uses
+      concurrent.futures.ProcessPoolExecutor instead, which detects the
+      dead worker and raises BrokenProcessPool on the next result fetch,
+      so the failure is visible in the job's .err log instead of being
+      indistinguishable from an ordinary timeout.
+    - The accumulated sum/sumsq/count of whatever repetitions have
+      completed so far is checkpointed to '<output_stem>.partial.npz'
+      every `checkpoint_every` completions (default: nproc, i.e. roughly
+      once per parallel wave). If the job is killed anyway (e.g. a
+      repetition that's genuinely stuck rather than dead, which a broken
+      pool won't catch), the repetitions completed up to the last
+      checkpoint are still on disk -- data_from_folder() already sums
+      every .npz chunk file it finds in a runs_.../ folder, so a leftover
+      partial file is picked up automatically instead of losing the whole
+      chunk's work. The partial file is removed once the chunk finishes
+      successfully and its final file is written, so a later successful
+      retry of the same chunk doesn't double-count it.
+
+    Parameters
+    ----------
+    run_simulation : callable(yaml_path, rep) -> dict
+        Per-repetition worker function (e.g. run_mono_sweep.run_simulation).
+        Must be a module-level function so it can be pickled to workers.
+    yaml_path : str
+    reps : sequence of int
+    run_path : str
+        Folder to write '<output_stem>_<timestamp>.npz' /
+        '<output_stem>.partial.npz' into.
+    output_stem : str
+        Filename stem, e.g. 'run_at_seed_30.0_uJ__reps_0-20'.
+    nproc : int
+        Worker processes.
+    checkpoint_every : int, optional
+        Completions between checkpoint writes (default: nproc).
+    ctx_method : str
+        multiprocessing start method (default 'fork', matching the
+        notebooks this is a batch-job counterpart of).
+
+    Returns
+    -------
+    str
+        Path to the final saved .npz file.
+    """
+    checkpoint_every = checkpoint_every or max(1, nproc)
+    partial_path = os.path.join(run_path, f"{output_stem}.partial.npz")
+
+    chunk_t0 = time.perf_counter()
+    ctx = mp.get_context(ctx_method)
+    results = []
+    executor = ProcessPoolExecutor(max_workers=nproc, mp_context=ctx)
+    futures = {executor.submit(run_simulation, yaml_path, rep): rep for rep in reps}
+    try:
+        for i, future in enumerate(as_completed(futures), start=1):
+            results.append(future.result())
+            if i % checkpoint_every == 0 and i < len(reps):
+                elapsed = time.perf_counter() - chunk_t0
+                np.savez_compressed(partial_path, **accumulate_run_outputs(results))
+                print(f"checkpoint: {len(results)}/{len(reps)} repetitions done "
+                      f"({format_duration(elapsed)} elapsed, {format_duration(elapsed / len(results))}/rep avg) "
+                      f"-> {partial_path}", flush=True)
+    except Exception as e:
+        elapsed = time.perf_counter() - chunk_t0
+        print(f"{type(e).__name__} after {len(results)}/{len(reps)} completed repetitions "
+              f"({format_duration(elapsed)} elapsed) -- a worker likely died (e.g. OOM-killed) or raised; "
+              f"see traceback below", flush=True)
+        if results:
+            np.savez_compressed(partial_path, **accumulate_run_outputs(results))
+            print(f"Saved {len(results)} completed repetitions to {partial_path} before re-raising", flush=True)
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
+
+    elapsed = time.perf_counter() - chunk_t0
+    # RUSAGE_CHILDREN is only accurate once every worker has been reaped, which
+    # shutdown(wait=True) above just guaranteed -- this is the peak RSS any
+    # single worker process hit, maxed over every repetition this chunk ran.
+    print(f"chunk finished: {len(results)} repetitions in {format_duration(elapsed)} "
+          f"({format_duration(elapsed / max(1, len(results)))}/rep avg, {nproc} processes, "
+          f"peak worker mem {peak_memory_gb(resource.RUSAGE_CHILDREN):.2f} GB)", flush=True)
+
+    date_string = np.datetime_as_string(np.datetime64('now'))
+    final_path = os.path.join(run_path, f"{output_stem}_{date_string}.npz")
+    np.savez_compressed(final_path, **accumulate_run_outputs(results))
+    if os.path.exists(partial_path):
+        os.remove(partial_path)
+    return final_path
 
 
 def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
@@ -1073,9 +973,17 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
 
     Each runs_.../ subfolder may contain several chunk .npz files (one per
     SLURM array task that contributed repetitions to that group); their
-    sum/sumsq/n_reps are combined by summing and dividing by the combined
-    n_reps, so a group's mean is correct even if its chunks covered
-    different repetition counts.
+    sum/sumsq/count are combined by summing and dividing sum (and sumsq) by
+    the combined element-wise count, so a group's mean is correct even if
+    its chunks covered different repetition counts or had NaN entries
+    excluded at different (t/w) indices.
+
+    Chunk files predate '<key>_count' (see accumulate_run_outputs) fall
+    back to that chunk's plain n_reps as the divisor for every element of
+    that key; if such an old chunk's sum/sumsq themselves contain NaN (from
+    before the run-level NaN fix), that chunk's contribution is dropped at
+    just the affected elements rather than poisoning the whole group's
+    mean.
 
     Parameters
     ----------
@@ -1130,24 +1038,34 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
         group_values = tuple(yaml_data[k] for k in group_keys)
         aux_data = [yaml_data[k] for k in aux_keys]
 
-        sums, sumsqs, axes = {}, {}, {}
+        sums, sumsqs, counts, axes = {}, {}, {}, {}
         n_reps = 0
         for file_name in os.listdir(runs_path):
             if not file_name.endswith('.npz'):
                 continue
             data = np.load(os.path.join(runs_path, file_name))
-            n_reps += int(data['n_reps'])
+            file_n_reps = int(data['n_reps'])
+            n_reps += file_n_reps
+
+            sum_keys = {n[:-len('_sum')] for n in data.files if n.endswith('_sum')}
+            for key in sum_keys:
+                chunk_sum = data[f"{key}_sum"]
+                chunk_count = (data[f"{key}_count"] if f"{key}_count" in data.files
+                               else np.full(chunk_sum.shape, file_n_reps, dtype=float))
+                bad = np.isnan(chunk_sum)
+                if np.any(bad):
+                    chunk_sum = np.where(bad, 0, chunk_sum)
+                    chunk_count = np.where(bad, 0, chunk_count)
+                sums[key] = sums.get(key, 0) + chunk_sum
+                counts[key] = counts.get(key, 0) + chunk_count
+                if f"{key}_sumsq" in data.files:
+                    chunk_sumsq = np.where(bad, 0, data[f"{key}_sumsq"])
+                    sumsqs[key] = sumsqs.get(key, 0) + chunk_sumsq
+
             for array_name in data.files:
-                if array_name == 'n_reps':
+                if array_name in ('n_reps',) or array_name.endswith(('_sum', '_sumsq', '_count')):
                     continue
-                if array_name.endswith('_sum'):
-                    key = array_name[:-len('_sum')]
-                    sums[key] = sums.get(key, 0) + data[array_name]
-                elif array_name.endswith('_sumsq'):
-                    key = array_name[:-len('_sumsq')]
-                    sumsqs[key] = sumsqs.get(key, 0) + data[array_name]
-                else:
-                    axes[array_name] = data[array_name]
+                axes[array_name] = data[array_name]
 
         if n_reps == 0:
             print(f"No .npz chunk files found in {runs_path}")
@@ -1155,10 +1073,16 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
 
         group_arrays = dict(axes)
         for key, total_sum in sums.items():
-            mean = total_sum / n_reps
+            count = counts[key]
+            n_starved = int((count == 0).sum())
+            if n_starved:
+                print(f"Warning: {key} in {runs_path} has {n_starved} element(s) with no valid "
+                      f"(non-NaN) repetitions -- left as NaN")
+            count_safe = np.where(count > 0, count, 1)
+            mean = np.where(count > 0, total_sum / count_safe, np.nan)
             group_arrays[key] = mean
             if key in sumsqs:
-                variance = sumsqs[key] / n_reps - np.abs(mean) ** 2
+                variance = np.where(count > 0, sumsqs[key] / count_safe - np.abs(mean) ** 2, np.nan)
                 group_arrays[f"{key}_std"] = np.sqrt(np.clip(variance, 0, None))
 
         node = accumulated

@@ -1,3 +1,4 @@
+import types
 import yaml
 import numpy as np
 import scipy.constants as sp_const
@@ -33,13 +34,17 @@ class XLO_sim:
             # reproduces the same z-marching physics storing only those.
             self.keep_z_history = True
 
+        if 'satellite_channels' not in self.config:
+            self.satellite_channels = []
+
         self.sigma_compound_Ka1 = sum(element['N_atoms'] * element['sigma_compound_Ka1'] for element in self.compound.values())
             
         self.lambdaKalpha1N = 2.0 * np.pi * self.c * self.hbar / self.hwKalpha1N
         self.k0 = 2.0 * np.pi / self.lambdaKalpha1N
 
         self.Hij = np.tril(np.ones((self.nlevel, self.nlevel)), -1)
-        self.delta_ij = np.eye(self.nlevel, self.nlevel)              
+        self.delta_ij = np.eye(self.nlevel, self.nlevel)
+        self.sign_ij_block = self.Hij - self.Hij.T  # +1 upper->lower, -1 lower->upper, 0 diag; reused for satellite-block detuning (Eq. S1)
         
         self.dz = self.zmax / (self.zgrid - 1.0)
         self.z = np.linspace(0, self.zmax, self.zgrid)
@@ -136,10 +141,10 @@ class XLO_sim:
             self.ei_K = np.asarray([0, 0, 0, 0, 1, 1])
             
         if (self.nlevel)==2:
-            Tijs[0,1,0] = np.sqrt(2.0/3.0)
-            Tijs[1,0,0] = np.sqrt(2.0/3.0)
+            Tijs[0,1,0] = 1 # np.sqrt(2.0/3.0)
+            Tijs[1,0,0] = 1 # np.sqrt(2.0/3.0)
 
-            Gij[0,1] = 2.0 / 3.0
+            Gij[0,1] = 1 # 2.0 / 3.0
 
             S_ground_Fi[0, 0] = self.sigma1_Ka1_2p3 
             S_ground_Fi[0, 2] = self.sigma1_Ka1_2s
@@ -185,8 +190,42 @@ class XLO_sim:
             self.S_ground_Fi[:, -2] = 0.0
         self.transform_matrix = np.asarray([[1, 1], [1j, -1j]]) / np.sqrt(2.0) # transformation matrix from circular polarization vectors to Cartesian
 
-        
-            
+        # 2s-hole satellite pathways (docs/theory-and-2s-satellite-pathways.md, Part II): each
+        # channel is its own detuned 6-level block, reusing Tijs/Gij verbatim and, by default,
+        # the base Mij (spectator approximation) unless it overrides Gamma_L_eV/Gamma_K_eV.
+        if self.satellite_channels and self.nlevel != 6:
+            raise ValueError('satellite_channels requires nlevel == 6 (they reuse the full sublevel-resolved base block structure)')
+
+        self.satellite_channel_params = []
+        for channel in self.satellite_channels:
+            Delta_fs = channel['detuning_eV'] / self.hbar
+            Gamma_A_fs = channel['Gamma_A_2s_eV'] / self.hbar
+            S_feed_2p = np.asarray([channel['sigma_Ka1_from_2p'], channel['sigma_Ka1_from_2p']])
+            S_feed_1s = np.asarray([channel['sigma_Ka1_from_1s'], channel['sigma_Ka1_from_1s']])
+
+            if ('Gamma_L_eV' in channel) or ('Gamma_K_eV' in channel):
+                GammaL_fs = channel.get('Gamma_L_eV', self.GammaL3eVN) / self.hbar
+                GammaK_fs = channel.get('Gamma_K_eV', self.GammaKeVN) / self.hbar
+                Gamma_coh_fs = 0.5 * (GammaL_fs + GammaK_fs) + self.additional_dephasing
+                Mij = (GammaL_fs * np.outer(self.ei_L3, self.ei_L3) +
+                       GammaK_fs * np.outer(self.ei_K, self.ei_K) +
+                       Gamma_coh_fs * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)))
+            else:
+                Mij = self.Mij
+
+            self.satellite_channel_params.append(types.SimpleNamespace(
+                name=channel['name'],
+                Delta_fs=Delta_fs,
+                Gamma_A_fs=Gamma_A_fs,
+                S_feed_2p=S_feed_2p,
+                S_feed_1s=S_feed_1s,
+                Mij=Mij,
+                Gamma_sp_Gij=self.Gamma_sp_Gij,
+                S_ion_Fi=np.zeros((2, self.nlevel)),  # further-ionization loss, deferred (theory doc §12.4)
+            ))
+
+
+
     def configure(self, seed_field=None):
         """
         Check if the seeding field is present, and pass it to the Sample object. Pre-compute the pump field dynamics with or without diffracion.
@@ -221,6 +260,7 @@ class XLO_sim:
         self.rho_2s_txyz = self.sample.rho_2s_txyz
 
         self.rho_ijtxyz = self.sample.rho_ijtxyz
+        self.rho_sat_ijtxyz = self.sample.rho_sat_ijtxyz
         self.Omega_pstxyz = self.sample.Omega_pstxyz
 
         if self.is_Cartesian_pol:

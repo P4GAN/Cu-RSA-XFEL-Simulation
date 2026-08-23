@@ -5,9 +5,8 @@ from . import tools
 
 @njit(cache=True, fastmath=True)
 def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus, Tijs_minus,
-                             Mij, Gamma_sp_Gij, S_ground_Fif, S_ion_Fif,
-                             auger_feeding_diag,
-                             rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy):
+                             Mij, Gamma_sp_Gij, S_ion_Fif, feed_diag_ixy, Delta, sign_ij,
+                             J_Omega_minus_xy, J_Omega_plus_xy,):
     nlevel = rho_ijxy.shape[0]
     s_dim = Tijs_plus.shape[2]
     nx = rho_ijxy.shape[2]
@@ -23,23 +22,23 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                         acc += Tijs_plus[i, j, s] * Omega_plus_sxy[s, x, y] + Tijs_minus[i, j, s] * Omega_minus_sxy[s, x, y]
                     Hint[i, j, x, y] = 1j * acc
 
-    # Per-level pump source and ionization rate, shared by every (i, j) pair below
-    pump_term = np.zeros((nlevel, nx, ny), dtype=np.complex128)
+    # Per-level spontaneous-feed (Gamma_sp_Gij, self-referential to this block's own diagonal) and
+    # ionization rate, shared by every (i, j) pair below. External population feed (ground pump,
+    # 2s-Auger, spectator photoionization, ...) is precomputed by the caller into feed_diag_ixy,
+    # since it depends on *other* states that are frozen for this RK4 evaluation.
+    diag_feed = np.zeros((nlevel, nx, ny), dtype=np.complex128)
     gamma_ion = np.zeros((nlevel, nx, ny), dtype=np.complex128)
     for i in range(nlevel):
         for x in range(nx):
             for y in range(ny):
-                pump_i = 0.0j
+                diag_sum = 0.0j
                 for s in range(nlevel):
-                    pump_i += Gamma_sp_Gij[i, s] * rho_ijxy[s, s, x, y]
+                    diag_sum += Gamma_sp_Gij[i, s] * rho_ijxy[s, s, x, y]
 
-                pump_i += S_ground_Fif[0, i] * J_Omega_minus_xy[x, y] * rho_ground_xy[x, y]
-                pump_i += S_ground_Fif[1, i] * J_Omega_plus_xy[x, y] * rho_ground_xy[x, y]
-                pump_i += auger_feeding_diag[i] * rho_2s_xy[x, y]
-                pump_term[i, x, y] = pump_i
+                diag_feed[i, x, y] = diag_sum + feed_diag_ixy[i, x, y]
 
-                gion = S_ion_Fif[0, i] * J_Omega_minus_xy[x, y] + S_ion_Fif[1, i] * J_Omega_plus_xy[x, y]
-                gamma_ion[i, x, y] = gion
+                gamma_ion[i, x, y] = S_ion_Fif[0, i] * J_Omega_minus_xy[x, y] + \
+                                     S_ion_Fif[1, i] * J_Omega_plus_xy[x, y]
 
     drho = np.zeros((nlevel, nlevel, nx, ny), dtype=np.complex128)
     for i in range(nlevel):
@@ -52,7 +51,9 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
 
                     val = comm - Mij[i, j] * rho_ijxy[i, j, x, y]
                     if i == j:
-                        val += pump_term[i, x, y]
+                        val += diag_feed[i, x, y]
+                    else:
+                        val += -1j * Delta * sign_ij[i, j] * rho_ijxy[i, j, x, y]
                     val += -0.5 * (gamma_ion[i, x, y] + gamma_ion[j, x, y]) * rho_ijxy[i, j, x, y]
                     drho[i, j, x, y] = val
 
@@ -82,10 +83,132 @@ def MB_nlevel_regular(t, rho_ijxy, params):
     Omega_plus_sxy = Omega_psxy[0, :, :, :]
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
+    feed_diag_ixy = feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy)
+
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
-        X.Mij, X.Gamma_sp_Gij, X.S_ground_Fi[:, :-1],  X.S_ion_Fi[:, :], 
-        np.diag(X.auger_feeding_matrix), rho_ground_xy, rho_2s_xy, 
+        X.Mij, X.Gamma_sp_Gij, X.S_ion_Fi[:, :], feed_diag_ixy, 0.0, X.sign_ij_block,
+        J_Omega_minus_xy, J_Omega_plus_xy,
+    )
+
+
+def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy):
+    """
+    External population feed into the base 6-level block's diagonal: ground-state photoionization
+    (pump + seed fields, Eq. 14) plus 2s-hole Auger feeding (Eq. M2). Reproduces exactly what used
+    to be computed inline inside `_MB_nlevel_regular_core` before the satellite-block refactor
+    (docs/theory-and-2s-satellite-pathways.md).
+
+    Parameters
+    ----------
+    X
+        XLO_sim object
+    rho_ground_xy: np.ndarray
+        Ground state population at given t,z
+    rho_2s_xy: np.ndarray
+        2s hole level population at given t,z
+    J_Omega_minus_xy, J_Omega_plus_xy: np.ndarray
+        Seed field photon fluxes at given t,z
+
+    Returns
+    -------
+    np.ndarray
+
+    """
+
+    S_ground_Fim = X.S_ground_Fi[0, :X.nlevel]
+    S_ground_Fip = X.S_ground_Fi[1, :X.nlevel]
+    auger_diag = np.diag(X.auger_feeding_matrix)
+
+    feed = np.einsum('i,xy->ixy', S_ground_Fim, J_Omega_minus_xy * rho_ground_xy)
+    feed += np.einsum('i,xy->ixy', S_ground_Fip, J_Omega_plus_xy * rho_ground_xy)
+    feed += np.einsum('i,xy->ixy', auger_diag, rho_2s_xy)
+
+    return feed
+
+
+def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_xy, J_Omega_plus_xy):
+    """
+    External population feed into one 2s-hole satellite channel's local 6-level block diagonal
+    (docs/theory-and-2s-satellite-pathways.md, Part II): 2s-hole Auger decay spread evenly over the
+    4 lower-manifold (2p+X) msublevels (Eq. S2), plus sublevel-preserving spectator photoionization
+    of the base block's 2p-hole diagonal into the same lower manifold (Eq. S3), plus
+    sublevel-preserving spectator photoionization of the base block's 1s-hole diagonal into the
+    2 upper-manifold (1sX) msublevels (Eq. S4).
+
+    Parameters
+    ----------
+    X
+        XLO_sim object
+    chan
+        This channel's parameter holder (XLO_sim.py::satellite_channel_params entry)
+    rho_2s_xy: np.ndarray
+        2s hole level population at given t,z
+    rho_base_ijxy: np.ndarray
+        Base 6-level block's density matrix at given t,z
+    J_Omega_minus_xy, J_Omega_plus_xy: np.ndarray
+        Seed field photon fluxes at given t,z
+
+    Returns
+    -------
+    np.ndarray
+
+    """
+
+    nlevel = rho_base_ijxy.shape[0]
+    nx, ny = rho_2s_xy.shape
+    feed = np.zeros((nlevel, nx, ny), dtype=complex)
+
+    auger_weight = X.ei_L3 / np.sum(X.ei_L3)
+    feed += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
+
+    rate_2p_xy = chan.S_feed_2p[0] * J_Omega_minus_xy + chan.S_feed_2p[1] * J_Omega_plus_xy
+    rate_1s_xy = chan.S_feed_1s[0] * J_Omega_minus_xy + chan.S_feed_1s[1] * J_Omega_plus_xy
+
+    for i in range(nlevel):
+        if X.ei_L3[i] > 0:
+            feed[i] += rate_2p_xy * rho_base_ijxy[i, i]
+        else:
+            feed[i] += rate_1s_xy * rho_base_ijxy[i, i]
+
+    return feed
+
+
+def MB_satellite_block_regular(t, rho_ijxy, params):
+    """
+    Calculate the regular part of the Maxwell-Bloch equations for one 2s-hole satellite channel's
+    local 6-level block (docs/theory-and-2s-satellite-pathways.md, Part II). Structurally identical
+    to `MB_nlevel_regular`, reusing the base block's Tijs and, by default, Mij/Gamma_sp_Gij, but fed
+    by `feed_diag_satellite_block` instead of ground-state pumping, and detuned from the Kalpha1
+    rotating frame by the channel's own Delta.
+
+    Parameters
+    ----------
+    t
+    rho_ijxy: np.ndarray
+        This channel's local density matrix at given t,z
+    params: list
+        List containing the XLO_sim object, the channel's parameter holder, seed field Rabi
+        frequency at given t,z, t index, z index, the base block's density matrix at given t,z, 2s
+        hole level population, pump flux, seed flux for the -1 and +1 polarizations (all at given t,z)
+
+    Returns
+    -------
+    np.ndarray
+
+    """
+
+    X, chan, Omega_psxy, rho_base_ijxy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
+
+    Omega_plus_sxy = Omega_psxy[0, :, :, :]
+    Omega_minus_sxy = Omega_psxy[1, :, :, :]
+
+    feed_diag_ixy = feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_xy, J_Omega_plus_xy)
+
+    return _MB_nlevel_regular_core(
+        rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
+        chan.Mij, chan.Gamma_sp_Gij, chan.S_ion_Fi[:, :],
+        feed_diag_ixy, chan.Delta_fs, X.sign_ij_block,
         J_Omega_minus_xy, J_Omega_plus_xy,
     )
 
@@ -195,7 +318,7 @@ def Omega_source_regular(X, rho_ijxy):
     return X.field_source_factor * np.einsum('p, psxy -> psxy', X.e_sign, np.asarray([Omega_plus_source, Omega_minus_source]))
 
 
-def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz):
+def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, rho_sat_ijxyz_list=None):
     """
     Calculate the absorption coefficient of the pump or seed field due to photoionization of the ground and all ionic states, and the compound. The ground state population is not pre-configured.
     Parameters
@@ -208,17 +331,26 @@ def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz):
         2s hole level population at given t,z
     rho_ijxyz: np.ndarray
         Density matrix at given t,z
+    rho_sat_ijxyz_list: list of np.ndarray or None
+        Density matrices of the 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md,
+        Part II) at given t,z, in the same order as `X.satellite_channel_params`. Their further-
+        ionization loss cross sections (`chan.S_ion_Fi`, Eq. S8) default to zero, so this is a no-op
+        until that data is supplied. Pass None (default) to skip entirely.
 
     Returns
     -------
     np.ndarray
 
     """
-    
-    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', rho_ground_xyz, X.S_ground_Fi[:, :]) + \
-                        X.n * np.einsum('xyz, s->sxyz', rho_other_xyz, X.S_other_F[:]) + \
-                        X.n * np.einsum('xyz, s->sxyz', rho_2s_xyz, X.S_2s_F[:]) + \
-                        X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[:, :], rho_ijxyz) + \
+
+    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', rho_ground_xyz, X.S_ground_Fi[1:, :]) + \
+                        X.n * np.einsum('xyz, s->sxyz', rho_other_xyz, X.S_other_F[1:]) + \
+                        X.n * np.einsum('xyz, s->sxyz', rho_2s_xyz, X.S_2s_F[1:]) + \
+                        X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[1:, :], rho_ijxyz) + \
                         X.n * X.sigma_compound_Ka1
+
+    if rho_sat_ijxyz_list is not None:
+        for chan, rho_sat_ijxyz in zip(X.satellite_channel_params, rho_sat_ijxyz_list):
+            kappa_Omega_sxyz = kappa_Omega_sxyz + X.n * np.einsum('si, iixyz->sxyz', chan.S_ion_Fi[1:, :], rho_sat_ijxyz)
 
     return np.array([kappa_Omega_sxyz, kappa_Omega_sxyz])

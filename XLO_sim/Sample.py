@@ -51,10 +51,15 @@ class XLO_sample:
         rho_other_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
         rho_2s_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
 
+        # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): one full
+        # 6-level block per channel, same shape as rho_ijtxyz. Empty list if none configured.
+        rho_sat_ijtxyz = [np.zeros((X.nlevel, X.nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
+                          for _ in X.satellite_channel_params]
+
         J_Omega_minus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
         J_Omega_plus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
 
-        return rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy
+        return rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, rho_sat_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy
 
 
   
@@ -91,52 +96,72 @@ class XLO_sample:
         outputs actually read (see tools.compute_run_outputs).
         """
 
-        rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy = self.init_n_level_3D(X)
+        rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, rho_sat_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy = self.init_n_level_3D(X)
 
         Omega_pstxy = Omega_pstxyz[:, :, :, :, :, 0].copy()
         
-        # Main loop begins. Iterate over longitudinal coordinate        
+        n_sat = len(X.satellite_channel_params)
+
+        # Main loop begins. Iterate over longitudinal coordinate
         for iz in range(0, X.zgrid):
 
             rho_ijxy = rho_ijtxyz[:, :, 0, :, :, iz].copy()
-            
+            rho_sat_ijxy = [rho_sat_ijtxyz[k][:, :, 0, :, :, iz].copy() for k in range(n_sat)]
+
             rho_ground_xy = rho_ground_txyz[0, :, :, iz].copy()
             rho_other_xy = rho_other_txyz[0, :, :, iz].copy()
-            rho_2s_xy = rho_2s_txyz[0, :, :, iz].copy()                      
-                               
+            rho_2s_xy = rho_2s_txyz[0, :, :, iz].copy()
+
             ######################
-            # Loop over simulation time window begins      
+            # Loop over simulation time window begins
             for it in range(0, X.tgrid):
                 d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], rho_ground_xy, rho_2s_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
 
+                # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II):
+                # one full 6-level block per channel, fed from the base block's and rho_2s_xy's
+                # pre-update (start-of-step) values, same convention as the other blocks above.
+                d_rho_sat_it = [
+                    tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
+                                     [X, chan, Omega_pstxy[:, :, it, :, :], it, iz, rho_ijxy, rho_2s_xy,
+                                      J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                    for k, chan in enumerate(X.satellite_channel_params)
+                ]
+
                 rho_ijxy += d_rho_it_reg 
                 rho_ground_xy += d_rho_ground_it
                 rho_other_xy += d_rho_other_it
                 rho_2s_xy += d_rho_2s_it
+                for k in range(n_sat):
+                    rho_sat_ijxy[k] = rho_sat_ijxy[k] + d_rho_sat_it[k]
+                    rho_sat_ijtxyz[k][:, :, it, :, :, iz] = rho_sat_ijxy[k]
 
                 rho_ground_txyz[it, :, :, iz] = rho_ground_xy
                 rho_other_txyz[it, :, :, iz] = rho_other_xy
                 rho_2s_txyz[it, :, :, iz] = rho_2s_xy
                 rho_ijtxyz[:, :, it, :, :, iz] = rho_ijxy
-                
+
+                rho_sat_ijxyz_list = [rho_sat_ijtxyz[k][:, :, it, :, :, iz-1:iz+1] for k in range(n_sat)]
+
                 if (iz != 0):
-                    kappa_Omega_psxyz = Model.absorption(X, rho_ground_txyz[it, :, :, iz-1:iz+1], 
-                                                         rho_other_txyz[it, :, :, iz-1:iz+1], 
-                                                         rho_2s_txyz[it, :, :, iz-1:iz+1], 
-                                                         rho_ijtxyz[:, :, it, :, :, iz-1:iz+1])
-                    Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N) 
-                    
-                Omega_pstxy[:, :, it, :, :] +=  1.0 * X.dz * Model.Omega_source_regular(X, rho_ijtxyz[:, :, it, :, :, iz]) 
-                    
+                    kappa_Omega_psxyz = Model.absorption(X, rho_ground_txyz[it, :, :, iz-1:iz+1], rho_other_txyz[it, :, :, iz-1:iz+1],
+                                                         rho_2s_txyz[it, :, :, iz-1:iz+1],
+                                                         rho_ijtxyz[:, :, it, :, :, iz-1:iz+1],
+                                                         rho_sat_ijxyz_list)
+                    Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
+
+                Omega_pstxy[:, :, it, :, :] +=  1.0 * X.dz * Model.Omega_source_regular(X, rho_ijtxyz[:, :, it, :, :, iz])
+                for k in range(n_sat):
+                    Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, rho_sat_ijtxyz[k][:, :, it, :, :, iz])
+
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
 
-            # ######################    
-            # Loop over simulation time window ends    
-            
+            # ######################
+            # Loop over simulation time window ends
+
             if (iz != X.zgrid-1):
                 Omega_pstxyz[:, :, :, :, :, iz + 1] = Omega_pstxy
 
@@ -144,8 +169,9 @@ class XLO_sample:
         # Main loop ends
 
         self.rho_ijtxyz = rho_ijtxyz
+        self.rho_sat_ijtxyz = rho_sat_ijtxyz
         self.Omega_pstxyz = Omega_pstxyz
-        
+
         self.rho_ground_txyz = np.real(rho_ground_txyz)
 
         self.rho_2s_txyz = np.real(rho_2s_txyz)
@@ -202,6 +228,10 @@ class XLO_sample:
         # `rho_ijtxyz[:,:,0,:,:,iz].copy()` etc. would have read.
         rho_ij_ic_xy = np.zeros((nlevel, nlevel, xgrid, ygrid), dtype=complex)
 
+        n_sat = len(X.satellite_channel_params)
+        rho_sat_ij_ic_xy = [np.zeros((X.nlevel, X.nlevel, X.xgrid, X.ygrid), dtype=complex)
+                            for k in range(n_sat)]
+
         rho_ground_ic_xy = np.ones((xgrid, ygrid), dtype=complex)
         rho_other_ic_xy = np.zeros((xgrid, ygrid), dtype=complex)
         rho_2s_ic_xy = np.zeros((xgrid, ygrid), dtype=complex)
@@ -218,10 +248,12 @@ class XLO_sample:
         J_Omega_plus_txy = np.zeros((tgrid, xgrid, ygrid))
 
         prev_rho_ground_txy = prev_rho_other_txy = prev_rho_2s_txy = prev_rho_ijtxy = None
+        prev_rho_sat_ijtxy = [None for k in range(n_sat)]
 
         for iz in range(0, zgrid):
 
             rho_ijxy = rho_ij_ic_xy.copy()
+            rho_sat_ijxy = [rho_sat_ij_ic_xy.copy() for k in range(n_sat)]
             rho_ground_xy = rho_ground_ic_xy.copy()
             rho_other_xy = rho_other_ic_xy.copy()
             rho_2s_xy = rho_2s_ic_xy.copy()
@@ -230,6 +262,8 @@ class XLO_sample:
             curr_rho_other_txy = np.empty((tgrid, xgrid, ygrid))
             curr_rho_2s_txy = np.empty((tgrid, xgrid, ygrid))
             curr_rho_ijtxy = np.empty((nlevel, nlevel, tgrid, xgrid, ygrid), dtype=complex)
+            curr_rho_sat_ijtxy = [np.empty((nlevel, nlevel, tgrid, xgrid, ygrid), dtype=complex)
+                                  for k in range(n_sat)]
 
             ######################
             # Loop over simulation time window begins
@@ -239,10 +273,24 @@ class XLO_sample:
                 d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
 
+                # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II):
+                # one full 6-level block per channel, fed from the base block's and rho_2s_xy's
+                # pre-update (start-of-step) values, same convention as the other blocks above.
+                d_rho_sat_it = [
+                    tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
+                                     [X, chan, Omega_pstxy[:, :, it, :, :], it, iz, rho_ijxy, rho_2s_xy,
+                                      J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
+                    for k, chan in enumerate(X.satellite_channel_params)
+                ]
+
                 rho_ijxy += d_rho_it_reg
                 rho_ground_xy += d_rho_ground_it
                 rho_other_xy += d_rho_other_it
                 rho_2s_xy += d_rho_2s_it
+
+                for k in range(n_sat):
+                    rho_sat_ijxy[k] = rho_sat_ijxy[k] + d_rho_sat_it[k]
+                    curr_rho_sat_ijtxy[k][:, :, it, :, :] = rho_sat_ijxy[k]
 
                 curr_rho_ground_txy[it, :, :] = np.real(rho_ground_xy)
                 curr_rho_other_txy[it, :, :] = np.real(rho_other_xy)
@@ -254,15 +302,25 @@ class XLO_sample:
                     # from rho_ground_txyz[it,:,:,iz-1:iz+1] etc. in the
                     # full-history path -- cast back to complex to match its
                     # input dtype exactly (these hold real-only values either way).
-                    window_ground = np.stack([prev_rho_ground_txy[it, :, :], curr_rho_ground_txy[it, :, :]], axis=-1).astype(complex)
-                    window_other = np.stack([prev_rho_other_txy[it, :, :], curr_rho_other_txy[it, :, :]], axis=-1).astype(complex)
-                    window_2s = np.stack([prev_rho_2s_txy[it, :, :], curr_rho_2s_txy[it, :, :]], axis=-1).astype(complex)
-                    window_ij = np.stack([prev_rho_ijtxy[:, :, it, :, :], curr_rho_ijtxy[:, :, it, :, :]], axis=-1)
+                    window_ground = np.stack([prev_rho_ground_txy[it, :, :], 
+                                              curr_rho_ground_txy[it, :, :]], axis=-1).astype(complex)
+                    window_other = np.stack([prev_rho_other_txy[it, :, :], 
+                                             curr_rho_other_txy[it, :, :]], axis=-1).astype(complex)
+                    window_2s = np.stack([prev_rho_2s_txy[it, :, :], 
+                                          curr_rho_2s_txy[it, :, :]], axis=-1).astype(complex)
+                    window_ij = np.stack([prev_rho_ijtxy[:, :, it, :, :], 
+                                          curr_rho_ijtxy[:, :, it, :, :]], axis=-1)
+                    window_sat_ij = [np.stack([prev_rho_sat_ijtxy[k][:, :, it, :, :], 
+                                               curr_rho_sat_ijtxy[k][:, :, it, :, :]], axis=-1)
+                                     for k in range(n_sat)]
 
-                    kappa_Omega_psxyz = Model.absorption(X, window_ground, window_other, window_2s, window_ij)
+                    kappa_Omega_psxyz = Model.absorption(X, window_ground, window_other, 
+                                                         window_2s, window_ij, window_sat_ij)
                     Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
 
                 Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, curr_rho_ijtxy[:, :, it, :, :])
+                for k in range(n_sat):
+                    Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, curr_rho_sat_ijtxy[k][:, :, it, :, :])
 
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
@@ -280,11 +338,15 @@ class XLO_sample:
             prev_rho_other_txy = curr_rho_other_txy
             prev_rho_2s_txy = curr_rho_2s_txy
             prev_rho_ijtxy = curr_rho_ijtxy
+            prev_rho_sat_ijtxy = curr_rho_sat_ijtxy
 
         ######################
         # Main loop ends
 
         self.rho_ijtxyz = curr_rho_ijtxy[:, :, :, :, :, np.newaxis]
+        self.rho_sat_ijtxyz = []
+        for k in range(n_sat):
+            self.rho_sat_ijtxyz.append(curr_rho_sat_ijtxy[k][:, :, :, :, :, np.newaxis])
         self.Omega_pstxyz = np.stack([Omega_pstxyz_z0, Omega_pstxyz_zlast], axis=-1)
 
         self.rho_ground_txyz = curr_rho_ground_txy[:, :, :, np.newaxis]

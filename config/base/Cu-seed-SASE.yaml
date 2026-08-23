@@ -87,3 +87,35 @@ enable_kfilter: False
 is_Cartesian_pol: True
 use_2s_pathway: True
 
+#2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): each entry is its
+#own detuned, sublevel-resolved 6-level block (2p+X <-> 1sX), fed by 2s-hole Auger decay and by
+#spectator-shell photoionization of the base 1s-hole/2p-hole populations. Requires nlevel: 6.
+#Leave empty/absent to reproduce the existing (undetuned, lumped-into-2p-hole) behaviour exactly.
+#Gamma_A_2s_eV/sigma_*_from_2p/sigma_*_from_1s values below are per-channel and are carved out of
+#GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s respectively -- see theory doc §12.7 before setting
+#real numbers, to avoid double-counting.
+satellite_channels: []
+# satellite_channels:
+#   - name: "3d+"                 # lower=2p+3d+, upper=1s3d+
+#     detuning_eV: 0.0
+#     Gamma_A_2s_eV: 0.0
+#     sigma_pump_from_2p: 0.0
+#     sigma_Ka1_from_2p: 0.0
+#     sigma_pump_from_1s: 0.0
+#     sigma_Ka1_from_1s: 0.0
+#     # Gamma_L_eV: ...           # optional override, default reuses GammaL3eVN
+#     # Gamma_K_eV: ...           # optional override, default reuses GammaKeVN
+#   - name: "3d-"                 # lower=2p+3d-, upper=1s3d-
+#     detuning_eV: 0.0
+#     Gamma_A_2s_eV: 0.0
+#     sigma_pump_from_2p: 0.0
+#     sigma_Ka1_from_2p: 0.0
+#     sigma_pump_from_1s: 0.0
+#     sigma_Ka1_from_1s: 0.0
+#   - name: "3p+"                 # lower=2p+3p+, upper=1s3p+
+#     detuning_eV: 0.0
+#     Gamma_A_2s_eV: 0.0
+#     sigma_pump_from_2p: 0.0
+#     sigma_Ka1_from_2p: 0.0
+#     sigma_pump_from_1s: 0.0
+#     sigma_Ka1_from_1s: 0.0

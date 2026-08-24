@@ -5,7 +5,7 @@ from . import tools
 
 @njit(cache=True, fastmath=True)
 def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus, Tijs_minus,
-                             Mij, Gamma_sp_Gij, S_ion_Fif, feed_diag_ixy, Delta, sign_ij,
+                             Mij, Gamma_sp_Gij, S_ion_Fif, feed_diag_ixy, Delta_ij,
                              J_Omega_minus_xy, J_Omega_plus_xy,):
     nlevel = rho_ijxy.shape[0]
     s_dim = Tijs_plus.shape[2]
@@ -53,7 +53,7 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                     if i == j:
                         val += diag_feed[i, x, y]
                     else:
-                        val += -1j * Delta * sign_ij[i, j] * rho_ijxy[i, j, x, y]
+                        val += -1j * Delta_ij[i, j] * rho_ijxy[i, j, x, y]
                     val += -0.5 * (gamma_ion[i, x, y] + gamma_ion[j, x, y]) * rho_ijxy[i, j, x, y]
                     drho[i, j, x, y] = val
 
@@ -87,7 +87,7 @@ def MB_nlevel_regular(t, rho_ijxy, params):
 
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
-        X.Mij, X.Gamma_sp_Gij, X.S_ion_Fi[:, :], feed_diag_ixy, 0.0, X.sign_ij_block,
+        X.Mij, X.Gamma_sp_Gij, X.S_ion_Fi[:, :], feed_diag_ixy, X.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy,
     )
 
@@ -210,7 +210,7 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
         chan.Mij, chan.Gamma_sp_Gij, chan.S_ion_Fi[:, :],
-        feed_diag_ixy, chan.Delta_fs, X.sign_ij_block,
+        feed_diag_ixy, chan.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy,
     )
 

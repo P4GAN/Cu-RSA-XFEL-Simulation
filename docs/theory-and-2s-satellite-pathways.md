@@ -474,3 +474,195 @@ coupling or branching-ratio parameters are needed** — only rates:
 - With all three $\Delta_k=0$, each satellite block's coherent response should be structurally
   identical to the base block's, differing only by whatever feed rate is injected — a useful
   debugging limit distinct from the "all rates zero" check above.
+
+---
+
+## Part III — New: 2p$_{1/2}$ (L2, Kα2) pathway
+
+### 15. Motivation and scope
+
+The base system (§2) tracks only 2p$_{3/2}$ (L3): the code's own comment on the L3 opacity/decay
+budget states plainly that the Kα2 branch ($1/3$ of $\Gamma_{sp}$, decaying into 2p$_{1/2}$/L2) "is
+lost from the model." This section makes that branch explicit: the 2p$_{1/2}$ hole manifold gets
+its own coherent Maxwell–Bloch dynamics, coupled to the field at the (~20 eV lower) Kα2 energy,
+instead of being pure loss. Equation numbers here use prefix `(K*)`. Satellite-of-L2 physics (a
+2p$_{1/2}$+spectator double hole, analogous to Part II) is explicitly **out of scope** for this
+section — see §19.
+
+### 16. Decision: one shared field, not a second one
+
+**Design decision.** Kα1 and Kα2 photons are represented as **one shared field** $\Omega_\sigma^{(\pm)}(\vec r,\tau)$
+(the same field already used throughout Parts I–II), with the Kα2 coherences carrying an additional
+detuning relative to the existing Kα1 rotating frame — **not** a second, independent field with its
+own carrier wavevector and propagation equations.
+
+This is a physical statement, not a numerical convenience: a real photodetector measuring the
+Kα1+Kα2 emission sees one electromagnetic field with two spectral components beating against each
+other, exactly the quantity a single time-domain envelope $\Omega_\sigma(\vec r,\tau)$ correctly
+represents (the same mechanism Eq. S7 already uses to sum multiple *satellite* coherences into one
+shared field — Kα2 is simply one more term in that same sum, Eq. K5 below). A second field would
+duplicate the entire propagation pipeline (diffraction, absorption, zero-padding) for a field 99.75%
+degenerate with the first ($\Delta E_{K\alpha1,K\alpha2}/\hbar\omega_0\approx0.25\%$), and the
+codebase already anticipated the shared-field approach: `XLO_sim.py` computes
+`DeltaomegaL2mL3A = (hwKalpha1N - hwKalpha2N)/hbar` and `f05Kalpha12A`, both present since before
+this section but **used nowhere until now** — a clear breadcrumb for the intended design.
+
+> **⚠ Numerical consequence.** Sharing one field means $\Omega_\sigma$'s envelope must now resolve
+> a ~20 eV beat frequency (period $2\pi\hbar/\Delta E_{K\alpha}\approx0.21$ fs), an order of
+> magnitude faster than the satellite channels' 1–3 eV detunings (§13's parameter inventory). This
+> tightens the existing $\Delta t$-resolution requirement from the numerical-scheme discussion
+> (docs numerics review) — worth re-checking $\Delta t\cdot\Delta E_{K\alpha}/\hbar$ stays
+> comfortably resolved (≳10–20 samples/period) whenever `tgrid`/`tmax` are changed.
+
+### 17. Structural consequence: this extends the base block, it is not a new block
+
+Unlike the satellite pathways (Part II), 2p$_{1/2}$ shares its **entire 1s (K) population** with
+the existing 2p$_{3/2}$ (L3) block — there is only one physical 1s-hole state in the ion, decaying
+via *either* Kα1 or Kα2, not two independent 1s populations. A satellite-style separate 6-level
+block (its own local K manifold, Part II §11) would therefore be wrong: it would silently duplicate
+the 1s population instead of sharing it, and coherences $\rho_{2p_{1/2},1s}$ could not be
+represented at all in either block's own array.
+
+The only structurally correct implementation is to **extend the base block itself**: local indices
+$0..3$ = 2p$_{3/2}$ (unchanged), $4,5$ = 1s (unchanged), and **new** local indices $6,7$ = 2p$_{1/2}$
+$(m=-\tfrac12,\tfrac12)$, i.e. `nlevel` grows from 6 to 8 when this pathway is enabled
+(`XLO_sim.py`: `self.nlevel = nlevel_base + 2`). This is implemented as a genuine extension, not an
+independent block: it reuses **every** existing base-block code path in `Sample.py` and
+`Model.py::absorption` unchanged (they are already generic in `nlevel`), the only new code is the
+tensor construction in `XLO_sim.py::__init__` below.
+
+`use_L2_pathway: True` requires `nlevel: 6` in the YAML (the base value before extension) and is
+currently **mutually exclusive with `satellite_channels`** (§19).
+
+### 18. Dipole tensor and branching matrix: Clebsch–Gordan derivation
+
+$T_{ij\sigma}$ (Eq. 25) and $G_{ij}$ (Eq. 17) for 2p$_{3/2}\leftrightarrow$1s were given, not
+derived, in the PDF. For 2p$_{1/2}\leftrightarrow$1s (both $j=1/2$), reusing them is not an option —
+the msublevel structure and Clebsch–Gordan coefficients genuinely differ — so this section derives
+them from the Wigner–Eckart theorem, cross-checked three independent ways.
+
+**Radial/reduced-matrix-element ratio.** Using the standard 6j-symbol identity relating
+$\langle 1s\|D\|2p_j\rangle$ for $j=3/2$ and $j=1/2$ (same radial integral, LS/statistical
+approximation — consistent with this repo's own $\Gamma_{rK\alpha1}/\Gamma_{rK\alpha2}=1.943$ being
+close to the pure-CG prediction of exactly 2, PDF's existing constants):
+$$
+|\langle 1/2\|D\|3/2\rangle|^2 \,/\, |\langle 1/2\|D\|1/2\rangle|^2 = 2,
+$$
+reproducing the config's own $\Gamma_{rK\alpha1}\!:\!\Gamma_{rK\alpha2}\approx2\!:\!1$ ratio exactly
+from angular-momentum algebra alone — a strong consistency check on the derivation below.
+
+**Angular part.** For $j=1/2\to j'=1/2$ dipole coupling, the standard closed-form CG coefficients
+$\langle j,m;1,q|j,m+q\rangle$ (same-$j$ rank-1 coupling) give exactly two allowed
+$(m,\sigma,m')$ triples with $m,m'\in\{-\tfrac12,\tfrac12\}$ — compare to 2p$_{3/2}$'s four:
+$$
+1s(m\!=\!-\tfrac12) \xrightarrow{\sigma=\text{idx }1} 2p_{1/2}(m\!=\!\tfrac12), \qquad
+1s(m\!=\!\tfrac12) \xrightarrow{\sigma=\text{idx }0} 2p_{1/2}(m\!=\!-\tfrac12),
+\tag{K1}
+$$
+using this code's own established $\sigma$-index$\leftrightarrow\Delta m$ convention (index 0
+$\leftrightarrow\Delta m(1s{-}2p)=+1$, index 1 $\leftrightarrow-1$, read off the existing
+2p$_{3/2}$ `Tijs` entries). $|CG|^2=2/3$ for each (verified via unitarity: the complementary
+$j'=3/2$ channel then carries the remaining $1/3$, matching the well-known $1/2\otimes1$
+Clebsch–Gordan table). A third, $\sigma$-index-0/1 channel with $q=0$ ($m'=m$, weight $1/3$) exists
+but — like the base block — is **not** part of $T_{ij\sigma}$ (paraxial $\sigma=\pm1$ only), only of
+$G_{ij}$ (isotropic, all $q$).
+
+**Self-consistency check against the existing base tensor.** For 2p$_{3/2}$, every nonzero
+$T_{ij\sigma}$ satisfies $T_{ij\sigma}^2=G_{ij}$ exactly (verified against all four existing
+entries: $(1/\sqrt3)^2=1/3=G_{04}$, $(1/3)^2=1/9=G_{14}$, etc.) — the paraxial $\sigma=\pm1$
+channels are the *only* decay path for those specific $(i,j)$ pairs, so $G_{ij}$ (properly
+normalized to $\Gamma_{rK\alpha1}/\Gamma_{sp}=2/3$ per source, by construction) reduces to the bare
+angular weight. Applying the same logic with the pure-CG total ($1/3$ per source, not the empirical
+$\Gamma_{rK\alpha2}/\Gamma_{sp}=0.340$, for consistency with how the 2p$_{3/2}$ matrix is *not*
+individually re-normalized to its own empirical branching either) gives, using local indices
+$6=2p_{1/2}(m{=}-\tfrac12)$, $7=2p_{1/2}(m{=}\tfrac12)$, $4,5=1s(m{=}-\tfrac12,\tfrac12)$:
+$$
+T_{7,4,\sigma=1}=T_{4,7,\sigma=1}=T_{6,5,\sigma=0}=T_{5,6,\sigma=0}=\sqrt{2}/3, \qquad T^2=2/9,
+\tag{K2}
+$$
+$$
+G_{7,4}=G_{6,5}=\tfrac{2}{9},\qquad G_{6,4}=G_{7,5}=\tfrac{1}{9}
+\tag{K3}
+$$
+— exactly the same $1/9,2/9$ building-block fractions the existing 2p$_{3/2}$ matrix already uses
+(Eq. 17), now arranged for 2 msublevels instead of 4; unitarity check
+$\sum_{L3\text{ or }L2}G_{i,4} = 2/3+1/3=1$ per 1s source ✓.
+
+### 19. Generalized detuning: $\Delta_{ij}$ matrix, not a scalar
+
+Reusing the satellite mechanism's scalar $\Delta_k$ (Eq. S1) does not work here: with three
+manifolds now sharing one block (K, L3, L2), a single scalar cannot express both the (zero) K↔L3
+detuning and the nonzero K↔L2 *and* L3↔L2 detunings simultaneously. Generalizing to a per-level
+vector $f_i$ ("intrinsic detuning of level $i$'s manifold from the shared Kα1 rotating frame"):
+$$
+f_i = \begin{cases}\Delta\omega_{L2-L3}=(\omega_{K\alpha1}-\omega_{K\alpha2}) & i\in\text{L2 (2p}_{1/2}\text{)}\\ 0 & i\in\text{K or L3}\end{cases},
+\qquad
+\Delta_{ij} = f_i - f_j,
+\tag{K4}
+$$
+replacing the base-block's $\Delta{\cdot}\text{sign}_{ij}$ term (§4) in the general Eq. 4 form.
+**Verified exact equivalence** to the existing satellite mechanism: for $f_i=\Delta_k\, e^{(K)}_i$
+(a satellite's single-manifold case), $f_i-f_j\equiv\Delta_k\,\text{sign}_{ij}$ for every $(i,j)$ —
+so Eq. K4 is a strict generalization, not a new formalism; the code (`_MB_nlevel_regular_core`) now
+takes a single precomputed $\Delta_{ij}$ matrix parameter for both the base/L2 block and each
+satellite channel (`chan.Delta_ij = Delta_k \cdot \text{sign\_ij\_block}`, precomputed once in
+`XLO_sim.py` rather than combined inside the numba core).
+
+With $E_{L3}=0,\,E_K=\hbar\omega_{K\alpha1}$ as reference, Eq. K4 follows from the standard
+Eq. 4 form applied to all three pairs; note $\Delta_{ij}(K,L2)=\Delta_{ij}(L3,L2)=-\Delta\omega_{L2-L3}$
+— both reduce to the same value because both are measured against the same K↔L3-resonant frame.
+
+> **⚠ Scope note.** `use_L2_pathway` and `satellite_channels` are currently **mutually exclusive**
+> (`XLO_sim.py` raises `ValueError` if both are set) — the satellite blocks reuse the base
+> $T_{ij\sigma}/G_{ij}$ tensors verbatim (Part II §10), which only cover 2p$_{3/2}$↔1s; a
+> 2p$_{1/2}$-spectator satellite channel (e.g. $2p^-3d^+$) would need its own new tensor derivation,
+> analogous to §18 but combined with a spectator hole, and is deferred.
+
+### 20. New physical inputs
+
+| Quantity | Value / source | Notes |
+|---|---|---|
+| $\Delta\omega_{L2-L3}$ | `DeltaomegaL2mL3A`, already computed from `hwKalpha1N`,`hwKalpha2N` | no new input needed |
+| $\Gamma_{L2}$ (`GammaL2eVN`) | new config key, no default | e.g. via `xatom_tools.state_total_decay_width_eV('2p1,0')`, calibrated against `GammaL3eVN`'s own XATOM/literature ratio the same way satellite `Gamma_L_eV` is (XATOM gives $\Gamma_{L2}=0.666$, $\Gamma_{L3}=0.635$ eV — ratio $1.049\times$ `GammaL3eVN`$=0.61\to0.640$ eV) |
+| $\sigma^{(ground\to2p_{1/2})}_{\mathcal E}$ (`sigma1_Ka1_2p1`) | new config key, no default | XATOM ground-state `-pcs`, `2p-` row (≈$0.51\times$`sigma1_Ka1_2p3`) |
+| $\sigma^{(2p_{1/2}\to\cdot)}_{\mathcal E}$ (`sigma2_Ka1_2p1`) | new config key, no default | XATOM `-pcs` on hole config `2p1,0`, total cross section |
+
+> **⚠ Assumption (m-resolved ground-state branching).** Unlike $T_{ij\sigma}/G_{ij}$ (§18, pure
+> bound-state Clebsch–Gordan algebra), the *photoionization* branching into specific
+> 2p$_{1/2}$ msublevels from neutral ground state involves the outgoing photoelectron's partial
+> waves (radial, not purely angular, physics) — not independently re-derived here. An even 50/50
+> split across the 2 msublevels is used as a placeholder (`XLO_sim.py`), unlike 2p$_{3/2}$'s
+> XATOM/literature-sourced $\{0.12,0.18,0.28,0.42\}$-type pattern (§2). Flag if a proper m-resolved
+> calculation should replace this.
+
+### 21. Numerical scheme — no changes needed
+
+Because §17 implements this as an extension of the existing base block rather than a new one,
+**every** downstream code path (`Sample.py`'s z/t marching, `Model.py::absorption`,
+`Model.py::Omega_source_regular`) already generalizes automatically: they are written generically
+in `X.nlevel`/`X.Tijs`/`X.S_ground_Fi` etc., so an 8-level array flows through unchanged. In
+particular, the 2p$_{1/2}$↔1s coherences contribute to the **same** shared field source sum
+(Eq. S7-style, now with an implicit fourth term) with **no separate call**:
+$$
+\left(\text{source}\right)_\sigma^{(\pm)} \mathrel{+}= \pm i\,\tfrac{3}{8\pi}\lambda^2\Gamma_{sp}\,n\,T^{(\mp)}_{i'j'\sigma}\tfrac{\rho_{j'i'}+\rho^*_{i'j'}}{2}\Big|_{i',j'\in\{6,7\}\times\{4,5\}}
+\tag{K5}
+$$
+— this is literally the *same* `Omega_source_regular(X, rho_ijxy)` call already used for the base
+block, applied to the now-8×8 `rho_ijxy`, realizing §16's "one shared field" decision directly.
+Verified end-to-end (both `keep_z_history=True/False` paths): `nlevel` correctly becomes 8, results
+are finite, population trace stays $\le1$, and the base-block-only (`use_L2_pathway: False`) path
+reproduces prior results bit-for-bit (regression-tested).
+
+### 22. Consistency checks
+
+- With `use_L2_pathway: False` (default/absent), results must reproduce prior behavior exactly —
+  verified (identical `max|Ω|` at the sample exit, before and after this section's refactor of the
+  detuning mechanism, §19).
+- With `use_L2_pathway: True`, population summed over all 8 base-block sublevels (now including
+  2p$_{1/2}$) plus ground/other/2s should still only decrease via the same documented untracked-loss
+  channels as before (§7) — the L2 extension redistributes *where* the previously-lost $1/3$
+  Kα2 fraction goes, it does not add a new loss channel.
+- $\Gamma_{L2}$ from XATOM should be checked against $\Gamma_{L3}$'s own literature/XATOM ratio
+  rather than trusted in absolute terms (§20) — both this repo's `GammaL3eVN` and XATOM's own
+  $\Gamma_{L3}$ prediction differ by a few percent, a discrepancy that should carry through
+  consistently to $\Gamma_{L2}$.

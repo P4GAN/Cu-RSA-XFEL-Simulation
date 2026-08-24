@@ -86,6 +86,7 @@ turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
 use_2s_pathway: True
+use_L2_pathway: True
 
 #2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): each entry is its
 #own detuned, sublevel-resolved 6-level block (2p+X <-> 1sX), fed by 2s-hole Auger decay and by

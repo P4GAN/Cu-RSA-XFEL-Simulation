@@ -91,7 +91,13 @@ use_2s_pathway: True
 #own detuned, sublevel-resolved 6-level block (2p+X <-> 1sX), fed by 2s-hole Auger decay and by
 #spectator-shell photoionization of the base 1s-hole/2p-hole populations. Requires nlevel: 6.
 #Leave empty/absent to reproduce the existing (undetuned, lumped-into-2p-hole) behaviour exactly.
-#Gamma_A_2s_eV/sigma_*_from_2p/sigma_*_from_1s values below are per-channel and are carved out of
-#GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s respectively -- see theory doc §12.7 before setting
-#real numbers, to avoid double-counting.
+#Generate real values with `python xatom/print_satellite_parameters.py` (needs a local XATOM
+#build; see xatom/xatom_tools.py). Schema per channel: name, detuning_eV, Gamma_A_2s_eV,
+#Gamma_L_eV/Gamma_K_eV (widths of the double-hole L/K-like states; omit to fall back to the base
+#GammaL3eVN/GammaKeVN spectator approximation), sigma_Ka1_from_2p/sigma_Ka1_from_1s (spectator
+#photoionization by the seed/Kalpha1 field only -- no pump term, see the NOTE in XLO_sim.py's
+#satellite_channel_params construction), sigma_ion_from_2p/sigma_ion_from_1s (further-ionization
+#loss of the double-hole states themselves, optional, default 0). Gamma_A_2s_eV/sigma_*_from_2p/
+#sigma_*_from_1s values are carved out of GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s
+#respectively -- see theory doc §12.7 before setting real numbers, to avoid double-counting.
 satellite_channels: []

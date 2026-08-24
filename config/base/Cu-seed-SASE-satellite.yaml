@@ -36,7 +36,7 @@ GammaL3eVN: 0.61
 # GammaL3M45eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
-GammaA_L1_to_L3M45eVN: 5.07 # 1.57
+GammaA_L1_to_L3M45eVN: 1.57 # 5.07 
 
 additional_dephasing: 0
 
@@ -95,24 +95,39 @@ use_2s_pathway: True
 #GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s respectively -- see theory doc §12.7 before setting
 #real numbers, to avoid double-counting.
 satellite_channels:
-  - name: "3d+"
-    detuning_eV: -0.8000
-    Gamma_A_2s_eV: 1.5733
-    sigma_pump_from_2p: 4.55286e-10
-    sigma_Ka1_from_2p: 7.41039e-10
-    sigma_pump_from_1s: 4.95017e-10
-    sigma_Ka1_from_1s: 8.0409e-10
-  - name: "3d-"
-    detuning_eV: -0.8000
-    Gamma_A_2s_eV: 1.3121
-    sigma_pump_from_2p: 3.64323e-10
-    sigma_Ka1_from_2p: 5.93000e-10
-    sigma_pump_from_1s: 3.96118e-10
-    sigma_Ka1_from_1s: 6.4460e-10
-  - name: "3p+"
-    detuning_eV: 2.7600
-    Gamma_A_2s_eV: 1.4535
-    sigma_pump_from_2p: 1.30286e-08
-    sigma_Ka1_from_2p: 1.88202e-08
-    sigma_pump_from_1s: 1.40175e-08
-    sigma_Ka1_from_1s: 2.02344e-08
+- name: 3d+
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.5733
+  Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
+  Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 0  #5.01453e-07
+  sigma_ion_from_1s: 0 #5.71517e-07
+- name: 3d-
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.3121
+  Gamma_L_eV: 0.6348
+  Gamma_K_eV: 1.5447
+  sigma_Ka1_from_2p: 5.93000e-10
+  sigma_Ka1_from_1s: 6.4346e-10
+  sigma_ion_from_2p: 0 #5.01453e-07
+  sigma_ion_from_1s: 0 #5.71517e-07
+- name: 3p+
+  detuning_eV: 2.7600
+  Gamma_A_2s_eV: 1.4535
+  Gamma_L_eV: 2.6325      # >> base 0.61 eV
+  Gamma_K_eV: 3.8524      # >> base 1.49 eV
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 0 #4.97595e-07
+  sigma_ion_from_1s: 0 #5.67499e-07
+- name: 3p-
+  detuning_eV: 2.9300
+  Gamma_A_2s_eV: 0.6458
+  Gamma_L_eV: 3.1793      # >> base 0.61 eV
+  Gamma_K_eV: 4.3649      # >> base 1.49 eV
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 0 #4.97588e-07
+  sigma_ion_from_1s: 0 #5.67491e-07

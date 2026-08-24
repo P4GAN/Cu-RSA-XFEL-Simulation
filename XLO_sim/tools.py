@@ -779,6 +779,20 @@ def compute_run_outputs(X, tpad, ypad):
     rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
     t_axis = X.t
 
+    # Satellite channels reuse the base block's Tijs_plus/Tijs_minus (same i,j sublevel
+    # meaning), so the ee/gg/eg contraction template above applies verbatim per channel.
+    rho_ee_t_last_sat = {}
+    rho_gg_t_last_sat = {}
+    rho_eg_t_last_sat = {}
+    for chan, rho_sat_ijtxyz in zip(X.satellite_channel_params, X.rho_sat_ijtxyz):
+        rho_sat_ijt_center = rho_sat_ijtxyz[:, :, :, cx, cy, -1]
+        rho_ee_t_last_sat[chan.name] = np.einsum(
+            'ijs, jkt, kis-> t', X.Tijs_minus, rho_sat_ijt_center, X.Tijs_plus, optimize=True)
+        rho_gg_t_last_sat[chan.name] = np.einsum(
+            'ijs, jkt, kis-> t', X.Tijs_plus, rho_sat_ijt_center, X.Tijs_minus, optimize=True)
+        rho_eg_t_last_sat[chan.name] = np.einsum(
+            'ijs,jit->st', X.Tijs_minus, rho_sat_ijt_center, optimize=True)[0]
+
     return {
         "womega_ar": womega_ar,
         "I_int_thy_w_0": I_int_thy_w_0,
@@ -793,6 +807,9 @@ def compute_run_outputs(X, tpad, ypad):
         "rho_ground_t_last": rho_ground_t_last,
         "rho_other_t_last": rho_other_t_last,
         "rho_2s_t_last": rho_2s_t_last,
+        "rho_ee_t_last_sat": rho_ee_t_last_sat,
+        "rho_gg_t_last_sat": rho_gg_t_last_sat,
+        "rho_eg_t_last_sat": rho_eg_t_last_sat,
         "t_axis": t_axis,
     }
 

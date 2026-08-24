@@ -200,13 +200,12 @@ class XLO_sim:
         if self.satellite_channels and self.nlevel != 6:
             raise ValueError('satellite_channels requires nlevel == 6 (they reuse the full sublevel-resolved base block structure)')
 
-        # NOTE: `sigma_pump_from_2p`/`sigma_pump_from_1s` (theory doc Eq. S3/S4's sigma_P J_P
-        # term) are accepted by the YAML schema but intentionally NOT read here yet -- there is
-        # currently no per-(t,z) pump photon flux available anywhere in Model.py's regular RK4
-        # functions to multiply them by (J_Omega_minus/plus_xy are seed/Kalpha1-field-only
-        # throughout this codebase, confirmed via the pre-existing, unchanged MB_ground_regular).
-        # Wiring in real pump-driven spectator photoionization needs that plumbing added first;
-        # until then, only the seed-field-driven term (sigma_Ka1_from_2p/1s) is applied.
+        # NOTE: pump-driven spectator photoionization (theory doc Eq. S3/S4's sigma_P * J_P term)
+        # is not applied -- there is currently no per-(t,z) pump photon flux available anywhere in
+        # Model.py's regular RK4 functions to multiply such a cross section by (J_Omega_minus/
+        # plus_xy are seed/Kalpha1-field-only throughout this codebase, confirmed via the pre-
+        # existing, unchanged MB_ground_regular). xatom/xatom_tools.py accordingly no longer
+        # computes a pump cross section at all; only the seed-field-driven term is applied.
         self.satellite_channel_params = []
         for channel in self.satellite_channels:
             Delta_fs = channel['detuning_eV'] / self.hbar
@@ -224,6 +223,17 @@ class XLO_sim:
             else:
                 Mij = self.Mij
 
+            # Further-ionization loss (theory doc section 12.4, Eq. S8): sigma_ion_from_2p/1s are
+            # each a single scalar (the double-hole configuration's *own* total photoionization
+            # cross section, e.g. from xatom_tools.total_photoionization_cross_section_nm2) applied
+            # uniformly across every msublevel of that manifold -- same spectator-approximation
+            # convention as Gamma_L_eV/Gamma_K_eV above (one width/rate per manifold, not per
+            # msublevel). Optional, default 0 (no loss) if not supplied, matching the doc's
+            # "default to 0 unless supplied" for this deferred term.
+            S_ion_Fi_chan = np.zeros((2, self.nlevel))
+            S_ion_Fi_chan[:, self.ei_L3.astype(bool)] = channel.get('sigma_ion_from_2p', 0.0)
+            S_ion_Fi_chan[:, self.ei_K.astype(bool)] = channel.get('sigma_ion_from_1s', 0.0)
+
             self.satellite_channel_params.append(types.SimpleNamespace(
                 name=channel['name'],
                 Delta_fs=Delta_fs,
@@ -232,7 +242,7 @@ class XLO_sim:
                 S_feed_1s=S_feed_1s,
                 Mij=Mij,
                 Gamma_sp_Gij=self.Gamma_sp_Gij,
-                S_ion_Fi=np.zeros((2, self.nlevel)),  # further-ionization loss, deferred (theory doc §12.4)
+                S_ion_Fi=S_ion_Fi_chan,  # further-ionization loss (theory doc §12.4)
             ))
 
 

@@ -781,16 +781,22 @@ def compute_run_outputs(X, tpad, ypad):
 
     # Satellite channels reuse the base block's Tijs_plus/Tijs_minus (same i,j sublevel
     # meaning), so the ee/gg/eg contraction template above applies verbatim per channel.
-    rho_ee_t_last_sat = {}
-    rho_gg_t_last_sat = {}
-    rho_eg_t_last_sat = {}
-    for chan, rho_sat_ijtxyz in zip(X.satellite_channel_params, X.rho_sat_ijtxyz):
+    # Stacked into (n_sat, t) arrays -- rather than a name-keyed dict -- so that
+    # accumulate_run_outputs' np.stack/np.isnan reduction (which assumes every value is a
+    # plain numeric array) applies to these exactly like every other per-repetition key;
+    # satellite_channel_names carries the per-row labels as a run-level (non-accumulated) axis.
+    n_sat = len(X.satellite_channel_params)
+    satellite_channel_names = tuple(chan.name for chan in X.satellite_channel_params)
+    rho_ee_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_gg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_eg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    for k, rho_sat_ijtxyz in enumerate(X.rho_sat_ijtxyz):
         rho_sat_ijt_center = rho_sat_ijtxyz[:, :, :, cx, cy, -1]
-        rho_ee_t_last_sat[chan.name] = np.einsum(
+        rho_ee_t_last_sat[k] = np.einsum(
             'ijs, jkt, kis-> t', X.Tijs_minus, rho_sat_ijt_center, X.Tijs_plus, optimize=True)
-        rho_gg_t_last_sat[chan.name] = np.einsum(
+        rho_gg_t_last_sat[k] = np.einsum(
             'ijs, jkt, kis-> t', X.Tijs_plus, rho_sat_ijt_center, X.Tijs_minus, optimize=True)
-        rho_eg_t_last_sat[chan.name] = np.einsum(
+        rho_eg_t_last_sat[k] = np.einsum(
             'ijs,jit->st', X.Tijs_minus, rho_sat_ijt_center, optimize=True)[0]
 
     return {
@@ -810,6 +816,7 @@ def compute_run_outputs(X, tpad, ypad):
         "rho_ee_t_last_sat": rho_ee_t_last_sat,
         "rho_gg_t_last_sat": rho_gg_t_last_sat,
         "rho_eg_t_last_sat": rho_eg_t_last_sat,
+        "satellite_channel_names": satellite_channel_names,
         "t_axis": t_axis,
     }
 
@@ -817,7 +824,7 @@ def compute_run_outputs(X, tpad, ypad):
 # Arrays that are deterministic functions of the grid config, not the random
 # SASE draw -- identical across every repetition of a config, so they are
 # saved as-is rather than accumulated into a sum/sumsq pair.
-RUN_OUTPUT_AXIS_KEYS = ("womega_ar", "t_axis")
+RUN_OUTPUT_AXIS_KEYS = ("womega_ar", "t_axis", "satellite_channel_names")
 
 
 def accumulate_run_outputs(results):

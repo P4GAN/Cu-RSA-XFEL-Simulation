@@ -94,4 +94,25 @@ use_2s_pathway: True
 #Gamma_A_2s_eV/sigma_*_from_2p/sigma_*_from_1s values below are per-channel and are carved out of
 #GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s respectively -- see theory doc §12.7 before setting
 #real numbers, to avoid double-counting.
-satellite_channels: []
+satellite_channels:
+  - name: "3d+"
+    detuning_eV: -0.8000
+    Gamma_A_2s_eV: 1.5733
+    sigma_pump_from_2p: 4.55286e-10
+    sigma_Ka1_from_2p: 7.41039e-10
+    sigma_pump_from_1s: 4.95017e-10
+    sigma_Ka1_from_1s: 8.0409e-10
+  - name: "3d-"
+    detuning_eV: -0.8000
+    Gamma_A_2s_eV: 1.3121
+    sigma_pump_from_2p: 3.64323e-10
+    sigma_Ka1_from_2p: 5.93000e-10
+    sigma_pump_from_1s: 3.96118e-10
+    sigma_Ka1_from_1s: 6.4460e-10
+  - name: "3p+"
+    detuning_eV: 2.7600
+    Gamma_A_2s_eV: 1.4535
+    sigma_pump_from_2p: 1.30286e-08
+    sigma_Ka1_from_2p: 1.88202e-08
+    sigma_pump_from_1s: 1.40175e-08
+    sigma_Ka1_from_1s: 2.02344e-08

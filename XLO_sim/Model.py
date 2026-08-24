@@ -189,8 +189,10 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
         This channel's local density matrix at given t,z
     params: list
         List containing the XLO_sim object, the channel's parameter holder, seed field Rabi
-        frequency at given t,z, t index, z index, the base block's density matrix at given t,z, 2s
-        hole level population, pump flux, seed flux for the -1 and +1 polarizations (all at given t,z)
+        frequency at given t,z, the base block's density matrix at given t,z, 2s hole level
+        population, seed flux for the -1 and +1 polarizations (all at given t,z). NOTE: pump flux
+        is not included here (see XLO_sim.py's satellite_channel_params construction) -- only the
+        seed/Kalpha1-field-driven part of Eq. S3/S4 is applied so far.
 
     Returns
     -------
@@ -343,14 +345,14 @@ def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, rho_sat_
 
     """
 
-    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', rho_ground_xyz, X.S_ground_Fi[1:, :]) + \
-                        X.n * np.einsum('xyz, s->sxyz', rho_other_xyz, X.S_other_F[1:]) + \
-                        X.n * np.einsum('xyz, s->sxyz', rho_2s_xyz, X.S_2s_F[1:]) + \
-                        X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[1:, :], rho_ijxyz) + \
+    kappa_Omega_sxyz = X.n * np.einsum('xyz, si->sxyz', rho_ground_xyz, X.S_ground_Fi[:, :]) + \
+                        X.n * np.einsum('xyz, s->sxyz', rho_other_xyz, X.S_other_F[:]) + \
+                        X.n * np.einsum('xyz, s->sxyz', rho_2s_xyz, X.S_2s_F[:]) + \
+                        X.n * np.einsum('si, iixyz->sxyz', X.S_ion_Fi[:, :], rho_ijxyz) + \
                         X.n * X.sigma_compound_Ka1
 
     if rho_sat_ijxyz_list is not None:
         for chan, rho_sat_ijxyz in zip(X.satellite_channel_params, rho_sat_ijxyz_list):
-            kappa_Omega_sxyz = kappa_Omega_sxyz + X.n * np.einsum('si, iixyz->sxyz', chan.S_ion_Fi[1:, :], rho_sat_ijxyz)
+            kappa_Omega_sxyz = kappa_Omega_sxyz + X.n * np.einsum('si, iixyz->sxyz', chan.S_ion_Fi[:, :], rho_sat_ijxyz)
 
     return np.array([kappa_Omega_sxyz, kappa_Omega_sxyz])

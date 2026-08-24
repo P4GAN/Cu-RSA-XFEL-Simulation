@@ -44,8 +44,7 @@ class XLO_sim:
 
         self.Hij = np.tril(np.ones((self.nlevel, self.nlevel)), -1)
         self.delta_ij = np.eye(self.nlevel, self.nlevel)
-        self.sign_ij_block = self.Hij - self.Hij.T  # +1 upper->lower, -1 lower->upper, 0 diag; reused for satellite-block detuning (Eq. S1)
-        
+
         self.dz = self.zmax / (self.zgrid - 1.0)
         self.z = np.linspace(0, self.zmax, self.zgrid)
         
@@ -177,9 +176,14 @@ class XLO_sim:
         self.S_ion_Fi = S_ion_Fi
         self.Tijs_plus = np.einsum('ijs, ij->ijs', self.Tijs, self.Hij)
         self.Tijs_minus = np.einsum('ijs, ji->ijs', self.Tijs, self.Hij)
-        self.Mij = (self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) + 
-                    self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) + 
+        self.Mij = (self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) +
+                    self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) +
                     self.Gamma_ij * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)))
+        # +1 for (i in K, j in L3), -1 for (i in L3, j in K), 0 otherwise -- including i,j both in
+        # the same manifold (degenerate msublevels, e.g. i,j both in L3), which a naive index-order
+        # sign(i-j) would get wrong. Only matters once Delta != 0 (satellite blocks, Eq. S1); the
+        # base block always passes Delta=0.0 so this was previously inconsequential either way.
+        self.sign_ij_block = np.outer(self.ei_K, self.ei_L3) - np.outer(self.ei_L3, self.ei_K)
         # Incoherent 2s -> 2p_3/2 3d_5/2 Auger feeding
         if self.use_2s_pathway == True:
             self.auger_feeding_matrix = np.diag(self.ei_L3 / np.sum(self.ei_L3)) * self.GammaA_L1_to_L3M45fs1N
@@ -196,6 +200,13 @@ class XLO_sim:
         if self.satellite_channels and self.nlevel != 6:
             raise ValueError('satellite_channels requires nlevel == 6 (they reuse the full sublevel-resolved base block structure)')
 
+        # NOTE: `sigma_pump_from_2p`/`sigma_pump_from_1s` (theory doc Eq. S3/S4's sigma_P J_P
+        # term) are accepted by the YAML schema but intentionally NOT read here yet -- there is
+        # currently no per-(t,z) pump photon flux available anywhere in Model.py's regular RK4
+        # functions to multiply them by (J_Omega_minus/plus_xy are seed/Kalpha1-field-only
+        # throughout this codebase, confirmed via the pre-existing, unchanged MB_ground_regular).
+        # Wiring in real pump-driven spectator photoionization needs that plumbing added first;
+        # until then, only the seed-field-driven term (sigma_Ka1_from_2p/1s) is applied.
         self.satellite_channel_params = []
         for channel in self.satellite_channels:
             Delta_fs = channel['detuning_eV'] / self.hbar

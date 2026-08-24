@@ -125,7 +125,7 @@ class XLO_sample:
                 # pre-update (start-of-step) values, same convention as the other blocks above.
                 d_rho_sat_it = [
                     tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
-                                     [X, chan, Omega_pstxy[:, :, it, :, :], it, iz, rho_ijxy, rho_2s_xy,
+                                     [X, chan, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_2s_xy,
                                       J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                     for k, chan in enumerate(X.satellite_channel_params)
                 ]
@@ -253,7 +253,7 @@ class XLO_sample:
         for iz in range(0, zgrid):
 
             rho_ijxy = rho_ij_ic_xy.copy()
-            rho_sat_ijxy = [rho_sat_ij_ic_xy.copy() for k in range(n_sat)]
+            rho_sat_ijxy = [rho_sat_ij_ic_xy[k].copy() for k in range(n_sat)]
             rho_ground_xy = rho_ground_ic_xy.copy()
             rho_other_xy = rho_other_ic_xy.copy()
             rho_2s_xy = rho_2s_ic_xy.copy()
@@ -278,7 +278,7 @@ class XLO_sample:
                 # pre-update (start-of-step) values, same convention as the other blocks above.
                 d_rho_sat_it = [
                     tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
-                                     [X, chan, Omega_pstxy[:, :, it, :, :], it, iz, rho_ijxy, rho_2s_xy,
+                                     [X, chan, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_2s_xy,
                                       J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                     for k, chan in enumerate(X.satellite_channel_params)
                 ]

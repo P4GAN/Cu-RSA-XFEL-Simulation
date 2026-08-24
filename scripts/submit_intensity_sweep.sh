@@ -34,7 +34,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=40
 #SBATCH --mem=32G
-#SBATCH --time=01:15:00
+#SBATCH --time=08:15:00
 #SBATCH --array=0-39
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
@@ -56,8 +56,8 @@ if [[ ! -f "$MANIFEST" ]]; then
 fi
 mapfile -t YAML_FILES < "$MANIFEST"
 
-NREP=400
-CHUNKS_PER_CONFIG=10
+NREP=4000
+CHUNKS_PER_CONFIG=50
 REPS_PER_CHUNK=$(( NREP / CHUNKS_PER_CONFIG ))
 
 CONFIG_IDX=$(( SLURM_ARRAY_TASK_ID / CHUNKS_PER_CONFIG ))

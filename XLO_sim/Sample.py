@@ -52,10 +52,12 @@ class XLO_sample:
         rho_2s_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
 
         # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): one local
-        # nlevel_base (6)-level block per channel -- NOT X.nlevel, which grows to nlevel_base + 2
-        # when use_L2_pathway extends the base block; satellite blocks never see 2p1/2 (theory doc
-        # Part III scope note). Empty list if none configured.
-        rho_sat_ijtxyz = [np.zeros((X.nlevel_base, X.nlevel_base, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
+        # X.satellite_nlevel-level block per channel -- NOT X.nlevel, which grows independently to
+        # X.nlevel_base + 2 when use_L2_pathway extends the base block. X.satellite_nlevel is
+        # X.nlevel_base (6) normally, or +2 when this channel set also carries the 2p1/2-satellite
+        # extension (X.use_L2_satellite_pathway, requires use_L2_pathway too -- XLO_sim.py). Empty
+        # list if none configured.
+        rho_sat_ijtxyz = [np.zeros((X.satellite_nlevel, X.satellite_nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
                           for _ in X.satellite_channel_params]
 
         J_Omega_minus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
@@ -187,16 +189,34 @@ class XLO_sample:
         in the same order on the same inputs, but storage is cut from O(zgrid)
         to O(1) per array by keeping only what's ever read back afterwards.
 
-        Two categories of array, treated differently:
+        Three categories of array, treated differently:
 
-        - rho_ground/other/2s/ijtxyz: Model.absorption() reads a 2-plane
-          [iz-1, iz] window while marching (see _evaluate_n_level_3D_full), so
-          these need a 2-slot rolling buffer (prev/curr z) during the loop.
-          Nothing downstream reads any z but the last one (tools.compute_run_outputs
-          only ever indexes X.rho_ijtxyz/rho_ground_txyz/etc at [...,-1]), so
-          after the loop only the last z's buffer is exposed, as a length-1 z
-          axis (so existing [...,-1]/[...,0]-style indexing elsewhere keeps
-          working unchanged).
+        - rho_ground/other/2s_txyz: Model.absorption() reads a 2-plane [iz-1, iz]
+          window while marching (see _evaluate_n_level_3D_full), so these need a
+          2-slot rolling buffer (prev/curr z) during the loop. Nothing downstream
+          reads any z but the last one (tools.compute_run_outputs only ever
+          indexes X.rho_ground_txyz/etc at [...,-1]), so after the loop only the
+          last z's buffer is exposed, as a length-1 z axis (so existing
+          [...,-1]/[...,0]-style indexing elsewhere keeps working unchanged).
+        - rho_ijtxyz/rho_sat_ijtxyz: Model.absorption()'s [iz-1, iz] window is
+          passed through an einsum ('si,iixyz->sxyz') that only ever reads the
+          DIAGONAL of these two arrays -- off-diagonal entries are computed but
+          never used. The only other consumer, tools.compute_run_outputs, reads
+          the FULL (off-diagonal included) matrix, but only at the single center
+          pixel (X.xgrid//2, X.ygrid//2) and only at the last z. So: the rolling
+          prev/curr buffer needed *during* marching only ever needs to be
+          diagonal-only, full (x,y) grid (nlevel per level instead of nlevel**2,
+          an 8x/64x reduction at nlevel=8) -- built from the same live rho_ijxy/
+          rho_sat_ijxy working arrays Model.Omega_source_regular already reads
+          per-it, so no separate full-matrix history needs to exist at all
+          during marching. Only at the FINAL iz, a full (off-diagonal included)
+          but center-pixel-only history is captured instead (xgrid*ygrid smaller
+          for typical production grids), since that's the only thing
+          compute_run_outputs actually reads back out of these two arrays.
+          Neither reduction changes a single floating-point operation of the
+          physics -- both are exactly what full mode already computes, just not
+          keeping copies nothing reads. Not applicable to full mode (Plot.py and
+          the analysis notebooks need the true full-grid, full-history matrices).
         - Omega_pstxyz/Pfield_txyz/J_Omega_(minus|plus)_txyz: never
           read back from storage during the marching -- only the live "xy"
           rolling variables (Omega_pstxy etc.) are, so no rolling buffer is
@@ -216,11 +236,17 @@ class XLO_sample:
         are pure population rate equations with no phase terms -- rho_ijtxyz
         stays complex since its off-diagonal coherences are genuinely complex.
 
+        rho_ijtxyz/rho_sat_ijtxyz end up with a length-1 (x,y) footprint here
+        (the captured center pixel), unlike full mode's true X.xgrid x X.ygrid --
+        tools.compute_run_outputs clamps its center-pixel index to each array's
+        own shape to read the right thing either way.
+
         Not used for interactive/notebook work -- Plot.py and the analysis
-        notebooks need the full z profile, which this deliberately discards.
+        notebooks need the full z/x/y profile, which this deliberately discards.
         """
 
         nlevel, tgrid, xgrid, ygrid, zgrid = X.nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid
+        cx, cy = int(X.xgrid / 2), int(X.ygrid / 2)  # matches tools.compute_run_outputs exactly
 
         # t=0 initial-condition templates. Identical for every z in
         # init_n_level_3D (each is set via a uniform [...,:,:,:] assignment
@@ -232,9 +258,10 @@ class XLO_sample:
         rho_ij_ic_xy = np.zeros((nlevel, nlevel, xgrid, ygrid), dtype=complex)
 
         n_sat = len(X.satellite_channel_params)
-        # Satellite blocks stay local nlevel_base (6)-level, independent of X.nlevel/use_L2_pathway
-        # -- see init_n_level_3D's rho_sat_ijtxyz for the same reasoning.
-        rho_sat_ij_ic_xy = [np.zeros((X.nlevel_base, X.nlevel_base, X.xgrid, X.ygrid), dtype=complex)
+        # X.satellite_nlevel is X.nlevel_base (6) normally, or +2 when this channel set also
+        # carries the 2p1/2-satellite extension -- see init_n_level_3D's rho_sat_ijtxyz.
+        satellite_nlevel = X.satellite_nlevel
+        rho_sat_ij_ic_xy = [np.zeros((satellite_nlevel, satellite_nlevel, X.xgrid, X.ygrid), dtype=complex)
                             for k in range(n_sat)]
 
         rho_ground_ic_xy = np.ones((xgrid, ygrid), dtype=complex)
@@ -247,13 +274,21 @@ class XLO_sample:
             Omega_pstxy = np.zeros((2, 2, tgrid, xgrid, ygrid), dtype=complex)
 
         Omega_pstxyz_z0 = Omega_pstxy.copy()
-        Omega_pstxyz_zlast = Omega_pstxyz_z0 
+        Omega_pstxyz_zlast = Omega_pstxyz_z0
 
         J_Omega_minus_txy = np.zeros((tgrid, xgrid, ygrid))
         J_Omega_plus_txy = np.zeros((tgrid, xgrid, ygrid))
 
-        prev_rho_ground_txy = prev_rho_other_txy = prev_rho_2s_txy = prev_rho_ijtxy = None
-        prev_rho_sat_ijtxy = [None for k in range(n_sat)]
+        diag_idx = np.arange(nlevel)
+        sat_diag_idx = np.arange(satellite_nlevel)
+
+        prev_rho_ground_txy = prev_rho_other_txy = prev_rho_2s_txy = prev_rho_diag_txy = None
+        prev_rho_sat_diag_txy = [None for k in range(n_sat)]
+
+        # Populated only during the FINAL iz (see docstring) -- the full (off-diagonal included)
+        # but center-pixel-only history that becomes self.rho_ijtxyz/rho_sat_ijtxyz.
+        final_rho_ijt_center = None
+        final_rho_sat_ijt_center = [None for k in range(n_sat)]
 
         for iz in range(0, zgrid):
 
@@ -266,9 +301,15 @@ class XLO_sample:
             curr_rho_ground_txy = np.empty((tgrid, xgrid, ygrid))
             curr_rho_other_txy = np.empty((tgrid, xgrid, ygrid))
             curr_rho_2s_txy = np.empty((tgrid, xgrid, ygrid))
-            curr_rho_ijtxy = np.empty((nlevel, nlevel, tgrid, xgrid, ygrid), dtype=complex)
-            curr_rho_sat_ijtxy = [np.empty((X.nlevel_base, X.nlevel_base, tgrid, xgrid, ygrid), dtype=complex)
-                                  for k in range(n_sat)]
+            curr_rho_diag_txy = np.empty((nlevel, tgrid, xgrid, ygrid), dtype=complex)
+            curr_rho_sat_diag_txy = [np.empty((satellite_nlevel, tgrid, xgrid, ygrid), dtype=complex)
+                                     for k in range(n_sat)]
+
+            is_final_iz = (iz == zgrid - 1)
+            if is_final_iz:
+                final_rho_ijt_center = np.empty((nlevel, nlevel, tgrid), dtype=complex)
+                final_rho_sat_ijt_center = [np.empty((satellite_nlevel, satellite_nlevel, tgrid), dtype=complex)
+                                            for k in range(n_sat)]
 
             ######################
             # Loop over simulation time window begins
@@ -279,7 +320,7 @@ class XLO_sample:
                 d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
 
                 # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II):
-                # one full 6-level block per channel, fed from the base block's and rho_2s_xy's
+                # one full local block per channel, fed from the base block's and rho_2s_xy's
                 # pre-update (start-of-step) values, same convention as the other blocks above.
                 d_rho_sat_it = [
                     tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
@@ -295,38 +336,55 @@ class XLO_sample:
 
                 for k in range(n_sat):
                     rho_sat_ijxy[k] = rho_sat_ijxy[k] + d_rho_sat_it[k]
-                    curr_rho_sat_ijtxy[k][:, :, it, :, :] = rho_sat_ijxy[k]
+                    curr_rho_sat_diag_txy[k][:, it, :, :] = rho_sat_ijxy[k][sat_diag_idx, sat_diag_idx, :, :]
+                    if is_final_iz:
+                        final_rho_sat_ijt_center[k][:, :, it] = rho_sat_ijxy[k][:, :, cx, cy]
 
                 curr_rho_ground_txy[it, :, :] = np.real(rho_ground_xy)
                 curr_rho_other_txy[it, :, :] = np.real(rho_other_xy)
                 curr_rho_2s_txy[it, :, :] = np.real(rho_2s_xy)
-                curr_rho_ijtxy[:, :, it, :, :] = rho_ijxy
+                curr_rho_diag_txy[:, it, :, :] = rho_ijxy[diag_idx, diag_idx, :, :]
+                if is_final_iz:
+                    final_rho_ijt_center[:, :, it] = rho_ijxy[:, :, cx, cy]
 
                 if iz != 0:
                     # Same [iz-1, iz] window Model.absorption() would have gotten
                     # from rho_ground_txyz[it,:,:,iz-1:iz+1] etc. in the
                     # full-history path -- cast back to complex to match its
                     # input dtype exactly (these hold real-only values either way).
-                    window_ground = np.stack([prev_rho_ground_txy[it, :, :], 
+                    window_ground = np.stack([prev_rho_ground_txy[it, :, :],
                                               curr_rho_ground_txy[it, :, :]], axis=-1).astype(complex)
-                    window_other = np.stack([prev_rho_other_txy[it, :, :], 
+                    window_other = np.stack([prev_rho_other_txy[it, :, :],
                                              curr_rho_other_txy[it, :, :]], axis=-1).astype(complex)
-                    window_2s = np.stack([prev_rho_2s_txy[it, :, :], 
+                    window_2s = np.stack([prev_rho_2s_txy[it, :, :],
                                           curr_rho_2s_txy[it, :, :]], axis=-1).astype(complex)
-                    window_ij = np.stack([prev_rho_ijtxy[:, :, it, :, :], 
-                                          curr_rho_ijtxy[:, :, it, :, :]], axis=-1)
-                    window_sat_ij = [np.stack([prev_rho_sat_ijtxy[k][:, :, it, :, :], 
-                                               curr_rho_sat_ijtxy[k][:, :, it, :, :]], axis=-1)
-                                     for k in range(n_sat)]
+                    # Model.absorption only ever reads the DIAGONAL of its rho_ijxyz argument
+                    # (einsum 'si,iixyz->sxyz') -- embedding just the diagonal into an
+                    # otherwise-zero (nlevel,nlevel,x,y,2) array reproduces its output exactly,
+                    # without ever materializing a full off-diagonal history (see docstring).
+                    window_ij = np.zeros((nlevel, nlevel, xgrid, ygrid, 2), dtype=complex)
+                    window_ij[diag_idx, diag_idx, :, :, 0] = prev_rho_diag_txy[:, it, :, :]
+                    window_ij[diag_idx, diag_idx, :, :, 1] = curr_rho_diag_txy[:, it, :, :]
+                    window_sat_ij = []
+                    for k in range(n_sat):
+                        w = np.zeros((satellite_nlevel, satellite_nlevel, xgrid, ygrid, 2), dtype=complex)
+                        w[sat_diag_idx, sat_diag_idx, :, :, 0] = prev_rho_sat_diag_txy[k][:, it, :, :]
+                        w[sat_diag_idx, sat_diag_idx, :, :, 1] = curr_rho_sat_diag_txy[k][:, it, :, :]
+                        window_sat_ij.append(w)
 
-                    kappa_Omega_psxyz = Model.absorption(X, window_ground, window_other, 
+                    kappa_Omega_psxyz = Model.absorption(X, window_ground, window_other,
                                                          window_2s, window_ij, window_sat_ij)
                     Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
 
-                Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, curr_rho_ijtxy[:, :, it, :, :])
+                # rho_ijxy/rho_sat_ijxy[k] hold exactly the same (just-updated) values that were
+                # written into curr_rho_diag_txy[:,it,:,:] etc. above (same assignment, no
+                # off-diagonal-discarding), so sourcing directly from them is identical to the
+                # old curr_rho_ijtxy[:,:,it,:,:]-based read -- just without needing that full
+                # array to exist.
+                Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, rho_ijxy)
                 for k in range(n_sat):
                     Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
-                        X, curr_rho_sat_ijtxy[k][:, :, it, :, :], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
+                        X, rho_sat_ijxy[k], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
@@ -343,16 +401,16 @@ class XLO_sample:
             prev_rho_ground_txy = curr_rho_ground_txy
             prev_rho_other_txy = curr_rho_other_txy
             prev_rho_2s_txy = curr_rho_2s_txy
-            prev_rho_ijtxy = curr_rho_ijtxy
-            prev_rho_sat_ijtxy = curr_rho_sat_ijtxy
+            prev_rho_diag_txy = curr_rho_diag_txy
+            prev_rho_sat_diag_txy = curr_rho_sat_diag_txy
 
         ######################
         # Main loop ends
 
-        self.rho_ijtxyz = curr_rho_ijtxy[:, :, :, :, :, np.newaxis]
+        self.rho_ijtxyz = final_rho_ijt_center[:, :, :, np.newaxis, np.newaxis, np.newaxis]
         self.rho_sat_ijtxyz = []
         for k in range(n_sat):
-            self.rho_sat_ijtxyz.append(curr_rho_sat_ijtxy[k][:, :, :, :, :, np.newaxis])
+            self.rho_sat_ijtxyz.append(final_rho_sat_ijt_center[k][:, :, :, np.newaxis, np.newaxis, np.newaxis])
         self.Omega_pstxyz = np.stack([Omega_pstxyz_z0, Omega_pstxyz_zlast], axis=-1)
 
         self.rho_ground_txyz = curr_rho_ground_txy[:, :, :, np.newaxis]

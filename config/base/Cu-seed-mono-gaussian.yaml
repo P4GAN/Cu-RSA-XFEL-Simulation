@@ -1,11 +1,25 @@
 #units: nm, fs
 
+# Deterministic (non-SASE) coherent Gaussian pulse, on a self-seeded-beam-like footing:
+# narrow FWHM beam (100 x 170 nm, per docs/Results_RSA_seeded.pdf slide 4) and a short
+# few-fs pulse whose central photon energy is set explicitly via
+# monochromator_target_energy_eV (see tools.Gaussian_pulse_aniso_seed's detuning phase
+# ramp). One run = one (E_seed_uJ, monochromator_target_energy_eV) point, no SASE
+# repetition-averaging needed -- this is the fast stand-in for the self-seeded
+# transmittance-vs-photon-energy scan, meant to be swept by
+# scripts/generate_gaussian_sweep_configs.py + scripts/run_gaussian_sweep.py.
+#
+# Physics (level structure, cross sections, satellite channels) copied as-is from
+# config/base/Cu-seed-satellite.yaml -- the current full model (L2/Kalpha2 pathway +
+# all 4 satellite channels).
+
 #photoionization crosssections of Cu
 
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
 sigma1_Ka1_2s: 2.45e-7
 sigma1_Ka1_2p3: 1.52e-7
 sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
+sigma1_Ka1_2p1: 6.89383e-8
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
 # sigma2_Ka1_1s/2p3 carved out for the satellite_channels below (theory doc §12.7): the S3/S4
@@ -17,12 +31,7 @@ sigma2_Ka1_1s: 6.2118e-7 # 6.53e-7 - 3.1815e-8 (sum of satellite_channels' sigma
 sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 3.8542e-7 # 4.15e-7 - 2.9579e-8 (sum of satellite_channels' sigma_Ka1_from_2p)
 sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
-
-#2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III, section 20),
-#computed via xatom/print_satellite_parameters.py -> xatom_tools.l2_pathway_parameters()
-sigma1_Ka1_2p1: 6.89383e-8
 sigma2_Ka1_2p1: 4.98609e-7
-
 
 #Chemical composition of the sample
 #Cu
@@ -31,7 +40,7 @@ compound:
     N_atoms: 0
     sigma_compound_Ka1: 0
 
-    
+
 #sample concentration in atoms per cubic nm
 #solid copper:  84, nitrate 4M solution: 2.509
 n: 82.509
@@ -53,39 +62,42 @@ GammarKalpha2eVN: 0.202668
 # feed instead of zeroing it out.
 GammaA_L1_to_L3M45eVN: 0.0
 
-additional_dephasing: 0
+additional_dephasing: 0.0
 
 #K alpha atomic transitions photon energy
 hwKalpha1N: 8047.91
 hwKalpha2N: 8027.98
 
-
 #simulation domain and padding parameters
-tgrid: 2400
+tgrid: 2000
 zgrid: 15
-xgrid: 15
-ygrid: 15
+xgrid: 8
+ygrid: 8
 
-tmax: 25.0
+tmax: 15.
 
 zmax: 20.0e+3
 xmax: 250.0
 ymax: 250.0
 
-xpad: 50
-ypad: 50
+xpad: 20
+ypad: 20
 tpad: 0
 
 auto_grid: False
 
 #seed parameters
-seed_pulse_format: 'Ocelot_SASE_seed_pstxy'
+seed_pulse_format: 'Gaussian_pulse_aniso_seed'
 E_seed_uJ: 40
-seed_duration_FWHM_t: 6.0
-t_peak: 10
-seed_width_FWHM_x: 180
-seed_width_FWHM_y: 220
-seed_FEL_bandwidth: 1.5e-3
+seed_duration_FWHM_t: 2.0
+t_peak: 6.0
+seed_width_FWHM_x: 100
+seed_width_FWHM_y: 170
+
+# Central photon energy the Gaussian pulse is seeded at (see
+# tools.Gaussian_pulse_aniso_seed). Overridden per sweep point by
+# generate_gaussian_sweep_configs.py; defaults to on-resonance (== hwKalpha1N).
+monochromator_target_energy_eV: 8047.91
 
 #calculation regime
 is_spontaneous_only: False
@@ -103,12 +115,6 @@ is_Cartesian_pol: True
 use_2s_pathway: True
 use_L2_pathway: True
 
-#2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): each entry is its
-#own detuned, sublevel-resolved 6-level block (2p+X <-> 1sX), fed by 2s-hole Auger decay and by
-#spectator-shell photoionization of the base 1s-hole/2p-hole populations. Requires nlevel: 6.
-#Leave empty/absent to reproduce the existing (undetuned, lumped-into-2p-hole) behaviour exactly.
-#Gamma_A_2s_eV/sigma_*_from_2p/sigma_*_from_1s values below are per-channel and are carved out of
-#GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s respectively (theory doc §12.7, done above).
 satellite_channels:
 - name: 3d+
   detuning_eV: -0.8000

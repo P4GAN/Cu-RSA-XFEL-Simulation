@@ -8,10 +8,20 @@ sigma1_Ka1_2p3: 1.52e-7
 sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
-sigma2_Ka1_1s: 6.53e-7
+# sigma2_Ka1_1s/2p3 carved out for the satellite_channels below (theory doc §12.7): the S3/S4
+# spectator-photoionization transfer (sigma_Ka1_from_2p/1s per channel) is a *transfer* out of the
+# base 2p-hole/1s-hole population into the explicit satellite states, not an additional process on
+# top of the total further-ionization rate -- so it must be subtracted here, or that fraction of
+# further-ionization gets credited to both the base loss/opacity term and the satellite population.
+sigma2_Ka1_1s: 6.2118e-7 # 6.53e-7 - 3.1815e-8 (sum of satellite_channels' sigma_Ka1_from_1s)
 sigma2_Ka1_2s: 4.05e-7
-sigma2_Ka1_2p3: 4.15e-7
+sigma2_Ka1_2p3: 3.8542e-7 # 4.15e-7 - 2.9579e-8 (sum of satellite_channels' sigma_Ka1_from_2p)
 sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
+
+#2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III, section 20),
+#computed via xatom/print_satellite_parameters.py -> xatom_tools.l2_pathway_parameters()
+sigma1_Ka1_2p1: 6.89383e-8
+sigma2_Ka1_2p1: 4.98609e-7
 
 
 #Chemical composition of the sample
@@ -36,7 +46,12 @@ GammaL2eVN: 1.04
 GammaL3eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
-GammaA_L1_to_L3M45eVN: 5.07 # 1.57
+# Fully carved out (theory doc §12.7): the 4 satellite_channels below (3d+/3d-/3p+/3p-) now
+# explicitly track the entire 2s-hole Auger -> 2p_3/2+spectator (M45+M23) branching via their own
+# Gamma_A_2s_eV, replacing rather than adding to this generic feed -- was 5.07 (M45-only estimate,
+# pre-satellite-channels), briefly left at a stale 1.57 which double-counted against the satellite
+# feed instead of zeroing it out.
+GammaA_L1_to_L3M45eVN: 0.0
 
 additional_dephasing: 0
 
@@ -46,19 +61,19 @@ hwKalpha2N: 8027.98
 
 
 #simulation domain and padding parameters
-tgrid: 15000
+tgrid: 2400
 zgrid: 15
-xgrid: 8
-ygrid: 8
+xgrid: 15
+ygrid: 15
 
-tmax: 40.0
+tmax: 25.0
 
 zmax: 20.0e+3
 xmax: 250.0
 ymax: 250.0
 
-xpad: 20
-ypad: 20
+xpad: 50
+ypad: 50
 tpad: 0
 
 auto_grid: False
@@ -71,9 +86,6 @@ t_peak: 10
 seed_width_FWHM_x: 180
 seed_width_FWHM_y: 220
 seed_FEL_bandwidth: 1.5e-3
-
-monochromator_target_energy_eV: 8047.91
-seed_delay: 0
 
 #calculation regime
 is_spontaneous_only: False
@@ -89,3 +101,72 @@ turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
 use_2s_pathway: True
+use_L2_pathway: True
+
+#2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): each entry is its
+#own detuned, sublevel-resolved 6-level block (2p+X <-> 1sX), fed by 2s-hole Auger decay and by
+#spectator-shell photoionization of the base 1s-hole/2p-hole populations. Requires nlevel: 6.
+#Leave empty/absent to reproduce the existing (undetuned, lumped-into-2p-hole) behaviour exactly.
+#Gamma_A_2s_eV/sigma_*_from_2p/sigma_*_from_1s values below are per-channel and are carved out of
+#GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s respectively (theory doc §12.7, done above).
+satellite_channels:
+- name: 3d+
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.5733
+  Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
+  Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
+  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
+  detuning_eV_L2_split: 21.2700000000
+  Gamma_A_2s_to_L2_eV: 0.7136594214
+  Gamma_L2_eV: 0.655904
+  sigma_Ka1_from_2p1: 7.41039e-10
+- name: 3d-
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.3121
+  Gamma_L_eV: 0.6348
+  Gamma_K_eV: 1.5447
+  sigma_Ka1_from_2p: 5.93000e-10
+  sigma_Ka1_from_1s: 6.4346e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
+  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
+  detuning_eV_L2_split: 21.2600000000
+  Gamma_A_2s_to_L2_eV: 0.5308669343
+  Gamma_L2_eV: 0.60921
+  sigma_Ka1_from_2p1: 5.93e-10
+- name: 3p+
+  detuning_eV: 2.7600
+  Gamma_A_2s_eV: 1.4535
+  Gamma_L_eV: 2.6325      # >> base 0.61 eV
+  Gamma_K_eV: 3.8524      # >> base 1.49 eV
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 4.97595e-07
+  sigma_ion_from_1s: 5.67499e-07
+  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
+  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
+  detuning_eV_L2_split: 21.3100000000
+  Gamma_A_2s_to_L2_eV: 0.7901723972
+  Gamma_L2_eV: 2.72362
+  sigma_Ka1_from_2p1: 1.88202e-08
+- name: 3p-
+  detuning_eV: 2.9300
+  Gamma_A_2s_eV: 0.6458
+  Gamma_L_eV: 3.1793      # >> base 0.61 eV
+  Gamma_K_eV: 4.3649      # >> base 1.49 eV
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 4.97588e-07
+  sigma_ion_from_1s: 5.67491e-07
+  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
+  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
+  detuning_eV_L2_split: 21.3100000000
+  Gamma_A_2s_to_L2_eV: 0.5062406297
+  Gamma_L2_eV: 3.05808
+  sigma_Ka1_from_2p1: 9.4244e-09

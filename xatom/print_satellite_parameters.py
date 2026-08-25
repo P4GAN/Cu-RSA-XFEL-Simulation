@@ -33,6 +33,8 @@ def main():
     for spectator in ('3d+', '3d-', '3p+', '3p-'):
         print(f'Running XATOM for channel {spectator} ...', flush=True)
         params = xt.satellite_channel_parameters(spectator, spectator, args.Ka1_energy_eV)
+        print(f'Running XATOM for channel {spectator}\'s 2p1/2-satellite (Kalpha2-satellite) extension ...', flush=True)
+        params.update(xt.l2_satellite_channel_parameters(spectator, args.Ka1_energy_eV))
         channels.append(params)
 
         print(f'--- {spectator} ---')
@@ -41,6 +43,16 @@ def main():
                 continue
             print(f'  {key:20s} = {value:.6g}')
         print()
+
+    print('=' * 70)
+    print('2p1/2-satellite (Kalpha2-satellite) Auger budget check:')
+    total_Gamma_A_L2 = sum(c['Gamma_A_2s_to_L2_eV'] for c in channels)
+    total_Gamma_A_L3 = sum(c['Gamma_A_2s_eV'] for c in channels)
+    print(f'  sum of Gamma_A_2s_to_L2_eV over all 4 channels = {total_Gamma_A_L2:.4f} eV')
+    print(f'  + sum of Gamma_A_2s_eV (Ka1-satellite)          = {total_Gamma_A_L3:.4f} eV')
+    print(f'  = {total_Gamma_A_L2 + total_Gamma_A_L3:.4f} eV explicitly tracked out of GammaL1eVN '
+          '(the remainder is the still-unmodeled L1 decay budget, e.g. L1-L2 Coster-Kronig)')
+    print()
 
     print('=' * 70)
     print('Auger branching budget check (theory doc section 14):')

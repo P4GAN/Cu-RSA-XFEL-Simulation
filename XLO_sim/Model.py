@@ -129,12 +129,22 @@ def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_
 
 def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_xy, J_Omega_plus_xy):
     """
-    External population feed into one 2s-hole satellite channel's local 6-level block diagonal
+    External population feed into one 2s-hole satellite channel's local block diagonal
     (docs/theory-and-2s-satellite-pathways.md, Part II): 2s-hole Auger decay spread evenly over the
     4 lower-manifold (2p+X) msublevels (Eq. S2), plus sublevel-preserving spectator photoionization
     of the base block's 2p-hole diagonal into the same lower manifold (Eq. S3), plus
     sublevel-preserving spectator photoionization of the base block's 1s-hole diagonal into the
     2 upper-manifold (1sX) msublevels (Eq. S4).
+
+    When chan carries the 2p1/2-satellite extension (X.use_L2_satellite_pathway, chan.Mij sized
+    X.satellite_nlevel = X.nlevel_base + 2), also feeds the extra 2p1/2+X msublevels (local indices
+    X.nlevel_base, X.nlevel_base+1): 2s-hole Auger decay via the channel's OWN Gamma_A_L2_fs (a
+    different, independently-tabulated XATOM Auger line from the Lk feed's Gamma_A_fs -- see
+    xatom_tools.auger_partial_rate_L2_eV), spread evenly over the 2 msublevels, plus
+    sublevel-preserving spectator photoionization of the *base block's own 2p1/2-hole* diagonal
+    (rho_base_ijxy[X.nlevel_base + offset, ...], which only exists/is nonzero when
+    X.use_L2_pathway is on -- guaranteed here since use_L2_satellite_pathway requires it, checked
+    at construction time in XLO_sim.py).
 
     Parameters
     ----------
@@ -145,7 +155,8 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_x
     rho_2s_xy: np.ndarray
         2s hole level population at given t,z
     rho_base_ijxy: np.ndarray
-        Base 6-level block's density matrix at given t,z
+        Base block's density matrix at given t,z (sized X.nlevel, i.e. X.nlevel_base + 2 when
+        X.use_L2_pathway is on -- always true here whenever chan carries the L2k extension)
     J_Omega_minus_xy, J_Omega_plus_xy: np.ndarray
         Seed field photon fluxes at given t,z
 
@@ -155,28 +166,44 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_x
 
     """
 
-    # The satellite block's own local level count is always X.nlevel_base (6) -- NOT
-    # rho_base_ijxy.shape[0], which is the *base* block's level count and grows to 8 when
-    # use_L2_pathway extends it. Local indices 0..nlevel_base-1 have the same L3/K meaning in both
-    # blocks (L2 is appended after, at indices nlevel_base, nlevel_base+1), so reading
-    # rho_base_ijxy[i, i] for i < nlevel_base is correct regardless of whether the base block was
-    # extended.
-    nlevel_sat = X.nlevel_base
+    # The satellite block's own local level count is chan.Mij.shape[0] -- X.nlevel_base (6) for
+    # the Kalpha1-satellite-only case, X.satellite_nlevel (8) when this channel also carries the
+    # 2p1/2-satellite extension -- NOT rho_base_ijxy.shape[0], which is the *base* block's level
+    # count and independently grows to 8 when use_L2_pathway extends it. Local indices
+    # 0..X.nlevel_base-1 have the same L3/K meaning in both blocks (any extension is appended
+    # after, at indices >= X.nlevel_base), so reading rho_base_ijxy[i, i] for i < X.nlevel_base is
+    # correct regardless of whether the base block was itself extended.
+    nlevel_sat = chan.Mij.shape[0]
+    nlevel_base = X.nlevel_base
     nx, ny = rho_2s_xy.shape
     feed = np.zeros((nlevel_sat, nx, ny), dtype=complex)
 
-    ei_L3_sat = X.ei_L3[:nlevel_sat]
+    ei_L3_sat = X.ei_L3[:nlevel_base]
     auger_weight = ei_L3_sat / np.sum(ei_L3_sat)
-    feed += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
+    feed[:nlevel_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
 
     rate_2p_xy = chan.S_feed_2p[0] * J_Omega_minus_xy + chan.S_feed_2p[1] * J_Omega_plus_xy
     rate_1s_xy = chan.S_feed_1s[0] * J_Omega_minus_xy + chan.S_feed_1s[1] * J_Omega_plus_xy
 
-    for i in range(nlevel_sat):
+    for i in range(nlevel_base):
         if ei_L3_sat[i] > 0:
             feed[i] += rate_2p_xy * rho_base_ijxy[i, i]
         else:
             feed[i] += rate_1s_xy * rho_base_ijxy[i, i]
+
+    if nlevel_sat > nlevel_base:
+        n_L2 = nlevel_sat - nlevel_base
+        feed[nlevel_base:] += np.einsum(
+            'i,xy->ixy', (chan.Gamma_A_L2_fs / n_L2) * np.ones(n_L2), rho_2s_xy)
+
+        rate_2p1_xy = chan.S_feed_2p1[0] * J_Omega_minus_xy + chan.S_feed_2p1[1] * J_Omega_plus_xy
+        for offset in range(n_L2):
+            # Base-global index of the base block's own 2p1/2 sublevel this local L2k sublevel
+            # draws from -- same offset past nlevel_base in both blocks by construction (each
+            # block's own L2-like manifold is always appended immediately after its own
+            # nlevel_base-sized corner), not a coincidence of nlevel_base's specific value.
+            i_base = nlevel_base + offset
+            feed[nlevel_base + offset] += rate_2p1_xy * rho_base_ijxy[i_base, i_base]
 
     return feed
 
@@ -184,10 +211,11 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_x
 def MB_satellite_block_regular(t, rho_ijxy, params):
     """
     Calculate the regular part of the Maxwell-Bloch equations for one 2s-hole satellite channel's
-    local 6-level block (docs/theory-and-2s-satellite-pathways.md, Part II). Structurally identical
-    to `MB_nlevel_regular`, reusing the base block's Tijs and, by default, Mij/Gamma_sp_Gij, but fed
-    by `feed_diag_satellite_block` instead of ground-state pumping, and detuned from the Kalpha1
-    rotating frame by the channel's own Delta.
+    local block (docs/theory-and-2s-satellite-pathways.md, Part II) -- 6 levels (2p3/2+X<->1sX), or
+    8 when this channel also carries the 2p1/2-satellite extension (X.use_L2_satellite_pathway).
+    Structurally identical to `MB_nlevel_regular`, reusing the base block's Tijs and, by default,
+    Mij/Gamma_sp_Gij, but fed by `feed_diag_satellite_block` instead of ground-state pumping, and
+    detuned from the Kalpha1 rotating frame by the channel's own per-level Delta_ij.
 
     Parameters
     ----------

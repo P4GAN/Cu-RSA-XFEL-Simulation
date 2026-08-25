@@ -583,3 +583,115 @@ def l2_pathway_parameters(Ka1_energy_eV=8047.91):
         'sigma1_Ka1_2p1': spectator_ionization_cross_section_nm2('', L2_HOLE, Ka1_energy_eV),
         'sigma2_Ka1_2p1': total_photoionization_cross_section_nm2(L2_HOLE, Ka1_energy_eV),
     }
+
+
+# ---------------------------------------------------------------------------
+# Top-level: 2p1/2-spectator ("Kalpha2-satellite") extension of each existing satellite channel
+# (docs/theory-and-2s-satellite-pathways.md Part II + Part III combined: each satellite channel's
+# local block gains its own 2p1/2+X_k manifold, exactly as use_L2_pathway extends the base block).
+#
+# Physical picture: the satellite channel's upper/K-like state (1sX_k, local indices 4,5) is one
+# physical configuration that already decays to the tracked 2p+X_k (Ka1-satellite) manifold *and*,
+# per Gij's existing 1/9,2/9 bookkeeping, to an untracked 1/3 fraction (the Ka2-satellite analogue,
+# "lost from the model" exactly like the base system's bare Kalpha2 branch before use_L2_pathway
+# existed). These functions make that branch explicit by computing the same class of parameters
+# l2_pathway_parameters() computes for the base block, but for each spectator configuration:
+#   - the Ka1-satellite/Ka2-satellite splitting for that specific double-hole configuration (not
+#     assumed identical to the bare-ion DeltaomegaL2mL3A -- computed directly per channel since
+#     it's a cheap total-energy difference, same trick as satellite_detuning_eV/l2_hole vs l3_hole
+#     sharing the same spectator and charge state, so the DFT functional's systematic error cancels)
+#   - Gamma_L2_eV: this double-hole state's own decay width (mirrors Gamma_L_eV/Gamma_K_eV)
+#   - Gamma_A_2s_to_L2_eV: the sibling 2s-hole Auger channel that fills the 2s vacancy with a
+#     2p1/2 electron instead of 2p3/2 (final1='2p-' instead of '2p+' in the same cached Auger
+#     table auger_partial_rate_eV already reads -- a real, independently-tabulated XATOM Auger
+#     line, not a guess; this is a channel the existing GammaA_L1_to_L3M45eVN/satellite Gamma_A_2s_eV
+#     bookkeeping never included at all, since Eq. M2's original form only ever fed the L3 manifold
+#     -- so this is a net-new addition to the Gamma_L1 budget accounting, not a re-carve of an
+#     existing bucket)
+#   - sigma_Ka1_from_2p1: sublevel-preserving spectator photoionization feed into 2p1/2+X_k from
+#     the *base block's own 2p1/2-hole population* (mirrors sigma_Ka1_from_2p, which draws from the
+#     base block's 2p3/2-hole population) -- only meaningful/nonzero source when use_L2_pathway is
+#     also enabled, since otherwise the base block has no 2p1/2 population to draw from.
+
+def l2_satellite_splitting_eV(spectator):
+    """
+    Delta(L2k-Lk) (eV) for one satellite channel: the total-energy difference between the
+    2p1/2+X_k and 2p3/2+X_k double-hole configurations -- i.e. the Kalpha1-satellite vs
+    Kalpha2-satellite splitting specific to that spectator configuration, playing the same role
+    per-channel that DeltaomegaL2mL3A*hbar plays for the bare-ion base block (theory doc Part III
+    Eq. K4). Uses transition_energy_eV's raw (uncalibrated) total-energy difference directly, with
+    no Kalpha1-referenced calibration shift needed: both configurations share the same spectator
+    and charge state, so the exchange-correlation functional's systematic total-energy error
+    cancels in the difference the same way it does for satellite_detuning_eV's shift, without
+    needing an explicit reference subtraction.
+
+    Sign check: transition_energy_eV(l2_hole, l3_hole) = E(2p1/2+Xk) - E(2p3/2+Xk), which should
+    come out positive and close to hwKalpha1N - hwKalpha2N = 19.93 eV for every channel under the
+    spectator approximation (the 2p1/2/2p3/2 splitting is primarily a core-hole spin-orbit effect,
+    only mildly perturbed by the spectator) -- worth checking against that reference value once
+    computed.
+    """
+    spectator_config = SPECTATOR_HOLE[spectator]
+    l2_hole = f'{L2_HOLE}_{spectator_config}'          # 2p1/2+X_k (local L2k manifold)
+    l3_hole = f'{BASE_LOWER_HOLE}_{spectator_config}'  # 2p3/2+X_k (local Lk manifold)
+    return transition_energy_eV(l2_hole, l3_hole)
+
+
+def auger_partial_rate_L2_eV(spectator, parent_hole_config='2s1'):
+    """
+    Gamma_A^(2s->L2_k) (eV): the sibling of auger_partial_rate_eV's 2s-hole Auger channel, filling
+    the 2s vacancy with a 2p1/2 electron (XATOM row "2s0 - 2p- <spectator>") instead of 2p3/2
+    ("2s0 - 2p+ <spectator>"). Reads the same cached parent_hole_config Auger table
+    auger_partial_rate_eV already triggers for this channel's Ka1-satellite Gamma_A_2s_eV -- no
+    additional XATOM run needed if that has already been called for the same parent_hole_config.
+    """
+    spectator_config = SPECTATOR_HOLE.get(spectator, spectator)
+    auger = parse_auger(run_xatom_cached(parent_hole_config, decay=True))
+
+    spectator_label = spectator if spectator in SPECTATOR_HOLE else _label_from_hole_fragment(spectator_config)
+    line = auger.find(initial='2s0', final1='2p-', final2=spectator_label)
+    if line is None:
+        raise ValueError(
+            f"no Auger line '2s0 - 2p- {spectator_label}' found for parent {parent_hole_config!r}; "
+            f"available finals: {[(l.final1, l.final2) for l in auger.lines if l.initial == '2s0']}"
+        )
+    return line.rate_eV
+
+
+def l2_satellite_channel_parameters(spectator, Ka1_energy_eV=8047.91):
+    """
+    New keys to ADD to an existing satellite_channels YAML entry (alongside its Kalpha1-satellite
+    keys from satellite_channel_parameters), enabling that channel's 2p1/2+spectator
+    (Kalpha2-satellite) branch. Only meaningful when use_L2_pathway: True is also set (the
+    sigma_Ka1_from_2p1 feed draws from the base block's own 2p1/2-hole population, which is zero
+    otherwise) -- XLO_sim.py enforces this and auto-enables the extension whenever both
+    use_L2_pathway and satellite_channels are present, no separate YAML flag.
+
+    Returns
+    -------
+    dict
+        {'detuning_eV_L2_split', 'Gamma_A_2s_to_L2_eV', 'Gamma_L2_eV', 'sigma_Ka1_from_2p1'} --
+        merge directly into the corresponding satellite_channel_parameters(name, spectator, ...)
+        dict before writing it into the YAML.
+    """
+    return {
+        'detuning_eV_L2_split': l2_satellite_splitting_eV(spectator),
+        'Gamma_A_2s_to_L2_eV': auger_partial_rate_L2_eV(spectator),
+        'Gamma_L2_eV': state_total_decay_width_eV(f'{L2_HOLE}_{SPECTATOR_HOLE[spectator]}'),
+        'sigma_Ka1_from_2p1': spectator_ionization_cross_section_nm2(L2_HOLE, spectator, Ka1_energy_eV),
+    }
+
+
+def build_all_satellite_channels_with_L2(Ka1_energy_eV=8047.91):
+    """
+    All four channels' full parameter sets (Kalpha1-satellite keys from
+    satellite_channel_parameters, merged with the new Kalpha2-satellite keys from
+    l2_satellite_channel_parameters), ready to assign directly to `satellite_channels:` in the
+    YAML config when both use_L2_pathway and the 2p1/2-satellite extension are wanted.
+    """
+    channels = []
+    for spectator in ('3d+', '3d-', '3p+', '3p-'):
+        params = satellite_channel_parameters(spectator, spectator, Ka1_energy_eV)
+        params.update(l2_satellite_channel_parameters(spectator, Ka1_energy_eV))
+        channels.append(params)
+    return channels

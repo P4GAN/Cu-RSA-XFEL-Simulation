@@ -766,7 +766,12 @@ def compute_run_outputs(X, tpad, ypad):
     womega_ar, I_int_thy_w_0, I_thy0_w_0 = SF_spectrum_w(X, 0, ypad, tpad)
     womega_ar, I_int_thy_w_last, I_thy0_w_last = SF_spectrum_w(X, -1, ypad, tpad)
 
-    cx, cy = int(X.xgrid / 2), int(X.ygrid / 2)
+    # In keep_z_history=False (lean) runs, X.rho_ijtxyz/rho_sat_ijtxyz only ever store the single
+    # center pixel they capture during marching (Sample._evaluate_n_level_3D_lean), at index 0 of
+    # a length-1 (x,y) footprint rather than X.xgrid/X.ygrid -- clamping to each array's own shape
+    # resolves to the true center index in full mode and to 0 (where lean mode wrote it) otherwise.
+    cx = min(int(X.xgrid / 2), X.rho_ijtxyz.shape[3] - 1)
+    cy = min(int(X.ygrid / 2), X.rho_ijtxyz.shape[4] - 1)
     rho_ijt_center = X.rho_ijtxyz[:, :, :, cx, cy, -1]
 
     I_t_0 = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, 0], X.Omega_pstxyz[1, :, :, :, :, 0])

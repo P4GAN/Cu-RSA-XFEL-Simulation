@@ -6,10 +6,14 @@ This document has two parts:
   against what `XLO_sim/*.py` actually implements (the code has drifted slightly ahead of the PDF —
   notably the 2s-hole state — and that drift is called out explicitly). Stochastic/noise terms
   (PDF Eqs. 5, 6, the noise terms in Eqs. 4/23/27/31/32) are **omitted throughout**, per scope.
-- **Part II** works out the physics and equations needed to explicitly track three new "satellite"
-  double-hole states fed by 2s(L1)-hole decay: $2p^+3d^+$, $2p^+3d^-$, $2p^+3p^+$, coherently coupled
-  to $1s3d^+$, $1s3d^-$, $1s3p^+$ respectively. Assumptions are flagged inline in **⚠ boxes** — please
-  sanity-check these before implementation.
+- **Part II** works out the physics and equations needed to explicitly track new "satellite"
+  double-hole states fed by 2s(L1)-hole decay: $2p^+3d^+$, $2p^+3d^-$, $2p^+3p^+$, $2p^+3p^-$,
+  coherently coupled to $1s3d^+$, $1s3d^-$, $1s3p^+$, $1s3p^-$ respectively. Assumptions are flagged
+  inline in **⚠ boxes** — please sanity-check these before implementation.
+- **Part III** adds the base system's own 2p$_{1/2}$ (L2, Kα2) pathway, extending the base 6-level
+  block to 8.
+- **Part IV** combines Parts II and III: each satellite channel's own local block gains a
+  2p$_{1/2}$+spectator (Kα2-satellite) manifold too, extending it from 6 to 8 local levels.
 
 Equation numbers `(1)`–`(37)` refer to the PDF. New equations here are numbered `(M*)` (existing
 code behaviour not in the PDF) and `(S*)` (new satellite-pathway physics).
@@ -633,21 +637,17 @@ With $E_{L3}=0,\,E_K=\hbar\omega_{K\alpha1}$ as reference, Eq. K4 follows from t
 Eq. 4 form applied to all three pairs; note $\Delta_{ij}(K,L2)=\Delta_{ij}(L3,L2)=\Delta\omega_{L2-L3}$
 — both reduce to the same value because both are measured against the same K↔L3-resonant frame.
 
-> **⚠ Scope note.** `use_L2_pathway` and `satellite_channels` can now be enabled together: the
-> satellite blocks stay local $nlevel_{base}$ (6, 2p$_{3/2}$↔1s only) blocks regardless of whether
-> `use_L2_pathway` extends the *base* block to 8 levels, since L2 is appended after the base 6
-> (local indices $nlevel_{base}, nlevel_{base}{+}1$) and never touches indices below that. In
-> `XLO_sim.py`, `self.Tijs_plus_satellite`/`self.Tijs_minus_satellite` (and the per-channel
-> `Mij`/`Gamma_sp_Gij`/`Delta_ij`/`S_ion_Fi`) are sliced to `[:nlevel_base, :nlevel_base]` from the
-> corresponding base-block tensors — exact, not an approximation, because L2 only ever writes into
-> rows/columns $\geq nlevel_{base}$ of those tensors. What is **still not modeled** is a genuine
-> 2p$_{1/2}$-spectator satellite channel (e.g. $2p^-3d^+$): the existing satellite blocks see no
-> 2p$_{1/2}$ physics at all (by construction, since they only reuse the 0..5 corner), and such a
-> channel would need its own new tensor derivation, analogous to §18 but combined with a spectator
-> hole — that combination remains deferred. The two extensions interact only indirectly, through
-> what they already both couple to: the shared base block's own populations (satellite feed,
-> §12.1/12.2, read from the base block's local indices 0..5 either way) and the one shared field
-> (§12.5/Eq. S7, which already sums per-block contributions in the field-source term).
+> **⚠ Scope note (superseded by Part IV).** `use_L2_pathway` and `satellite_channels` can be enabled
+> together. Originally (as this note first read) the satellite blocks stayed local $nlevel_{base}$
+> (6, 2p$_{3/2}$↔1s only) regardless of `use_L2_pathway`, and a genuine 2p$_{1/2}$-spectator
+> satellite channel (e.g. $2p^-3d^+$) was explicitly flagged as not modeled / deferred. **That
+> combination is now implemented — see Part IV.** When both `use_L2_pathway` and
+> `satellite_channels` are set, each channel's own local block additionally grows from 6 to 8
+> levels (its own 2p$_{1/2}$+$X_k$ manifold), auto-enabled with no separate YAML flag
+> (`XLO_sim.py`'s `use_L2_satellite_pathway = use_L2_pathway and bool(satellite_channels)`). The
+> two extensions still interact only through what they already both couple to: the shared base
+> block's own populations (satellite feed, §12.1/12.2, now including the base block's own 2p$_{1/2}$
+> population — see Part IV §24) and the one shared field (§12.5/Eq. S7).
 
 ### 20. New physical inputs
 
@@ -726,3 +726,178 @@ reproduces prior results bit-for-bit (regression-tested).
   "reverse saturable absorption"). A quantitative comparison (dip depth/width vs. pulse energy)
   would need a more realistic SASE-averaged simulation, not just this single-Gaussian-pulse test
   config — still open (linked document §9).
+
+---
+
+## Part IV — New: 2p$_{1/2}$-satellite (Kα2-satellite) pathway, combining Parts II and III
+
+### 23. Motivation and structural decision
+
+Part II's §12.3 explicitly notes that a satellite channel's upper/K-like state ($1sX_k$) loses
+$\tfrac13\Gamma_{sp}$ of its radiative decay to "the satellite's own untracked-L2 analogue
+($1sX_k\to 2p^-X_k$, not modeled)" — the exact same $2/3$:$1/3$ Kα1:Kα2 split the base system had
+before Part III, just one level deeper (a satellite line, not the main line). This section makes
+that branch explicit, exactly as Part III did for the base system, for **every** satellite channel
+simultaneously.
+
+The structural argument is identical to §17's: $1sX_k$ (local indices 4,5) is **one** physical
+configuration (a 1s hole plus a spectator $X_k$ hole) that decays radiatively into *either*
+$2p^+X_k$ (the tracked Kα1-satellite line, local 0–3) *or* $2p^-X_k$ (the new Kα2-satellite line) —
+not two independent upper populations. So $2p^-X_k$ must **extend the channel's own existing local
+block** (6→8 levels, new local indices $nlevel_{base},nlevel_{base}{+}1$, exactly where Part III put
+the base block's L2), not become a second per-channel block. Implemented in `XLO_sim.py` as
+`use_L2_satellite_pathway = use_L2_pathway and bool(satellite_channels)` — auto-enabled with no
+separate YAML flag, since the extension's own feed (§24) needs the base block's 2p$_{1/2}$
+population, which only exists when `use_L2_pathway` is on.
+
+### 24. Tijs/Gij and feed terms
+
+**Coupling tensor.** $2p^-X_k\leftrightarrow 1sX_k$ reuses Eq. K2/K3 (§18's Clebsch–Gordan-derived
+$1s\leftrightarrow2p_{1/2}$ values) **verbatim** — same argument as Part II's core reuse decision
+(§10): these are pure bound-state angular-momentum algebra, independent of the spectator. Code:
+`XLO_sim.py::_add_L2_manifold(Tijs, Gij, ei_K, nlevel_local, i_lower_start)`, a small helper
+factored out of the base block's own L2 construction and called *twice* — once for the base block
+(byte-for-byte identical to the pre-refactor inline code, regression-tested), once for a fresh
+per-run satellite template (`Tijs_sat`/`Gij_sat`, sized `self.satellite_nlevel`) shared by every
+channel. The satellite template is **not** sliced from the base block's own `Tijs`/`Tijs_plus`: the
+base block's global indices $nlevel_{base},nlevel_{base}{+}1$ hold the *bare* 2p$_{1/2}$ hole (no
+spectator) — a different configuration from a channel's own local 2p$_{1/2}$+$X_k$ — so it needs its
+own copy of the 0–5 corner plus the L2 extension. `Tijs_plus_satellite`/`Tijs_minus_satellite` are
+then built from this template with the same role-based mask as the base block (§21's fix,
+$ei_{upper}=ei_K^{(sat)}$, $ei_{lower}=ei_{L3}^{(sat)}+ei_{L2}^{(sat)}$) — the general, index-
+independent form §5 recommended.
+
+**Feed into the new manifold**, generalizing §12.1 to the local $2p^-X_k$ (call it $L2_k$, local
+indices $nlevel_{base},nlevel_{base}{+}1$):
+
+$$
+F^{(k)}_{i,\text{Auger}}=\frac{e^{(L2)}_i}{\sum_{i'}e^{(L2)}_{i'}}\,\Gamma_A^{(2s\to L2_k)}\,\rho^{(2s)},\qquad
+F^{(k)}_{i,\text{ion}}=\rho_{i'i'}(\vec r,t)\,\sigma^{(2p_{1/2}\to L2_k)}_{\mathcal E}\big(J_{\Omega_{-1}}+J_{\Omega_{+1}}\big)
+\tag{P1}
+$$
+
+— structurally identical to Eq. S2/S3, with two substitutions: (a) $\Gamma_A^{(2s\to L2_k)}$ is a
+**different, independently-tabulated** XATOM Auger line from $\Gamma_A^{(2s\to L_k)}$ (2s-hole decay
+filling the 2s vacancy with a 2p$_{1/2}$ electron instead of 2p$_{3/2}$ — XATOM's `"2s0 - 2p- X"` row
+vs. `"2s0 - 2p+ X"`), read off the *same already-cached* `"2s1"` Auger table (no extra XATOM run);
+(b) the sublevel-preserving photoionization feed now draws from the **base block's own 2p$_{1/2}$
+diagonal** ($\rho_{i'i'}$ at base-global index $nlevel_{base}+\text{offset}$, matching the local
+$L2_k$ offset exactly — both manifolds are appended immediately after their own respective
+$nlevel_{base}$-sized corners, by construction, not coincidence), which is only nonzero when
+`use_L2_pathway` is on. No new feed into $1sX_k$ is needed: it is fed exactly as before (Eq. S4,
+unchanged), and now simply has an additional radiative *destination* (Eq. P2).
+
+**No new coupling/branching-ratio bookkeeping is carved out of anything existing**, unlike the base
+system's L2 pathway or the Kα1-satellite channels: $\Gamma_A^{(2s\to L2_k)}$ is a genuinely new
+Auger final state that the pre-existing `GammaA_L1_to_L3M45eVN`/Kα1-satellite `Gamma_A_2s_eV`
+bookkeeping never included (Eq. M2's original form only ever fed the 2p$_{3/2}$ manifold), so it is
+a **net-new addition** to the tracked fraction of $\Gamma_{L1}$'s budget, not a re-carve (§27
+budget check). Likewise `sigma_Ka1_from_2p1` is *not* subtracted from `sigma2_Ka1_2p1` (unlike Eq.
+S3/S4's carve-out of `sigma2_*_2p3`/`sigma2_*_1s`): base 2p$_{1/2}$'s further-ionization cross
+section is calibrated independently (§20) and this transfer is small next to it; flagged here as a
+simplification consistent with §12.4's "deferred, default 0" further-ionization terms rather than
+independently re-derived.
+
+**Radiative decay / field coupling.** Eq. S5/S6 generalize verbatim with $L2_k$ in place of $L_k$,
+reusing the template's own $G_{ij}$ (which, per Eq. K3, already carries the $2/9,1/9$ branching from
+$1sX_k$ into $2p^-X_k$) and a per-channel width $\Gamma_{L2,k}$ (§26). The channel's `Mij` picks up
+the same three cross-dephasing terms Part III's base-block extension does (Eq. between §19 and §20 —
+`Gamma_ij_L2K`/`Gamma_ij_L2L3`-style), now with the channel's own $\Gamma_{K,k}$/$\Gamma_{L,k}$.
+Field sourcing needs **no new code at all**: `Omega_source_regular` already sums over the full local
+block (now 8×8) via `X.Tijs_plus_satellite`/`X.Tijs_minus_satellite`, exactly Eq. S7's mechanism —
+the $L2_k$ coherences are simply two more nonzero entries once populated.
+
+### 25. Detuning: per-channel generalization of Eq. K4
+
+Reusing $\Delta_k$ (this channel's existing Kα1-satellite detuning) directly for $L2_k$ is wrong for
+the same reason a single scalar was wrong for the base block (§19): $L2_k$ needs its *own* residual
+frequency relative to the shared Kα1 frame, distinct from both $L_k$'s ($=0$, by the channel's own
+convention) and $U_k$'s ($=\Delta_k$). Generalizing Eq. K4 per channel:
+
+$$
+f^{(k)}_i=\begin{cases}0 & i\in L_k\\ \Delta_k & i\in U_k\\ \Delta_k-\Delta_{L2,k} & i\in L2_k\end{cases},
+\qquad \Delta^{(k)}_{ij}=f^{(k)}_i-f^{(k)}_j,
+\tag{P2}
+$$
+
+where $\Delta_{L2,k}$ is this channel's **own** Kα1-satellite/Kα2-satellite splitting — *not*
+assumed equal to the bare-ion $\Delta\omega_{L2-L3}$ (a channel-specific "spectator approximation
+for detuning" would be a much cruder assumption than the width/branching reuses elsewhere in Part
+II, since the splitting directly sets *where* the new spectral feature lands). Computed directly via
+XATOM as a total-energy difference between the two double-hole final states themselves:
+$\hbar\Delta_{L2,k}=E(2p^-X_k)-E(2p^+X_k)$ (`xatom_tools.l2_satellite_splitting_eV`) — no
+Kα1-referenced calibration shift needed, unlike $\Delta_k$ itself (§13's `satellite_detuning_eV`):
+both configurations share the same spectator and charge state, so the DFT functional's systematic
+total-energy error cancels in the difference the same way it does for $\Delta_k$'s own shift.
+Verified close to the bare-ion value ($21.26$–$21.31$ eV across all four channels vs. the base
+system's $\Delta\omega_{L2-L3}\cdot\hbar=19.93$ eV) — consistent with the spin-orbit splitting being
+primarily a core-hole effect only mildly perturbed by the spectator, as the width/branching reuses
+already assume, but computed exactly rather than reused.
+
+Eq. P2 reduces to exactly Eq. S1's $\Delta_k\,\mathrm{sign}_{ij}$ whenever $L2_k$ is empty/absent
+(same $f_i-f_j$-with-zero-manifold argument as §19's own reduction check) — `XLO_sim.py` builds
+`f_local` incrementally (`Delta_fs * ei_K_sat`, then `+= ei_L2_sat * (Delta_fs - Delta_L2_split_fs)`
+only when the extension is active) rather than as two separate formulas, so this is structural, not
+just checked post hoc.
+
+### 26. Parameter inventory
+
+All four new per-channel quantities are computed by `xatom_tools.l2_satellite_channel_parameters`
+(wraps the functions below) and merged into each `satellite_channels` YAML entry as
+`detuning_eV_L2_split`, `Gamma_A_2s_to_L2_eV`, `Gamma_L2_eV`, `sigma_Ka1_from_2p1`:
+
+| Quantity | XATOM function | Notes |
+|---|---|---|
+| $\Delta_{L2,k}$ | `l2_satellite_splitting_eV` | §25; total-energy difference, no new XATOM run beyond one extra hole config |
+| $\Gamma_A^{(2s\to L2_k)}$ | `auger_partial_rate_L2_eV` | reads the `"2s0 - 2p- X"` row of the *already-cached* `"2s1"` Auger table — zero extra XATOM runs |
+| $\Gamma_{L2,k}$ | `state_total_decay_width_eV` on the $2p^-X_k$ hole config | mirrors $\Gamma_{L,k}$/$\Gamma_{K,k}$ (§13) |
+| $\sigma^{(2p_{1/2}\to L2_k)}_{\mathcal E}$ | `spectator_ionization_cross_section_nm2(L2\_HOLE, X_k, \cdot)$ | mirrors $\sigma^{(2p\to L_k)}$ (§13), parent hole is the bare 2p$_{1/2}$ hole instead of bare 2p$_{3/2}$ |
+
+Live-computed (this repo, 2026-08-25) for all four channels:
+
+| Channel | $\Delta_{L2,k}$ (eV) | $\Gamma_A^{(2s\to L2_k)}$ (eV) | $\Gamma_{L2,k}$ (eV) | $\sigma^{(2p_{1/2}\to L_k)}_{\mathcal E}$ (nm$^2$) |
+|---|---|---|---|---|
+| 3d+ | 21.270 | 0.7137 | 0.6559 | $7.410\times10^{-10}$ |
+| 3d- | 21.260 | 0.5309 | 0.6092 | $5.930\times10^{-10}$ |
+| 3p+ | 21.310 | 0.7902 | 2.7236 | $1.882\times10^{-8}$ |
+| 3p- | 21.310 | 0.5062 | 3.0581 | $9.424\times10^{-9}$ |
+
+> **⚠ Observation.** `spectator_ionization_cross_section_nm2` returns numerically identical values
+> whether the parent hole is `2p0,1` (bare 2p$_{3/2}$) or `2p1,0` (bare 2p$_{1/2}$) — confirmed by
+> direct XATOM runs, not a caching artifact (the two hole configs' `-pcs` tables differ correctly in
+> the `2p+`/`2p-` rows themselves, only the *other* subshells' rows are unaffected). Within XATOM's
+> own approximation, a spectator shell's photoionization cross section apparently doesn't resolve
+> which 2p sublevel the other core hole sits in — plausible given how spatially separated the 2p
+> core and 3d/3p spectator shells are, but taken as-is rather than second-guessed.
+
+### 27. Consistency checks
+
+- With `satellite_channels` empty or `use_L2_pathway: False`, results reproduce prior behavior
+  exactly — regression-tested bit-for-bit (`Tijs`/`Gij`/`Tijs_plus`/`Tijs_minus`/`Delta_ij`/`Mij`
+  and the full field/density-matrix trajectory) against the pre-Part-IV code, both with
+  `use_L2_pathway: True` and satellites empty, and with satellites populated and
+  `use_L2_pathway: False`.
+- Missing any of the four new per-channel keys when `use_L2_satellite_pathway` would otherwise
+  activate raises immediately at construction (`XLO_sim.py`), rather than silently running with an
+  incomplete/inconsistent channel.
+- Auger budget (extends §14's check): summed over all four channels,
+  $\sum_k\big(\Gamma_A^{(2s\to L_k)}+\Gamma_A^{(2s\to L2_k)}\big)=4.985+2.541=7.526$ eV against
+  `GammaL1eVN`$=8.13$ eV — about 93% of the total 2s-hole decay budget now explicitly tracked (up
+  from 61% with the Kα1-satellite channels alone), leaving a $\approx0.60$ eV unmodeled remainder
+  (L1–L2 Coster–Kronig and other channels) — a physically sensible order of magnitude, not saturating
+  or exceeding the total budget.
+- Population trace (extends §22's check): summed over ground/other/2s/base-block(8, with L2)/all
+  four satellite blocks(8 each, with L2$_k$), stays $\leq1$ and decreases only via documented
+  untracked-loss channels — verified on a reduced test grid (`tgrid=200,x=y=8,z=15`) with real
+  procured parameters: population trace $\in[0.9908,1.0000]$ over the full run, with the new
+  $L2_k$ population summed over all four channels ($9.8\times10^{-4}$ peak) a sensible fraction
+  (roughly 40–80%, tracking each channel's own $\Gamma_A^{(2s\to L2_k)}/\Gamma_A^{(2s\to L_k)}$
+  ratio) of the corresponding Kα1-satellite population ($2.0\times10^{-3}$ peak) — sub-dominant to
+  the base-block population ($3.9\times10^{-3}$ peak), as expected for a third-order pathway
+  (2s-hole → spectator-satellite → Kα2 branch).
+- Not yet independently re-derived with §8's rigor (`docs/2p1_2-implementation-plan.md`): the
+  $L2_k$ sign convention is inherited directly from the base block's already-fixed, already-verified
+  role-based masking and $f_i$-vector formulation (§21/§19), rather than re-checked end-to-end
+  through `Omega_source_regular`/the FFT convention the way the base pathway's two bugs were caught
+  — worth doing once a SASE-averaged run is available to look for the expected Kα2-satellite dip(s)
+  near $\omega\approx-(\Delta\omega_{L2-L3}-\Delta_k)$ for each channel.

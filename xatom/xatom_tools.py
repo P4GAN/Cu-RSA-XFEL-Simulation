@@ -695,3 +695,215 @@ def build_all_satellite_channels_with_L2(Ka1_energy_eV=8047.91):
         params.update(l2_satellite_channel_parameters(spectator, Ka1_energy_eV))
         channels.append(params)
     return channels
+
+
+# ---------------------------------------------------------------------------
+# Top-level: double-M-shell-spectator ("double-satellite") channels
+# (docs/double-spectator-satellite-implementation-plan.md)
+#
+# Physical picture (found empirically, not assumed): a single-spectator channel's own spectator
+# hole can itself Auger-decay a second time (an M-shell Coster-Kronig process), landing on a
+# double-spectator configuration while the 2p+ core hole survives as a bystander throughout. This
+# is the *dominant* production route for 3d+3d+/3d-3d+/3d-3d- (bare 3p-hole Auger tables show >90%
+# of the total width goes this way; bare 3d-holes have NO Auger channel open at all -- energy
+# conservation forbids it, filling from 4s only releases ~7.8 eV, ~0.6 eV short of what's needed to
+# eject a second weakly-bound electron). So unlike every function above, these channels are NOT fed
+# by a cross-section x field-flux term -- they're fed by redirecting a fraction of an *existing*
+# single-spectator channel's own Gamma_L_eV (currently 100% generic loss) into an explicit
+# destination, using XATOM's own branching ratios for that redirection.
+#
+# XATOM's own "nl<n_->,<n_+>" notation packs ALL holes in one subshell into one fragment (verified
+# directly, not assumed): "3d0,2" = 2 holes in 3d+ (5/2), "3d1,1" = 1 hole in 3d- (3/2) + 1 in 3d+
+# (5/2), "3d2,0" = 2 holes in 3d- (3/2) -- i.e. exactly the fragment SPECTATOR_HOLE already uses,
+# generalized from "0,1"/"1,0" to any pair of small integers summing to 2.
+
+DOUBLE_SPECTATOR_HOLE = {
+    ('3d+', '3d+'): '3d0,2',
+    ('3d-', '3d+'): '3d1,1',
+    ('3d+', '3d-'): '3d1,1',  # order-independent alias
+    ('3d-', '3d-'): '3d2,0',
+}
+
+
+def _double_spectator_fragment(spectator_pair):
+    """Normalize a (spectator1, spectator2) pair to its DOUBLE_SPECTATOR_HOLE fragment, or accept
+    a raw XATOM fragment string (e.g. '3d1,1') passed through directly."""
+    if isinstance(spectator_pair, str):
+        return spectator_pair
+    key = tuple(spectator_pair)
+    if key not in DOUBLE_SPECTATOR_HOLE:
+        raise ValueError(f"unrecognized double-spectator pair {spectator_pair!r}; "
+                          f"available: {sorted(DOUBLE_SPECTATOR_HOLE)}")
+    return DOUBLE_SPECTATOR_HOLE[key]
+
+
+def double_spectator_channel_parameters(name, spectator_pair, Ka1_energy_eV=8047.91):
+    """
+    Assemble the {'name', 'detuning_eV', 'Gamma_L_eV', 'Gamma_K_eV', 'sigma_ion_from_2p',
+    'sigma_ion_from_1s'} entry for one double-spectator satellite channel (e.g.
+    spectator_pair=('3d-','3d+') for the mixed channel), for the `double_satellite_channels` YAML
+    list (docs/double-spectator-satellite-implementation-plan.md section 3). Mirrors
+    satellite_channel_parameters, minus the cross-section-driven *feed* keys (sigma_Ka1_from_2p/1s,
+    Gamma_A_2s_eV) -- this channel's feed instead comes entirely from `feed_from` entries built by
+    spectator_self_auger_feed_eV below, since the production mechanism here is a redirected Auger
+    decay of an existing single-spectator channel's own spectator hole, not a cross section x field
+    flux term. sigma_ion_from_2p/1s (theory doc section 12.4/S8's further-ionization *loss* -- a
+    different thing from the feed cross sections above, this channel's own further-photoionization
+    rate, contributing to opacity only) ARE computed here via the same
+    total_photoionization_cross_section_nm2 every other channel already uses -- no reason to leave
+    this deferred/zero when it's a cheap -pcs call, unlike the feed mechanism which genuinely isn't
+    cross-section-driven.
+    """
+    sd = _double_spectator_fragment(spectator_pair)
+    lower_hole = f'{BASE_LOWER_HOLE}_{sd}'  # 2p+XX (local L manifold)
+    upper_hole = f'{BASE_UPPER_HOLE}_{sd}'  # 1sXX  (local K manifold)
+
+    return {
+        'name': name,
+        'detuning_eV': satellite_detuning_eV(sd),
+        'Gamma_L_eV': state_total_decay_width_eV(lower_hole),
+        'Gamma_K_eV': state_total_decay_width_eV(upper_hole),
+        'sigma_ion_from_2p': total_photoionization_cross_section_nm2(lower_hole, Ka1_energy_eV),
+        'sigma_ion_from_1s': total_photoionization_cross_section_nm2(upper_hole, Ka1_energy_eV),
+    }
+
+
+def double_spectator_L2_parameters(spectator_pair, Ka1_energy_eV=8047.91):
+    """
+    New keys to ADD to a double_spectator_channel_parameters(...) dict, enabling that
+    double-satellite channel's own 2p1/2-satellite (Kalpha2-satellite-of-double-satellite)
+    extension -- one tier deeper than l2_satellite_channel_parameters, mirroring it exactly but
+    for a double-hole XATOM fragment instead of a single-hole one. Only meaningful together with
+    feed_from entries carrying manifold='L2' (built by spectator_self_auger_feed_eV with
+    manifold='L2') and use_L2_pathway: True (docs/double-spectator-satellite-implementation-plan.md
+    section 9) -- unlike l2_satellite_channel_parameters, there is no Gamma_A_2s_to_L2_eV or
+    sigma_Ka1_from_2p1 key here, since (exactly as for this channel's regular Lk/Uk feed) the L2k
+    feed comes from a parent channel's own L2k population self-Auger-decaying, not from a 2s-Auger
+    line or a cross-section x field-flux term.
+
+    Returns
+    -------
+    dict
+        {'detuning_eV_L2_split', 'Gamma_L2_eV'} -- merge directly into the corresponding
+        double_spectator_channel_parameters(...) dict before writing it into the YAML.
+    """
+    sd = _double_spectator_fragment(spectator_pair)
+    l2_hole = f'{L2_HOLE}_{sd}'          # 2p1/2+XX (local L2k manifold)
+    l3_hole = f'{BASE_LOWER_HOLE}_{sd}'  # 2p3/2+XX (local Lk manifold)
+    return {
+        'detuning_eV_L2_split': transition_energy_eV(l2_hole, l3_hole),
+        'Gamma_L2_eV': state_total_decay_width_eV(l2_hole),
+    }
+
+
+def spectator_self_auger_feed_eV(parent_spectator, target_pair, manifold='lower'):
+    """
+    Partial rate (eV) at which a single-spectator channel's own local block state -- L_k
+    (2p0,1_{parent_spectator}, manifold='lower') or U_k (1s1_{parent_spectator},
+    manifold='upper') -- decays via its *spectator* hole (not its 2p+/1s core hole) Auger-decaying
+    a second time into target_pair -- the dominant double-spectator production mechanism (see
+    module docstring above and docs/double-spectator-satellite-implementation-plan.md sections
+    1-2 for manifold='lower'; manifold='upper' is the analogous feed into a double-satellite
+    channel's own upper/1sXX manifold, from a parent channel's 1sX state instead of its 2p+X
+    state -- same physics, the spectator hole doesn't know whether the *other* hole in the ion is
+    in 2p+ or 1s, so the spectator's own Coster-Kronig branching should be -- and was verified to
+    be -- comparable between the two, modulo the different competing core-hole decay rate).
+
+    Distinguishes "spectator decays" from "core hole decays" by which label is on the
+    *initial*-hole side of the XATOM Auger row: a spectator-decay row has `initial` equal to the
+    spectator's own label (e.g. '3p+'), NOT '2p+'/'1s0' -- rows with the core-hole label as
+    initial are the core hole's own decay (unchanged generic loss, not redirected).
+
+    Parameters
+    ----------
+    parent_spectator: str
+        One of SPECTATOR_HOLE's keys for the *parent* single-spectator channel (e.g. '3p+').
+    target_pair: (str, str)
+        The two spectator labels the Auger electron + filling electron land in (e.g. ('3d-','3d+')).
+        Matched against the Auger row's (final1, final2) in either order.
+    manifold: str
+        'lower' (default, L_k = 2p+X, feeds a double-satellite channel's own lower/2p+XX
+        manifold), 'upper' (U_k = 1sX, feeds the upper/1sXX manifold), or 'L2' (L2_k = 2p1/2+X,
+        feeds the double-satellite channel's own L2k/2p1/2+XX manifold -- only meaningful together
+        with use_L2_pathway: True and double_spectator_L2_parameters, docs/double-spectator-
+        satellite-implementation-plan.md section 9).
+
+    Returns
+    -------
+    float
+        Partial rate in eV (0.0 if no matching row -- e.g. energetically forbidden combinations).
+    """
+    parent_config = SPECTATOR_HOLE[parent_spectator]
+    core_hole = {'lower': BASE_LOWER_HOLE, 'upper': BASE_UPPER_HOLE, 'L2': L2_HOLE}[manifold]
+    hole_config = f'{core_hole}_{parent_config}'
+    auger = parse_auger(run_xatom_cached(hole_config, decay=True))
+
+    total = 0.0
+    for line in auger.lines:
+        if line.initial != parent_spectator:
+            continue  # only the spectator's own decay, not the core hole's (initial='2p+'/'1s0')
+        if (line.final1, line.final2) in (target_pair, target_pair[::-1]):
+            total += line.rate_eV
+    return total
+
+
+def build_double_satellite_channels(parent_spectators=('3p+', '3p-'), Ka1_energy_eV=8047.91,
+                                     manifolds=('lower', 'upper')):
+    """
+    All three double-3d-spectator channels' full parameter sets (3d+3d+, 3d-3d+, 3d-3d-), each
+    with its `feed_from` list built from spectator_self_auger_feed_eV against every entry in
+    parent_spectators (default: both 3p+ and 3p-, the only two channels with an open Auger channel
+    into a second 3d hole -- see module docstring) and every entry in `manifolds`: 'lower' feeds
+    the double-satellite channel's own L_k (2p+XX) manifold from the parent's L_k (2p+X) state
+    (docs/double-spectator-satellite-implementation-plan.md sections 1-3); 'upper' feeds its U_k
+    (1sXX) manifold from the parent's U_k (1sX) state -- the analogous mechanism, verified present
+    (though somewhat smaller-branching, since the 1s core hole's own decay is a faster competing
+    channel than 2p+'s) via the same spectator-self-Auger-decay physics. 'L2' additionally builds
+    this channel's own 2p1/2-satellite extension (section 9): each returned dict also gets
+    detuning_eV_L2_split/Gamma_L2_eV merged in (from double_spectator_L2_parameters), and its
+    feed_from gains manifold='L2' entries fed from each parent's own L2k population -- only
+    meaningful together with use_L2_pathway: True in the target YAML. Ready to assign directly
+    to `double_satellite_channels:` in the YAML config.
+
+    Also returns, per (parent, manifold), the *total* carved-out rate (sum of Gamma_feed_eV across
+    all three target channels for that manifold) -- subtract this from that parent's own
+    satellite_channels entry's Gamma_L_eV (manifold='lower') or Gamma_K_eV (manifold='upper')
+    (bare/uncarved value) to get the value to actually put in the YAML, exactly the established
+    carve-out pattern (theory doc section 12.7).
+
+    Returns
+    -------
+    (list of dict, dict)
+        (double_satellite_channels YAML-ready list,
+         {(parent_spectator, manifold): total_carved_out_eV})
+    """
+    targets = {
+        '3d+3d+': ('3d+', '3d+'),
+        '3d-3d+': ('3d-', '3d+'),
+        '3d-3d-': ('3d-', '3d-'),
+    }
+
+    channels = []
+    carved_out = {(p, m): 0.0 for p in parent_spectators for m in manifolds}
+    for name, pair in targets.items():
+        params = double_spectator_channel_parameters(name, pair, Ka1_energy_eV)
+        if 'L2' in manifolds:
+            # This channel's own 2p1/2-satellite extension (docs/double-spectator-satellite-
+            # implementation-plan.md section 9) -- detuning_eV_L2_split/Gamma_L2_eV describe the
+            # channel itself (needed regardless of how it's fed), independent of the feed_from
+            # loop below which builds the manifold='L2' entries that actually populate it.
+            params.update(double_spectator_L2_parameters(pair, Ka1_energy_eV))
+        feed_from = []
+        for manifold in manifolds:
+            for parent in parent_spectators:
+                rate = spectator_self_auger_feed_eV(parent, pair, manifold=manifold)
+                if rate > 0.0:
+                    entry = {'channel': parent, 'Gamma_feed_eV': rate}
+                    if manifold != 'lower':
+                        entry['manifold'] = manifold
+                    feed_from.append(entry)
+                    carved_out[(parent, manifold)] += rate
+        params['feed_from'] = feed_from
+        channels.append(params)
+
+    return channels, carved_out

@@ -901,3 +901,21 @@ Live-computed (this repo, 2026-08-25) for all four channels:
   through `Omega_source_regular`/the FFT convention the way the base pathway's two bugs were caught
   — worth doing once a SASE-averaged run is available to look for the expected Kα2-satellite dip(s)
   near $\omega\approx-(\Delta\omega_{L2-L3}-\Delta_k)$ for each channel.
+
+---
+
+## Part V — New: double-M-shell-spectator ("double-satellite") channels
+
+A third generation of `satellite_channels`, one hole deeper than Part II's single-spectator states:
+$2p^+3d^+3d^+$, $2p^+3d^-3d^+$, $2p^+3d^-3d^-$. Full derivation, the (initially counterintuitive)
+dominant production mechanism — a spectator hole's *own* subsequent Auger decay, not a further
+photoionization step — and the implementation are in
+`docs/double-spectator-satellite-implementation-plan.md`; summary: these channels are fed by
+redirecting part of the existing $3p^+$/$3p^-$ channels' own $\Gamma_{L,k}$/$\Gamma_{K,k}$/
+$\Gamma_{L2,k}$ decay (previously 100% generic loss) rather than by any new cross-section term,
+using a `feed_from` key (with `manifold`: `lower`/`upper`/`L2`) on `satellite_channels`/
+`double_satellite_channels` YAML entries. Fully combined with the 2p$_{1/2}$-satellite extension
+(Part IV) — each double-satellite channel gets its own L2k (2p$_{1/2}$+XX) manifold, fed the same
+way one tier deeper (`manifold: 'L2'`). Further-ionization loss (`sigma_ion_from_2p`/`_1s`) is also
+populated (fast `-pcs` calls on the double-hole configuration, unlike the slow `-decay` calls the
+feed mechanism itself needs). Demo config: `config/base/Cu-seed-double-satellite.yaml`.

@@ -1,0 +1,285 @@
+#units: nm, fs
+
+# Double-M-shell-spectator ("double-satellite") channels (docs/double-spectator-satellite-
+# implementation-plan.md): a third generation of satellite_channels, one hole deeper than
+# Cu-seed-satellite.yaml -- 3d+3d+, 3d-3d+, 3d-3d-, fed by redirecting part of the 3p+/3p-
+# channels' own Gamma_L_eV/Gamma_K_eV/Gamma_L2_eV decay (their spectator hole's own Auger decay,
+# not a cross section) instead of the usual 2s-Auger/spectator-photoionization route. Includes the
+# full 2p1/2-satellite (L2k, Kalpha2-satellite-of-double-satellite) extension (implementation plan
+# doc section 9) and further-ionization loss (section 8's fast -pcs calls) for every
+# double_satellite_channels entry.
+
+#photoionization crosssections of Cu
+
+#Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
+sigma1_Ka1_2s: 2.45e-7
+sigma1_Ka1_2p3: 1.52e-7
+sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
+sigma1_Ka1_2p1: 6.89383e-8
+
+#Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
+# sigma2_Ka1_1s/2p3 carved out for the satellite_channels below (theory doc §12.7): the S3/S4
+# spectator-photoionization transfer (sigma_Ka1_from_2p/1s per channel) is a *transfer* out of the
+# base 2p-hole/1s-hole population into the explicit satellite states, not an additional process on
+# top of the total further-ionization rate -- so it must be subtracted here, or that fraction of
+# further-ionization gets credited to both the base loss/opacity term and the satellite population.
+sigma2_Ka1_1s: 6.2118e-7 # 6.53e-7 - 3.1815e-8 (sum of satellite_channels' sigma_Ka1_from_1s)
+sigma2_Ka1_2s: 4.05e-7
+sigma2_Ka1_2p3: 3.8542e-7 # 4.15e-7 - 2.9579e-8 (sum of satellite_channels' sigma_Ka1_from_2p)
+sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
+sigma2_Ka1_2p1: 4.98609e-7
+
+#Chemical composition of the sample
+#Cu
+compound:
+  O:
+    N_atoms: 0
+    sigma_compound_Ka1: 0
+
+
+#sample concentration in atoms per cubic nm
+#solid copper:  84, nitrate 4M solution: 2.509
+n: 82.509
+
+#number of atomic levels in the calculation
+nlevel: 6
+
+#radiative rates
+GammaKeVN: 1.49
+GammaL1eVN: 8.13
+GammaL2eVN: 1.04
+GammaL3eVN: 0.61
+GammarKalpha1eVN: 0.39375
+GammarKalpha2eVN: 0.202668
+# Fully carved out (theory doc §12.7): the 4 satellite_channels below (3d+/3d-/3p+/3p-) now
+# explicitly track the entire 2s-hole Auger -> 2p_3/2+spectator (M45+M23) branching via their own
+# Gamma_A_2s_eV, replacing rather than adding to this generic feed.
+GammaA_L1_to_L3M45eVN: 0.0
+
+additional_dephasing: 0.0
+
+#K alpha atomic transitions photon energy
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+
+#simulation domain and padding parameters
+tgrid: 200
+zgrid: 15
+xgrid: 8
+ygrid: 8
+
+tmax: 8.
+
+zmax: 20.0e+3
+xmax: 1000.0
+ymax: 1000.0
+
+xpad: 20
+ypad: 20
+tpad: 0
+
+auto_grid: False
+
+#seed parameters
+seed_pulse_format: 'Gaussian_pulse_aniso_seed'
+E_seed_uJ: 40
+seed_duration_FWHM_t: 0.1
+t_peak: 1.5
+seed_width_FWHM_x: 480
+seed_width_FWHM_y: 640
+
+
+#calculation regime
+is_spontaneous_only: False
+is_use_stochastic: False
+random_seed: -1
+enable_noise_mask: True
+Esxy_noise_cutoff: 2.0e-3
+# run_mode: 'simultaneous', 'consecutive'
+run_mode: 'simultaneous'
+enable_self_diffraction: True
+enable_self_absorption: True
+turn_off_coherences: False
+enable_kfilter: False
+is_Cartesian_pol: True
+use_2s_pathway: True
+use_L2_pathway: True
+
+satellite_channels:
+- name: 3d+
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.5733
+  Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
+  Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
+  # l2_satellite_channel_parameters); requires use_L2_pathway: True. 3d+/3d- don't feed any
+  # double_satellite_channels entry (bare 3d holes are Auger-stable, see implementation plan doc
+  # section 1), so unlike 3p+/3p- below, nothing here is carved out.
+  detuning_eV_L2_split: 21.2700000000
+  Gamma_A_2s_to_L2_eV: 0.7136594214
+  Gamma_L2_eV: 0.655904
+  sigma_Ka1_from_2p1: 7.41039e-10
+- name: 3d-
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.3121
+  Gamma_L_eV: 0.6348
+  Gamma_K_eV: 1.5447
+  sigma_Ka1_from_2p: 5.93000e-10
+  sigma_Ka1_from_1s: 6.4346e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+  detuning_eV_L2_split: 21.2600000000
+  Gamma_A_2s_to_L2_eV: 0.5308669343
+  Gamma_L2_eV: 0.60921
+  sigma_Ka1_from_2p1: 5.93e-10
+- name: 3p+
+  detuning_eV: 2.7600
+  Gamma_A_2s_eV: 1.4535
+  # WAS 2.6325 eV (bare/uncarved total decay width of the 2p+3p+ configuration, L_k). Carved out
+  # here: 1.7398 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries in
+  # double_satellite_channels below (0.6350 -> 3d+3d+, 1.0241 -> 3d-3d+, 0.0806 -> 3d-3d-).
+  # Budget check: 0.8927 + 1.7398 = 2.6325 (exact, modulo rounding).
+  Gamma_L_eV: 0.8927
+  # WAS 3.8524 eV (bare/uncarved total decay width of the 1s3p+ configuration, U_k). Carved out
+  # here: 2.0390 eV = sum of this channel's manifold: upper Gamma_feed_eV entries below (0.7303 ->
+  # 3d+3d+, 1.2235 -> 3d-3d+, 0.0852 -> 3d-3d-). Budget check: 1.8134 + 2.0390 = 3.8524 (exact,
+  # modulo rounding).
+  Gamma_K_eV: 1.8134
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 4.97595e-07
+  sigma_ion_from_1s: 5.67499e-07
+  # 2p1/2-satellite (Kalpha2-satellite) extension of THIS channel (its own L2k = 2p1/2+3p+, total
+  # decay width 2.72362 eV) -- distinct from double_satellite_channels' own L2k extensions below.
+  detuning_eV_L2_split: 21.3100000000
+  Gamma_A_2s_to_L2_eV: 0.7901723972
+  # WAS 2.72362 eV (bare/uncarved total decay width of the 2p1/2+3p+ configuration, this channel's
+  # own L2k). Carved out here: 1.7397 eV = sum of this channel's manifold: L2 Gamma_feed_eV
+  # entries below (0.6350 -> 3d+3d+, 1.0241 -> 3d-3d+, 0.0806 -> 3d-3d-) -- confirmed via direct
+  # XATOM -decay on 2p1,0_3p0,1: numerically identical to this channel's own lower-manifold
+  # (2p0,1_3p0,1) branching to 4 decimal places, i.e. the 3p spectator's self-Auger branching
+  # genuinely doesn't resolve which j the *other* core hole has (spectator approximation holding
+  # essentially exactly, not just approximately, here). Budget check: 0.98392 + 1.7397 = 2.72362
+  # (exact, modulo rounding).
+  Gamma_L2_eV: 0.98392
+  sigma_Ka1_from_2p1: 1.88202e-08
+- name: 3p-
+  detuning_eV: 2.9300
+  Gamma_A_2s_eV: 0.6458
+  # WAS 3.1793 eV (bare/uncarved total decay width of the 2p+3p- configuration). Carved out here:
+  # 2.1897 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries below
+  # (0.0463 -> 3d+3d+, 1.6841 -> 3d-3d+, 0.4594 -> 3d-3d-). Budget check: 0.9896 + 2.1897 = 3.1793
+  # (exact, modulo rounding).
+  Gamma_L_eV: 0.9896
+  # WAS 4.3649 eV (bare/uncarved total decay width of the 1s3p- configuration, U_k). Carved out
+  # here: 2.5302 eV = sum of this channel's manifold: upper Gamma_feed_eV entries below (0.0499
+  # -> 3d+3d+, 1.9699 -> 3d-3d+, 0.5104 -> 3d-3d-). Budget check: 1.8347 + 2.5302 = 4.3649 (exact,
+  # modulo rounding).
+  Gamma_K_eV: 1.8347
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 4.97588e-07
+  sigma_ion_from_1s: 5.67491e-07
+  detuning_eV_L2_split: 21.3100000000
+  Gamma_A_2s_to_L2_eV: 0.5062406297
+  # WAS 3.05808 eV (bare/uncarved total decay width of the 2p1/2+3p- configuration, this channel's
+  # own L2k). Carved out here: 2.1898 eV = sum of this channel's manifold: L2 Gamma_feed_eV
+  # entries below (0.0463 -> 3d+3d+, 1.6841 -> 3d-3d+, 0.4594 -> 3d-3d-) -- again numerically
+  # identical to the lower-manifold branching, see 3p+'s comment above. Budget check: 0.86828 +
+  # 2.1898 = 3.05808 (exact, modulo rounding).
+  Gamma_L2_eV: 0.86828
+  sigma_Ka1_from_2p1: 9.4244e-09
+
+# Double-M-shell-spectator channels (docs/double-spectator-satellite-implementation-plan.md).
+# Fed exclusively via feed_from -- no Gamma_A_2s_eV/sigma_Ka1_from_2p/1s keys, unlike the four
+# channels above. Values from xatom_tools.build_double_satellite_channels(manifolds=('lower',
+# 'upper','L2')). Each feed_from entry without an explicit `manifold` key feeds the lower (2p+XX)
+# manifold from the parent's own L_k (2p+X) population; `manifold: upper` feeds the upper (1sXX)
+# manifold from the parent's own U_k (1sX) population; `manifold: L2` feeds this channel's own
+# L2k (2p1/2+XX) manifold from the parent's own L2k (2p1/2+X) population (see the Gamma_L2_eV
+# carve-out comments on 3p+/3p- above) -- requires use_L2_pathway: True, which every parent
+# channel above now carries.
+double_satellite_channels:
+- name: 3d+3d+
+  detuning_eV: -1.70
+  Gamma_L_eV: 0.572227
+  Gamma_K_eV: 1.55265
+  # This channel's own 2p1/2-satellite extension (docs/double-spectator-satellite-implementation-
+  # plan.md section 9): 2p1/2+3d+3d+ vs 2p3/2+3d+3d+ splitting and this configuration's own total
+  # decay width, both from direct XATOM calls on 2p1,0_3d0,2.
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.651793
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.6349831403273791
+  - channel: 3p-
+    Gamma_feed_eV: 0.04626534312315371
+  - channel: 3p+
+    Gamma_feed_eV: 0.7303
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.0499
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.6350
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.0463
+    manifold: L2
+  sigma_ion_from_2p: 5.042530e-07
+  sigma_ion_from_1s: 5.743150e-07
+- name: 3d-3d+
+  detuning_eV: -1.69
+  Gamma_L_eV: 0.602927
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.609449
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241386173085028
+  - channel: 3p-
+    Gamma_feed_eV: 1.6840555508530808
+  - channel: 3p+
+    Gamma_feed_eV: 1.2235
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 1.9699
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 1.6841
+    manifold: L2
+  sigma_ion_from_2p: 5.042530e-07
+  sigma_ion_from_1s: 5.743150e-07
+- name: 3d-3d-
+  detuning_eV: -1.68
+  Gamma_L_eV: 0.627541
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.555031
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.08064992289744662
+  - channel: 3p-
+    Gamma_feed_eV: 0.45942343968413835
+  - channel: 3p+
+    Gamma_feed_eV: 0.0852
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.5104
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.0806
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.4594
+    manifold: L2
+  sigma_ion_from_2p: 5.042530e-07
+  sigma_ion_from_1s: 5.743150e-07

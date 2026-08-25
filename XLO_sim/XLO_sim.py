@@ -80,6 +80,19 @@ class XLO_sim:
         if 'satellite_channels' not in self.config:
             self.satellite_channels = []
 
+        # Double-M-shell-spectator ("double-satellite") channels
+        # (docs/double-spectator-satellite-implementation-plan.md): a third generation of channels,
+        # fed not by a cross-section x field-flux term (like every entry above) but by redirecting
+        # part of an *existing* satellite_channels entry's own Gamma_L_eV decay (its `feed_from`
+        # key, resolved to parent indices below). Structurally identical local 6/8-level blocks
+        # otherwise, so they're appended onto the SAME self.satellite_channels list rather than
+        # tracked separately -- every downstream consumer (satellite_channel_params construction,
+        # Sample.py's marching loop, Model.absorption, Omega_source_regular) already iterates that
+        # one flat list generically. list(...)+list(...) rather than .extend() so this doesn't
+        # mutate self.config['satellite_channels'] in place (setattr above aliased it directly).
+        if 'double_satellite_channels' in self.config and self.config['double_satellite_channels']:
+            self.satellite_channels = list(self.satellite_channels) + list(self.config['double_satellite_channels'])
+
         # 2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III):
         # shares the SAME 1s (K) population as the base 2p3/2 (L3) block -- unlike the satellite
         # channels, this is not a separate configuration, so it can't be a separate block; it
@@ -421,12 +434,55 @@ class XLO_sim:
         # use_L2_satellite_pathway is off).
         Gamma_sp_Gij_sat = self.Gamma_sp_fsm1N * Gij_sat
 
+        # Name -> index lookup for double-satellite channels' `feed_from` references (below) --
+        # built once, before the main loop, so a double-satellite entry can reference a parent
+        # regardless of list order (Sample.py always reads the PRE-update rho_sat_ijxy list in
+        # full before updating any entry, so there is no ordering requirement -- see
+        # docs/double-spectator-satellite-implementation-plan.md section 3).
+        _satellite_name_to_index = {}
+        for idx, channel in enumerate(self.satellite_channels):
+            _satellite_name_to_index.setdefault(channel['name'], []).append(idx)
+
         self.satellite_channel_params = []
         for channel in self.satellite_channels:
             Delta_fs = channel['detuning_eV'] / self.hbar
-            Gamma_A_fs = channel['Gamma_A_2s_eV'] / self.hbar
-            S_feed_2p = np.asarray([channel['sigma_Ka1_from_2p'], channel['sigma_Ka1_from_2p']])
-            S_feed_1s = np.asarray([channel['sigma_Ka1_from_1s'], channel['sigma_Ka1_from_1s']])
+            # Double-satellite channels (feed_from key present) have no Gamma_A_2s_eV/
+            # sigma_Ka1_from_2p/1s -- their entire feed comes from feed_from instead (resolved
+            # below), so these default to 0 rather than being required.
+            Gamma_A_fs = channel.get('Gamma_A_2s_eV', 0.0) / self.hbar
+            S_feed_2p = np.asarray([channel.get('sigma_Ka1_from_2p', 0.0), channel.get('sigma_Ka1_from_2p', 0.0)])
+            S_feed_1s = np.asarray([channel.get('sigma_Ka1_from_1s', 0.0), channel.get('sigma_Ka1_from_1s', 0.0)])
+
+            # feed_from (docs/double-spectator-satellite-implementation-plan.md section 3): list of
+            # (parent_index_into_self.satellite_channels, Gamma_feed_fs) pairs, resolved by parent
+            # name now so Model.py's feed_diag_satellite_block never has to do string lookups
+            # per-timestep. Absent/empty for every pre-existing (cross-section-fed) channel.
+            feed_from_resolved = []
+            for feed in channel.get('feed_from', []):
+                parent_name = feed['channel']
+                matches = _satellite_name_to_index.get(parent_name, [])
+                if len(matches) != 1:
+                    raise ValueError(
+                        f"double-satellite channel {channel.get('name', '?')!r}'s feed_from "
+                        f"references channel {parent_name!r}, which matches {len(matches)} "
+                        f"satellite_channels entries by name (must match exactly 1)"
+                    )
+                manifold = feed.get('manifold', 'lower')
+                if manifold not in ('lower', 'upper', 'L2'):
+                    raise ValueError(f"feed_from manifold must be 'lower', 'upper', or 'L2', got {manifold!r}")
+                if manifold == 'L2' and not self.use_L2_satellite_pathway:
+                    # A manifold='L2' entry reads/writes the L2k (2p1/2+X) slice of the local
+                    # block, which only exists (nlevel_sat > nlevel_base) when
+                    # use_L2_satellite_pathway is on -- without it this entry would silently do
+                    # nothing (docs/double-spectator-satellite-implementation-plan.md section 9),
+                    # so fail loudly instead.
+                    raise ValueError(
+                        f"double-satellite channel {channel.get('name', '?')!r}'s feed_from has a "
+                        f"manifold='L2' entry, which requires use_L2_pathway: True (and at least "
+                        f"one satellite_channels entry) to be meaningful -- unset it or remove "
+                        f"the manifold='L2' entries"
+                    )
+                feed_from_resolved.append((matches[0], feed['Gamma_feed_eV'] / self.hbar, manifold))
 
             if ('Gamma_L_eV' in channel) or ('Gamma_K_eV' in channel):
                 GammaL_fs = channel.get('Gamma_L_eV', self.GammaL3eVN) / self.hbar
@@ -463,25 +519,32 @@ class XLO_sim:
             Gamma_A_L2_fs = None
             S_feed_2p1 = None
             if self.use_L2_satellite_pathway:
+                is_double_satellite = bool(channel.get('feed_from'))
                 # New keys required from xatom_tools.l2_satellite_channel_parameters (theory doc:
                 # this section's "2p1/2-satellite" extension, combining Part II + Part III) -- fail
                 # loudly rather than silently running with an incomplete/inconsistent channel, since
                 # a missing key here would otherwise show up only as a subtly wrong spectrum.
-                required_keys = ('detuning_eV_L2_split', 'Gamma_A_2s_to_L2_eV', 'Gamma_L2_eV', 'sigma_Ka1_from_2p1')
+                # Double-satellite channels (docs/double-spectator-satellite-implementation-plan.md
+                # section 9) don't need Gamma_A_2s_to_L2_eV/sigma_Ka1_from_2p1 -- those describe the
+                # OLD (2s-Auger / cross-section-driven) feed mechanisms, which don't apply here; a
+                # double-satellite channel's L2k manifold is instead fed by manifold='L2' entries
+                # in its own feed_from (resolved below, same as its Lk/Uk manifolds already are).
+                required_keys = ('detuning_eV_L2_split', 'Gamma_L2_eV') if is_double_satellite else (
+                    'detuning_eV_L2_split', 'Gamma_A_2s_to_L2_eV', 'Gamma_L2_eV', 'sigma_Ka1_from_2p1')
                 missing = [k for k in required_keys if k not in channel]
                 if missing:
                     raise ValueError(
                         f"satellite_channels entry {channel.get('name', '?')!r} is missing {missing} "
                         f"(required whenever use_L2_pathway is combined with satellite_channels -- "
-                        f"run xatom_tools.l2_satellite_channel_parameters() and merge its output "
-                        f"into this channel's YAML entry, or unset use_L2_pathway/satellite_channels "
-                        f"to skip the 2p1/2-satellite extension)"
+                        f"run xatom_tools.l2_satellite_channel_parameters()/double_spectator_L2_parameters() "
+                        f"and merge its output into this channel's YAML entry, or unset "
+                        f"use_L2_pathway/satellite_channels to skip the 2p1/2-satellite extension)"
                     )
 
                 Delta_L2_split_fs = channel['detuning_eV_L2_split'] / self.hbar
-                Gamma_A_L2_fs = channel['Gamma_A_2s_to_L2_eV'] / self.hbar
+                Gamma_A_L2_fs = channel.get('Gamma_A_2s_to_L2_eV', 0.0) / self.hbar
                 GammaL2_fs = channel['Gamma_L2_eV'] / self.hbar
-                S_feed_2p1 = np.asarray([channel['sigma_Ka1_from_2p1'], channel['sigma_Ka1_from_2p1']])
+                S_feed_2p1 = np.asarray([channel.get('sigma_Ka1_from_2p1', 0.0), channel.get('sigma_Ka1_from_2p1', 0.0)])
 
                 # f[L2k] = f[Uk] - Delta_L2_split, the exact per-channel analogue of the base
                 # block's f[L2]=f[K]-DeltaomegaL2mL3A (theory doc Eq. K4), but using this channel's
@@ -505,6 +568,7 @@ class XLO_sim:
                 Delta_ij=Delta_ij_chan,
                 Gamma_A_fs=Gamma_A_fs,
                 Gamma_A_L2_fs=Gamma_A_L2_fs,  # None unless use_L2_satellite_pathway
+                feed_from=feed_from_resolved,  # [] unless this is a double-satellite channel
                 S_feed_2p=S_feed_2p,
                 S_feed_1s=S_feed_1s,
                 S_feed_2p1=S_feed_2p1,  # None unless use_L2_satellite_pathway

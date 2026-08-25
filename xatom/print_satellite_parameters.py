@@ -1,16 +1,21 @@
 """
 Run XATOM for all four 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part
-II) and print the resulting `satellite_channels` parameters -- both as a readable table and as a
-ready-to-paste YAML block for config/base/*.yaml.
+II), the 2p1/2 (L2, Kalpha2) pathway (Part III/IV), and the double-M-shell-spectator
+("double-satellite") channels (docs/double-spectator-satellite-implementation-plan.md, Part V) --
+and print the resulting parameters, both as readable tables and as ready-to-paste YAML blocks for
+config/base/*.yaml.
 
 Usage
 -----
     python xatom/print_satellite_parameters.py [--Ka1-energy-eV 8047.91]
 
-Takes a couple of minutes: each channel needs ~8 XATOM invocations (detuning: 4 total-energy
-calls; Gamma_A: 1, shared across channels via the "2s1" Auger table cache; Gamma_L/Gamma_K: 2
-decay-width calls; cross sections: 4 -pcs calls), and XATOM itself takes order 1-10 seconds per
-invocation (see calculating_parameters.ipynb's timing footers).
+The first three sections (satellite_channels, their L2 extension, the base L2 pathway) take a
+couple of minutes total: each channel needs ~8 XATOM invocations of order 1-10 seconds each (see
+calculating_parameters.ipynb's timing footers). The double-satellite section is much slower --
+each of the 4 distinct parent/manifold hole configurations (2p0,1_3p0,1, 2p0,1_3p1,0, 1s1_3p0,1,
+1s1_3p1,0) needs its own live, uncached `-decay` call on an 8+-electron configuration, observed to
+take on the order of 10 minutes each (~40 minutes total) -- run this script with that in mind, or
+comment out the double-satellite section if only the first three are needed.
 """
 
 import argparse
@@ -78,6 +83,24 @@ def main():
           'value, use_L2_pathway: True):')
     print()
     print(yaml.dump(l2_params, sort_keys=False, default_flow_style=False))
+
+    print('=' * 70)
+    print('Double-M-shell-spectator ("double-satellite") channels '
+          '(docs/double-spectator-satellite-implementation-plan.md):')
+    print('(slow -- each parent/manifold pair needs a live XATOM -decay call on a double-hole')
+    print(' configuration, order 1-10 minutes each; not cached across runs of this script)')
+    print()
+    double_channels, carved_out = xt.build_double_satellite_channels(Ka1_energy_eV=args.Ka1_energy_eV)
+
+    print('Budget check -- carve these out of the corresponding parent satellite_channels entry')
+    print('(Gamma_L_eV for manifold=lower, Gamma_K_eV for manifold=upper):')
+    for (parent, manifold), total in carved_out.items():
+        print(f'  {parent} ({manifold}): carve out {total:.4f} eV')
+    print()
+
+    print('Ready to paste into config/base/*.yaml:')
+    print()
+    print(yaml.dump({'double_satellite_channels': double_channels}, sort_keys=False, default_flow_style=False))
 
 
 if __name__ == '__main__':

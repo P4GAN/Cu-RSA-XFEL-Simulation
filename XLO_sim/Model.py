@@ -127,7 +127,7 @@ def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_
     return feed
 
 
-def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_xy, J_Omega_plus_xy):
+def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy):
     """
     External population feed into one 2s-hole satellite channel's local block diagonal
     (docs/theory-and-2s-satellite-pathways.md, Part II): 2s-hole Auger decay spread evenly over the
@@ -135,6 +135,16 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_x
     of the base block's 2p-hole diagonal into the same lower manifold (Eq. S3), plus
     sublevel-preserving spectator photoionization of the base block's 1s-hole diagonal into the
     2 upper-manifold (1sX) msublevels (Eq. S4).
+
+    Double-satellite channels (docs/double-spectator-satellite-implementation-plan.md, chan.feed_from
+    non-empty) instead feed exclusively from one or more *parent* satellite channels' own lower
+    (L_k, local indices 0-3) manifold: a fraction of that parent's Gamma_L_eV decay -- previously
+    100% generic loss -- is redirected here (the physical mechanism: the parent's spectator hole
+    itself Auger-decays a second time, landing on this double-spectator configuration, while the
+    parent's 2p+ core hole survives as a bystander -- see the implementation plan doc for why this
+    dominates over any cross-section-driven route). Gamma_A_fs/S_feed_2p/S_feed_1s are all 0 for
+    these channels (XLO_sim.py defaults), so the Eq. S2/S3/S4 terms below contribute nothing and
+    this is the entire feed.
 
     When chan carries the 2p1/2-satellite extension (X.use_L2_satellite_pathway, chan.Mij sized
     X.satellite_nlevel = X.nlevel_base + 2), also feeds the extra 2p1/2+X msublevels (local indices
@@ -157,6 +167,11 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_x
     rho_base_ijxy: np.ndarray
         Base block's density matrix at given t,z (sized X.nlevel, i.e. X.nlevel_base + 2 when
         X.use_L2_pathway is on -- always true here whenever chan carries the L2k extension)
+    rho_sat_ijxy: list of np.ndarray
+        Every satellite channel's own local block density matrix at given t,z, pre-update, in the
+        same order as X.satellite_channel_params -- only read from when chan.feed_from is
+        non-empty (double-satellite channels), to pull the parent channel(s)' own lower (L_k)
+        manifold population. Unused (may be an empty list) for every pre-existing channel.
     J_Omega_minus_xy, J_Omega_plus_xy: np.ndarray
         Seed field photon fluxes at given t,z
 
@@ -179,8 +194,42 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_x
     feed = np.zeros((nlevel_sat, nx, ny), dtype=complex)
 
     ei_L3_sat = X.ei_L3[:nlevel_base]
+    ei_K_sat_local = X.ei_K[:nlevel_base]
     auger_weight = ei_L3_sat / np.sum(ei_L3_sat)
+    auger_weight_K = ei_K_sat_local / np.sum(ei_K_sat_local)
     feed[:nlevel_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
+
+    # Double-satellite feed (docs/double-spectator-satellite-implementation-plan.md section 3):
+    # redirected fraction of one or more parent channels' own Gamma_L_eV (manifold='lower') or
+    # Gamma_K_eV (manifold='upper') decay, spread evenly over this channel's own corresponding 4
+    # lower-manifold or 2 upper-manifold msublevels -- same auger_weight convention as the Eq. S2
+    # term just above (no known angular dependence to do otherwise; the parent's spectator hole
+    # decaying doesn't carry information about which of the parent's own already-populated
+    # msublevels maps to which of this channel's). 'lower': parent's own L_k (2p+X) population
+    # feeds this channel's L_k (2p+XX) manifold -- e.g. 2p+3p+'s spectator hole decaying while its
+    # 2p+ core hole survives lands on 2p+3d+3d+. 'upper': parent's own U_k (1sX) population feeds
+    # this channel's U_k (1sXX) manifold -- the analogous mechanism, one core-hole species over
+    # (1s3p+'s spectator hole decaying while its 1s core hole survives lands on 1s3d+3d+); smaller
+    # branching than 'lower' since the 1s core hole's own decay is a faster competing channel, but
+    # still a real, sizable (>50%) fraction of Gamma_K_eV, confirmed via direct XATOM -decay calls
+    # on 1s1_3pX,Y (see implementation plan doc). 'L2' is the same mechanism one tier deeper again
+    # (docs/double-spectator-satellite-implementation-plan.md section 9): a parent channel's own
+    # L2k (2p1/2+X, local indices nlevel_base:nlevel_sat) population feeds this channel's own L2k
+    # (2p1/2+XX) manifold -- only present/nonzero when use_L2_satellite_pathway is on, in which
+    # case both parent and child blocks share the same nlevel_sat (X.satellite_nlevel), so the L2k
+    # index range is identical in both. No-op (chan.feed_from == []) for every pre-existing,
+    # cross-section-fed channel.
+    n_L2 = nlevel_sat - nlevel_base
+    for parent_index, Gamma_feed_fs, manifold in chan.feed_from:
+        parent_rho = rho_sat_ijxy[parent_index]
+        if manifold == 'L2':
+            parent_pop_xy = sum(np.real(parent_rho[i, i]) for i in range(nlevel_base, nlevel_base + n_L2))
+            feed[nlevel_base:nlevel_base + n_L2] += np.einsum(
+                'i,xy->ixy', np.ones(n_L2) / n_L2, Gamma_feed_fs * parent_pop_xy)
+            continue
+        src_mask, dst_weight = (ei_L3_sat, auger_weight) if manifold == 'lower' else (ei_K_sat_local, auger_weight_K)
+        parent_pop_xy = sum(np.real(parent_rho[i, i]) for i in range(nlevel_base) if src_mask[i] > 0)
+        feed[:nlevel_base] += np.einsum('i,xy->ixy', dst_weight, Gamma_feed_fs * parent_pop_xy)
 
     rate_2p_xy = chan.S_feed_2p[0] * J_Omega_minus_xy + chan.S_feed_2p[1] * J_Omega_plus_xy
     rate_1s_xy = chan.S_feed_1s[0] * J_Omega_minus_xy + chan.S_feed_1s[1] * J_Omega_plus_xy
@@ -225,9 +274,11 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
     params: list
         List containing the XLO_sim object, the channel's parameter holder, seed field Rabi
         frequency at given t,z, the base block's density matrix at given t,z, 2s hole level
-        population, seed flux for the -1 and +1 polarizations (all at given t,z). NOTE: pump flux
-        is not included here (see XLO_sim.py's satellite_channel_params construction) -- only the
-        seed/Kalpha1-field-driven part of Eq. S3/S4 is applied so far.
+        population, every satellite channel's own local block density matrix at given t,z
+        (pre-update, only read from for double-satellite channels -- see
+        feed_diag_satellite_block), seed flux for the -1 and +1 polarizations (all at given t,z).
+        NOTE: pump flux is not included here (see XLO_sim.py's satellite_channel_params
+        construction) -- only the seed/Kalpha1-field-driven part of Eq. S3/S4 is applied so far.
 
     Returns
     -------
@@ -235,12 +286,12 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
 
     """
 
-    X, chan, Omega_psxy, rho_base_ijxy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
+    X, chan, Omega_psxy, rho_base_ijxy, rho_2s_xy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy = params
 
     Omega_plus_sxy = Omega_psxy[0, :, :, :]
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
-    feed_diag_ixy = feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_xy, J_Omega_plus_xy)
+    feed_diag_ixy = feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy)
 
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus_satellite, X.Tijs_minus_satellite,

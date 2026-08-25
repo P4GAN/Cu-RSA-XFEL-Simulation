@@ -43,6 +43,7 @@ class XLO_sim:
         # extends the base block itself by 2 levels (local indices nlevel_base, nlevel_base+1).
         self.use_L2_pathway = self.config.get('use_L2_pathway', False)
         nlevel_base = self.nlevel  # as read from YAML: the base block's own level count (6 or 2)
+        self.nlevel_base = nlevel_base
         if self.use_L2_pathway and nlevel_base != 6:
             raise ValueError('use_L2_pathway requires nlevel: 6 (2p1/2 extends the full sublevel-resolved base block)')
         if self.use_L2_pathway:
@@ -129,15 +130,15 @@ class XLO_sim:
             S_ground_Fi[0, 1] = self.sigma1_Ka1_2p3 * 0.18
             S_ground_Fi[0, 2] = self.sigma1_Ka1_2p3 * 0.28
             S_ground_Fi[0, 3] = self.sigma1_Ka1_2p3 * 0.42
-            S_ground_Fi[0, 6] = self.sigma1_Ka1_2s
-            S_ground_Fi[0, 7] = self.sigma1_Ka1_other
+            S_ground_Fi[0, self.nlevel] = self.sigma1_Ka1_2s
+            S_ground_Fi[0, self.nlevel + 1] = self.sigma1_Ka1_other
 
             S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 * 0.42
             S_ground_Fi[1, 1] = self.sigma1_Ka1_2p3 * 0.28
             S_ground_Fi[1, 2] = self.sigma1_Ka1_2p3 * 0.18
             S_ground_Fi[1, 3] = self.sigma1_Ka1_2p3 * 0.12
-            S_ground_Fi[1, 6] = self.sigma1_Ka1_2s
-            S_ground_Fi[1, 7] = self.sigma1_Ka1_other
+            S_ground_Fi[1, self.nlevel] = self.sigma1_Ka1_2s
+            S_ground_Fi[1, self.nlevel + 1] = self.sigma1_Ka1_other
 
             S_ion_Fi[0, 0] = self.sigma2_Ka1_2p3 * 0.70
             S_ion_Fi[0, 1] = self.sigma2_Ka1_2p3 * 0.83
@@ -185,15 +186,26 @@ class XLO_sim:
             # transition (docs/theory-and-2s-satellite-pathways.md, Part III derivation): the
             # only two paraxial (sigma=+-1) channels are 1s(m=-1/2)->2p1/2(m=+1/2) [sigma-index 1,
             # matching this code's existing sigma-index<->Delta-m convention] and
-            # 1s(m=+1/2)->2p1/2(m=-1/2) [sigma-index 0], each with T=sqrt(2)/3 (T^2=2/9, matching
+            # 1s(m=+1/2)->2p1/2(m=-1/2) [sigma-index 0], each with |T|=sqrt(2)/3 (T^2=2/9, matching
             # the existing 2p3/2 block's T^2=G self-consistency pattern). Gij additionally carries
             # the isotropic-only (sigma=0/pi, not part of Tijs) 1/9 branch to the *same-m* 1s
             # sublevel, using exactly the same 1/9,2/9 building-block fractions the base 2p3/2
             # block already uses.
+            #
+            # Sign: unlike the 2p3/2 (j=l+1/2) block, whose two sigma branches carry the SAME sign
+            # (verified by reproducing all 8 of its Tijs entries via the Wigner-Eckart/6j formula
+            # below), the 2p1/2 (j=l-1/2) reduced matrix element picks up a relative minus sign
+            # between its two m-sublevel branches -- a genuine angular-momentum-algebra asymmetry
+            # between j=l+1/2 and j=l-1/2 manifolds, not a free convention choice. Confirmed via
+            # sympy.physics.wigner (wigner_3j/wigner_6j) against the same formula that reproduces
+            # the base block's signs exactly: <2p1/2,m=+1/2|T_{q=+1}|1s,m=-1/2> = -sqrt(2)/3, while
+            # <2p1/2,m=-1/2|T_{q=-1}|1s,m=+1/2> = +sqrt(2)/3. Getting this wrong makes the two
+            # m-branches interfere with the wrong relative phase in the coherent polarization sum,
+            # which can flip a net-absorptive spectral feature into a net-emissive one.
             i_m, i_p = nlevel_base, nlevel_base + 1  # local 2p1/2 m=-1/2, m=+1/2
 
-            Tijs[i_p, 4, 1] = np.sqrt(2.0) / 3.0
-            Tijs[4, i_p, 1] = np.sqrt(2.0) / 3.0
+            Tijs[i_p, 4, 1] = -np.sqrt(2.0) / 3.0
+            Tijs[4, i_p, 1] = -np.sqrt(2.0) / 3.0
             Tijs[i_m, 5, 0] = np.sqrt(2.0) / 3.0
             Tijs[5, i_m, 0] = np.sqrt(2.0) / 3.0
 
@@ -239,8 +251,33 @@ class XLO_sim:
         self.S_ground_Fi = S_ground_Fi
         self.S_other_F = S_other_F
         self.S_ion_Fi = S_ion_Fi
-        self.Tijs_plus = np.einsum('ijs, ij->ijs', self.Tijs, self.Hij)
-        self.Tijs_minus = np.einsum('ijs, ji->ijs', self.Tijs, self.Hij)
+        # Tijs_plus[i,j]/Tijs_minus[i,j] must hold Tijs[i,j] iff i is the PHYSICALLY upper (K/1s-
+        # hole) state and j is a PHYSICALLY lower (2p-hole) state, or vice versa -- this is what
+        # makes Hint[i,j] (Model.py) couple to the correct field (Omega_plus for i=upper, j=lower;
+        # Omega_minus for i=lower, j=upper), matching the standard RWA dipole-Hamiltonian result
+        # H_int[e,g] ~ -d_eg*epsilon(t), H_int[g,e] ~ -d_ge*epsilon*(t) for a two-level atom (see
+        # docs/2p1_2-implementation-plan.md, sections 2-3). self.Hij (i>j via raw array index) is
+        # only a correct proxy for this when every "upper" state has a numerically larger index
+        # than every "lower" state it couples to -- true for the base K(4,5)>L3(0-3) block by
+        # construction, but false for L2 (6,7), which was appended AFTER K. Built from physical
+        # role (ei_K/ei_L3/ei_L2) instead of raw index, this reduces to exactly self.Hij whenever
+        # ei_L2 is all-zero (use_L2_pathway=False, incl. every satellite-channel config, which
+        # reuses these same Tijs_plus/Tijs_minus) -- zero behavior change for any existing config.
+        ei_upper = self.ei_K
+        ei_lower = self.ei_L3 + self.ei_L2
+        role_mask_upper_lower = np.outer(ei_upper, ei_lower)
+        self.Tijs_plus = np.einsum('ijs, ij->ijs', self.Tijs, role_mask_upper_lower)
+        self.Tijs_minus = np.einsum('ijs, ij->ijs', self.Tijs, role_mask_upper_lower.T)
+        # Satellite channels (below) are always local nlevel_base (6) blocks -- 2p3/2<->1s only,
+        # theory doc Part II -- regardless of whether use_L2_pathway extended the base block to 8
+        # levels. L2 is appended AFTER the base 6 (local indices nlevel_base, nlevel_base+1), so it
+        # only ever writes into rows/cols >= nlevel_base of Tijs/Tijs_plus/Tijs_minus above; the
+        # top-left nlevel_base x nlevel_base corner is therefore byte-for-byte identical to what a
+        # standalone nlevel=6 (no L2) config would have produced. Slicing recovers exactly the
+        # tensors the satellite blocks need, with zero special-casing and zero behaviour change when
+        # use_L2_pathway is False (slice is then the whole array).
+        self.Tijs_plus_satellite = self.Tijs_plus[:nlevel_base, :nlevel_base, :]
+        self.Tijs_minus_satellite = self.Tijs_minus[:nlevel_base, :nlevel_base, :]
         self.Mij = (self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) +
                     self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) +
                     self.Gamma_ij * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)))
@@ -257,15 +294,23 @@ class XLO_sim:
         # block, sign_ij_block * Delta_k).
         self.sign_ij_block = np.outer(self.ei_K, self.ei_L3) - np.outer(self.ei_L3, self.ei_K)
 
-        # General per-pair detuning matrix (docs/theory-and-2s-satellite-pathways.md, Part III):
-        # Delta_ij[i,j] = f[i]-f[j], where f is a per-LEVEL "intrinsic detuning from the shared
-        # Kalpha1 rotating frame" (f=0 for K/L3, f=DeltaomegaL2mL3A for L2). This generalizes (and,
-        # for the 2-manifold case, is algebraically identical to) the satellite blocks' scalar
-        # Delta_k * sign_ij_block -- verified: for f = Delta_k*ei_K, f[i]-f[j] equals
-        # Delta_k*sign_ij_block[i,j] for every (i,j) pair. Needed here because with 3 manifolds
-        # sharing one block (K, L3, L2), a single scalar+sign_ij can no longer express both the
-        # K<->L2 and L3<->L2 detunings (which differ from K<->L3's zero) at once.
-        f_detuning = self.DeltaomegaL2mL3A * self.ei_L2 if self.use_L2_pathway else np.zeros(self.nlevel)
+        # General per-pair detuning matrix (docs/theory-and-2s-satellite-pathways.md, Part III;
+        # sign re-derived in docs/2p1_2-implementation-plan.md section 7): Delta_ij[i,j] = f[i]-f[j],
+        # where f is a per-LEVEL "intrinsic detuning from the shared Kalpha1 rotating frame" (f=0
+        # for K/L3, f=-DeltaomegaL2mL3A for L2).
+        #
+        # Sign: rho_ij(t) ~ exp(-i*Delta_ij[i,j]*t) from the -1j*Delta_ij[i,j]*rho_ij term in
+        # Model.py's off-diagonal equation. Omega_source_regular sources Omega_plus from
+        # Tijs_minus[i,j]*rho_hermitian[j,i], and (post role-mask fix) Tijs_minus survives for
+        # i=lower(L2),j=upper(K) -- so Omega_plus ~ rho_hermitian[K,L2] ~ exp(-i*Delta_ij[K,L2]*t),
+        # which the FFT (numpy convention, exp(-i*omega*t)) places at bin omega=-Delta_ij[K,L2].
+        # For the Kalpha2 feature to appear at NEGATIVE detuning (Kalpha2 < Kalpha1 in photon
+        # energy), we need omega=-DeltaomegaL2mL3A, i.e. Delta_ij[K,L2]=+DeltaomegaL2mL3A -- which
+        # requires f[L2]=-DeltaomegaL2mL3A (f[i]-f[j] with f[K]=0 gives Delta_ij[K,L2]=-f[L2]).
+        # Verified empirically: with the role-mask fix alone (this sign unchanged), the spectral
+        # feature appeared as a genuine dip but at +20 eV instead of -20 eV -- exactly the single
+        # sign flip this correction makes.
+        f_detuning = -self.DeltaomegaL2mL3A * self.ei_L2 if self.use_L2_pathway else np.zeros(self.nlevel)
         self.Delta_ij = f_detuning[:, None] - f_detuning[None, :]
 
         # Incoherent 2s -> 2p_3/2 3d_5/2 Auger feeding
@@ -274,7 +319,7 @@ class XLO_sim:
             self.S_2s_F = S_2s_F
         else:
             self.auger_feeding_matrix = np.zeros((self.nlevel, self.nlevel))
-            self.S_2s_F = np.zeros(3)
+            self.S_2s_F = np.zeros(2)
             self.S_ground_Fi[:, -2] = 0.0
         self.transform_matrix = np.asarray([[1, 1], [1j, -1j]]) / np.sqrt(2.0) # transformation matrix from circular polarization vectors to Cartesian
 
@@ -283,10 +328,11 @@ class XLO_sim:
         # the base Mij (spectator approximation) unless it overrides Gamma_L_eV/Gamma_K_eV.
         if self.satellite_channels and nlevel_base != 6:
             raise ValueError('satellite_channels requires nlevel == 6 (they reuse the full sublevel-resolved base block structure)')
-        if self.satellite_channels and self.use_L2_pathway:
-            raise ValueError('satellite_channels and use_L2_pathway are not yet compatible -- the satellite '
-                              'blocks only reuse the base 2p3/2/1s Tijs/Gij (6 local levels); 2p1/2-spectator '
-                              'satellite channels are not modeled (see theory doc Part III scope note)')
+        # satellite_channels + use_L2_pathway together: satellite blocks stay local nlevel_base (6)
+        # blocks (Tijs_plus_satellite/Tijs_minus_satellite above), so they never see and don't model
+        # any 2p1/2-spectator physics (theory doc Part III scope note) -- L2 only extends the shared
+        # base block. The two extensions interact only through what they already both couple to: the
+        # base block's own populations (satellite feed, §12.1/12.2) and the one shared field.
 
         # NOTE: pump-driven spectator photoionization (theory doc Eq. S3/S4's sigma_P * J_P term)
         # is not applied -- there is currently no per-(t,z) pump photon flux available anywhere in
@@ -294,6 +340,15 @@ class XLO_sim:
         # plus_xy are seed/Kalpha1-field-only throughout this codebase, confirmed via the pre-
         # existing, unchanged MB_ground_regular). xatom/xatom_tools.py accordingly no longer
         # computes a pump cross section at all; only the seed-field-driven term is applied.
+        # Satellite blocks are always local nlevel_base (6) -- slice every base-block tensor they
+        # reuse down to [:nlevel_base] (see Tijs_plus_satellite/Tijs_minus_satellite above for why
+        # that's exact, not an approximation, independent of use_L2_pathway).
+        ei_L3_sat = self.ei_L3[:nlevel_base]
+        ei_K_sat = self.ei_K[:nlevel_base]
+        Gamma_sp_Gij_sat = self.Gamma_sp_Gij[:nlevel_base, :nlevel_base]
+        Mij_sat_default = self.Mij[:nlevel_base, :nlevel_base]
+        sign_ij_block_sat = self.sign_ij_block[:nlevel_base, :nlevel_base]
+
         self.satellite_channel_params = []
         for channel in self.satellite_channels:
             Delta_fs = channel['detuning_eV'] / self.hbar
@@ -305,11 +360,11 @@ class XLO_sim:
                 GammaL_fs = channel.get('Gamma_L_eV', self.GammaL3eVN) / self.hbar
                 GammaK_fs = channel.get('Gamma_K_eV', self.GammaKeVN) / self.hbar
                 Gamma_coh_fs = 0.5 * (GammaL_fs + GammaK_fs) + self.additional_dephasing
-                Mij = (GammaL_fs * np.outer(self.ei_L3, self.ei_L3) +
-                       GammaK_fs * np.outer(self.ei_K, self.ei_K) +
-                       Gamma_coh_fs * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)))
+                Mij = (GammaL_fs * np.outer(ei_L3_sat, ei_L3_sat) +
+                       GammaK_fs * np.outer(ei_K_sat, ei_K_sat) +
+                       Gamma_coh_fs * (np.outer(ei_L3_sat, ei_K_sat) + np.outer(ei_K_sat, ei_L3_sat)))
             else:
-                Mij = self.Mij
+                Mij = Mij_sat_default
 
             # Further-ionization loss (theory doc section 12.4, Eq. S8): sigma_ion_from_2p/1s are
             # each a single scalar (the double-hole configuration's *own* total photoionization
@@ -318,18 +373,18 @@ class XLO_sim:
             # convention as Gamma_L_eV/Gamma_K_eV above (one width/rate per manifold, not per
             # msublevel). Optional, default 0 (no loss) if not supplied, matching the doc's
             # "default to 0 unless supplied" for this deferred term.
-            S_ion_Fi_chan = np.zeros((2, self.nlevel))
-            S_ion_Fi_chan[:, self.ei_L3.astype(bool)] = channel.get('sigma_ion_from_2p', 0.0)
-            S_ion_Fi_chan[:, self.ei_K.astype(bool)] = channel.get('sigma_ion_from_1s', 0.0)
+            S_ion_Fi_chan = np.zeros((2, nlevel_base))
+            S_ion_Fi_chan[:, ei_L3_sat.astype(bool)] = channel.get('sigma_ion_from_2p', 0.0)
+            S_ion_Fi_chan[:, ei_K_sat.astype(bool)] = channel.get('sigma_ion_from_1s', 0.0)
 
             self.satellite_channel_params.append(types.SimpleNamespace(
                 name=channel['name'],
-                Delta_ij=Delta_fs * self.sign_ij_block,  # see Delta_ij derivation above
+                Delta_ij=Delta_fs * sign_ij_block_sat,  # see Delta_ij derivation above
                 Gamma_A_fs=Gamma_A_fs,
                 S_feed_2p=S_feed_2p,
                 S_feed_1s=S_feed_1s,
                 Mij=Mij,
-                Gamma_sp_Gij=self.Gamma_sp_Gij,
+                Gamma_sp_Gij=Gamma_sp_Gij_sat,
                 S_ion_Fi=S_ion_Fi_chan,  # further-ionization loss (theory doc §12.4)
             ))
 

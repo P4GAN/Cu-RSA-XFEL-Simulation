@@ -51,9 +51,11 @@ class XLO_sample:
         rho_other_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
         rho_2s_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
 
-        # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): one full
-        # 6-level block per channel, same shape as rho_ijtxyz. Empty list if none configured.
-        rho_sat_ijtxyz = [np.zeros((X.nlevel, X.nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
+        # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): one local
+        # nlevel_base (6)-level block per channel -- NOT X.nlevel, which grows to nlevel_base + 2
+        # when use_L2_pathway extends the base block; satellite blocks never see 2p1/2 (theory doc
+        # Part III scope note). Empty list if none configured.
+        rho_sat_ijtxyz = [np.zeros((X.nlevel_base, X.nlevel_base, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
                           for _ in X.satellite_channel_params]
 
         J_Omega_minus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
@@ -154,7 +156,8 @@ class XLO_sample:
 
                 Omega_pstxy[:, :, it, :, :] +=  1.0 * X.dz * Model.Omega_source_regular(X, rho_ijtxyz[:, :, it, :, :, iz])
                 for k in range(n_sat):
-                    Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, rho_sat_ijtxyz[k][:, :, it, :, :, iz])
+                    Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
+                        X, rho_sat_ijtxyz[k][:, :, it, :, :, iz], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
@@ -229,7 +232,9 @@ class XLO_sample:
         rho_ij_ic_xy = np.zeros((nlevel, nlevel, xgrid, ygrid), dtype=complex)
 
         n_sat = len(X.satellite_channel_params)
-        rho_sat_ij_ic_xy = [np.zeros((X.nlevel, X.nlevel, X.xgrid, X.ygrid), dtype=complex)
+        # Satellite blocks stay local nlevel_base (6)-level, independent of X.nlevel/use_L2_pathway
+        # -- see init_n_level_3D's rho_sat_ijtxyz for the same reasoning.
+        rho_sat_ij_ic_xy = [np.zeros((X.nlevel_base, X.nlevel_base, X.xgrid, X.ygrid), dtype=complex)
                             for k in range(n_sat)]
 
         rho_ground_ic_xy = np.ones((xgrid, ygrid), dtype=complex)
@@ -262,7 +267,7 @@ class XLO_sample:
             curr_rho_other_txy = np.empty((tgrid, xgrid, ygrid))
             curr_rho_2s_txy = np.empty((tgrid, xgrid, ygrid))
             curr_rho_ijtxy = np.empty((nlevel, nlevel, tgrid, xgrid, ygrid), dtype=complex)
-            curr_rho_sat_ijtxy = [np.empty((nlevel, nlevel, tgrid, xgrid, ygrid), dtype=complex)
+            curr_rho_sat_ijtxy = [np.empty((X.nlevel_base, X.nlevel_base, tgrid, xgrid, ygrid), dtype=complex)
                                   for k in range(n_sat)]
 
             ######################
@@ -320,7 +325,8 @@ class XLO_sample:
 
                 Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, curr_rho_ijtxy[:, :, it, :, :])
                 for k in range(n_sat):
-                    Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, curr_rho_sat_ijtxy[k][:, :, it, :, :])
+                    Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
+                        X, curr_rho_sat_ijtxy[k][:, :, it, :, :], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)

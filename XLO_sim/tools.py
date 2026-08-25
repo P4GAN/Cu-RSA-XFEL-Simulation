@@ -779,10 +779,12 @@ def compute_run_outputs(X, tpad, ypad):
     rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
     t_axis = X.t
 
-    # Satellite channels reuse the base block's Tijs_plus/Tijs_minus (same i,j sublevel
-    # meaning), so the ee/gg/eg contraction template above applies verbatim per channel.
-    # Stacked into (n_sat, t) arrays -- rather than a name-keyed dict -- so that
-    # accumulate_run_outputs' np.stack/np.isnan reduction (which assumes every value is a
+    # Satellite channels reuse the base block's Tijs_plus/Tijs_minus, sliced to the satellite
+    # blocks' own local nlevel_base size (X.Tijs_plus_satellite/X.Tijs_minus_satellite -- see
+    # XLO_sim.py; these equal X.Tijs_plus/X.Tijs_minus whenever use_L2_pathway is off, so this is a
+    # no-op change for every pre-existing config), so the ee/gg/eg contraction template above
+    # applies verbatim per channel. Stacked into (n_sat, t) arrays -- rather than a name-keyed dict
+    # -- so that accumulate_run_outputs' np.stack/np.isnan reduction (which assumes every value is a
     # plain numeric array) applies to these exactly like every other per-repetition key;
     # satellite_channel_names carries the per-row labels as a run-level (non-accumulated) axis.
     n_sat = len(X.satellite_channel_params)
@@ -793,11 +795,11 @@ def compute_run_outputs(X, tpad, ypad):
     for k, rho_sat_ijtxyz in enumerate(X.rho_sat_ijtxyz):
         rho_sat_ijt_center = rho_sat_ijtxyz[:, :, :, cx, cy, -1]
         rho_ee_t_last_sat[k] = np.einsum(
-            'ijs, jkt, kis-> t', X.Tijs_minus, rho_sat_ijt_center, X.Tijs_plus, optimize=True)
+            'ijs, jkt, kis-> t', X.Tijs_minus_satellite, rho_sat_ijt_center, X.Tijs_plus_satellite, optimize=True)
         rho_gg_t_last_sat[k] = np.einsum(
-            'ijs, jkt, kis-> t', X.Tijs_plus, rho_sat_ijt_center, X.Tijs_minus, optimize=True)
+            'ijs, jkt, kis-> t', X.Tijs_plus_satellite, rho_sat_ijt_center, X.Tijs_minus_satellite, optimize=True)
         rho_eg_t_last_sat[k] = np.einsum(
-            'ijs,jit->st', X.Tijs_minus, rho_sat_ijt_center, optimize=True)[0]
+            'ijs,jit->st', X.Tijs_minus_satellite, rho_sat_ijt_center, optimize=True)[0]
 
     return {
         "womega_ar": womega_ar,

@@ -588,6 +588,17 @@ $$
 (Eq. 17), now arranged for 2 msublevels instead of 4; unitarity check
 $\sum_{L3\text{ or }L2}G_{i,4} = 2/3+1/3=1$ per 1s source ✓.
 
+> **⚠ Correction (see `docs/2p1_2-implementation-plan.md`).** Eq. K2 as originally written used
+> $+\sqrt2/3$ for *both* branches. A full Wigner–Eckart re-derivation (cross-validated against all
+> 8 of the existing 2p$_{3/2}$ `Tijs` entries, sign included) shows the two 2p$_{1/2}$ branches
+> carry **opposite relative sign** — a genuine angular-momentum-algebra difference between
+> $j=l-\tfrac12$ (2p$_{1/2}$) and $j=l+\tfrac12$ (2p$_{3/2}$) manifolds, not a free phase
+> convention:
+> $$T_{7,4,\sigma=1}=T_{4,7,\sigma=1}=-\sqrt2/3, \qquad T_{6,5,\sigma=0}=T_{5,6,\sigma=0}=+\sqrt2/3.$$
+> $G_{ij}$ (Eq. K3, depending only on $|T|^2$) is unaffected. This sign turned out not to change any
+> tested observable on its own (see the linked document §4.1) — the actual bug was elsewhere (§21
+> below) — but is corrected here since it's the textbook-correct value.
+
 ### 19. Generalized detuning: $\Delta_{ij}$ matrix, not a scalar
 
 Reusing the satellite mechanism's scalar $\Delta_k$ (Eq. S1) does not work here: with three
@@ -595,7 +606,7 @@ manifolds now sharing one block (K, L3, L2), a single scalar cannot express both
 detuning and the nonzero K↔L2 *and* L3↔L2 detunings simultaneously. Generalizing to a per-level
 vector $f_i$ ("intrinsic detuning of level $i$'s manifold from the shared Kα1 rotating frame"):
 $$
-f_i = \begin{cases}\Delta\omega_{L2-L3}=(\omega_{K\alpha1}-\omega_{K\alpha2}) & i\in\text{L2 (2p}_{1/2}\text{)}\\ 0 & i\in\text{K or L3}\end{cases},
+f_i = \begin{cases}-\Delta\omega_{L2-L3}=-(\omega_{K\alpha1}-\omega_{K\alpha2}) & i\in\text{L2 (2p}_{1/2}\text{)}\\ 0 & i\in\text{K or L3}\end{cases},
 \qquad
 \Delta_{ij} = f_i - f_j,
 \tag{K4}
@@ -608,15 +619,35 @@ takes a single precomputed $\Delta_{ij}$ matrix parameter for both the base/L2 b
 satellite channel (`chan.Delta_ij = Delta_k \cdot \text{sign\_ij\_block}`, precomputed once in
 `XLO_sim.py` rather than combined inside the numba core).
 
+> **⚠ Correction (see `docs/2p1_2-implementation-plan.md` §7).** $f_i$'s sign for L2 was originally
+> written as $+\Delta\omega_{L2-L3}$, not $-\Delta\omega_{L2-L3}$ as shown above. That version
+> produced a real, verified bug: after §21's field-routing fix was applied, the transmitted
+> spectrum showed the Kα2 absorption dip at **+20 eV instead of −20 eV**. The sign shown here was
+> re-derived by explicitly tracing which coherence sources `Omega_plus`
+> (`Model.py::Omega_source_regular`, which depends on the routing fix) through to the FFT sign
+> convention actually used by `tools.SF_spectrum_w` — not just checked against a
+> plausible-sounding "residual rotating-frame frequency" formula, which is what let the original
+> (wrong) sign pass an earlier, less rigorous check. See the linked section for the full derivation.
+
 With $E_{L3}=0,\,E_K=\hbar\omega_{K\alpha1}$ as reference, Eq. K4 follows from the standard
-Eq. 4 form applied to all three pairs; note $\Delta_{ij}(K,L2)=\Delta_{ij}(L3,L2)=-\Delta\omega_{L2-L3}$
+Eq. 4 form applied to all three pairs; note $\Delta_{ij}(K,L2)=\Delta_{ij}(L3,L2)=\Delta\omega_{L2-L3}$
 — both reduce to the same value because both are measured against the same K↔L3-resonant frame.
 
-> **⚠ Scope note.** `use_L2_pathway` and `satellite_channels` are currently **mutually exclusive**
-> (`XLO_sim.py` raises `ValueError` if both are set) — the satellite blocks reuse the base
-> $T_{ij\sigma}/G_{ij}$ tensors verbatim (Part II §10), which only cover 2p$_{3/2}$↔1s; a
-> 2p$_{1/2}$-spectator satellite channel (e.g. $2p^-3d^+$) would need its own new tensor derivation,
-> analogous to §18 but combined with a spectator hole, and is deferred.
+> **⚠ Scope note.** `use_L2_pathway` and `satellite_channels` can now be enabled together: the
+> satellite blocks stay local $nlevel_{base}$ (6, 2p$_{3/2}$↔1s only) blocks regardless of whether
+> `use_L2_pathway` extends the *base* block to 8 levels, since L2 is appended after the base 6
+> (local indices $nlevel_{base}, nlevel_{base}{+}1$) and never touches indices below that. In
+> `XLO_sim.py`, `self.Tijs_plus_satellite`/`self.Tijs_minus_satellite` (and the per-channel
+> `Mij`/`Gamma_sp_Gij`/`Delta_ij`/`S_ion_Fi`) are sliced to `[:nlevel_base, :nlevel_base]` from the
+> corresponding base-block tensors — exact, not an approximation, because L2 only ever writes into
+> rows/columns $\geq nlevel_{base}$ of those tensors. What is **still not modeled** is a genuine
+> 2p$_{1/2}$-spectator satellite channel (e.g. $2p^-3d^+$): the existing satellite blocks see no
+> 2p$_{1/2}$ physics at all (by construction, since they only reuse the 0..5 corner), and such a
+> channel would need its own new tensor derivation, analogous to §18 but combined with a spectator
+> hole — that combination remains deferred. The two extensions interact only indirectly, through
+> what they already both couple to: the shared base block's own populations (satellite feed,
+> §12.1/12.2, read from the base block's local indices 0..5 either way) and the one shared field
+> (§12.5/Eq. S7, which already sums per-block contributions in the field-source term).
 
 ### 20. New physical inputs
 
@@ -635,14 +666,31 @@ Eq. 4 form applied to all three pairs; note $\Delta_{ij}(K,L2)=\Delta_{ij}(L3,L2
 > XATOM/literature-sourced $\{0.12,0.18,0.28,0.42\}$-type pattern (§2). Flag if a proper m-resolved
 > calculation should replace this.
 
-### 21. Numerical scheme — no changes needed
+### 21. Numerical scheme — one subtlety was missed here
+
+> **⚠ Correction (see `docs/2p1_2-implementation-plan.md` for the full derivation).** The claim
+> below that "no changes needed" applies to `Sample.py` and `Model.py::absorption`/
+> `Omega_source_regular` is still true. It is **not** true of how `Tijs_plus`/`Tijs_minus`
+> themselves were built (`XLO_sim.py`): they were constructed via
+> `Tijs * Hij` / `Tijs * Hij.T` with `Hij[i,j] = 1` iff `i>j` (raw array index) — a proxy for "$i$
+> is the physically upper (K) state" that only holds because K's index (4,5) happens to be *larger*
+> than L3's (0–3), i.e. for K↔L3, "bigger index" and "physically upper" coincide by construction.
+> Appending 2p$_{1/2}$ *after* K, at indices 6,7, breaks that coincidence for K↔L2: L2 ends up with
+> the larger index while still being the physically lower state, silently swapping which field
+> component (`Omega_plus` vs `Omega_minus`) drives the K↔L2 coupling. This produced a real, verified
+> bug (spurious gain instead of absorption at the Kα2 detuning, contradicted by real SACLA XFEL
+> saturable-absorption data). The fix — building the mask from physical role
+> (`ei_K`/`ei_L3`/`ei_L2`) instead of raw index — is now in place in `XLO_sim.py` and is provably a
+> no-op whenever `use_L2_pathway=False`. See the linked document for the full first-principles
+> derivation of why the field-routing rule is role-based, not index-based, and for validation
+> results.
 
 Because §17 implements this as an extension of the existing base block rather than a new one,
 **every** downstream code path (`Sample.py`'s z/t marching, `Model.py::absorption`,
 `Model.py::Omega_source_regular`) already generalizes automatically: they are written generically
-in `X.nlevel`/`X.Tijs`/`X.S_ground_Fi` etc., so an 8-level array flows through unchanged. In
-particular, the 2p$_{1/2}$↔1s coherences contribute to the **same** shared field source sum
-(Eq. S7-style, now with an implicit fourth term) with **no separate call**:
+in `X.nlevel`/`X.Tijs`/`X.S_ground_Fi` etc., so an 8-level array flows through unchanged (this part
+was correct). In particular, the 2p$_{1/2}$↔1s coherences contribute to the **same** shared field
+source sum (Eq. S7-style, now with an implicit fourth term) with **no separate call**:
 $$
 \left(\text{source}\right)_\sigma^{(\pm)} \mathrel{+}= \pm i\,\tfrac{3}{8\pi}\lambda^2\Gamma_{sp}\,n\,T^{(\mp)}_{i'j'\sigma}\tfrac{\rho_{j'i'}+\rho^*_{i'j'}}{2}\Big|_{i',j'\in\{6,7\}\times\{4,5\}}
 \tag{K5}
@@ -666,3 +714,15 @@ reproduces prior results bit-for-bit (regression-tested).
   rather than trusted in absolute terms (§20) — both this repo's `GammaL3eVN` and XATOM's own
   $\Gamma_{L3}$ prediction differ by a few percent, a discrepancy that should carry through
   consistently to $\Gamma_{L2}$.
+- **Post field-routing fix, before the $\Delta_{ij}$ sign fix** (`docs/2p1_2-implementation-plan.md`
+  §6): the transmitted spectrum's spurious ~5% gain peak at the Kα2 detuning was gone, replaced by
+  a genuine absorption dip — but on the wrong side of the spectrum (+20 eV instead of −20 eV),
+  which is what motivated the second fix (§19's correction, document §7).
+- **Post both fixes** (linked document §8): `Cu-seed-L2.yaml`'s transmitted spectrum shows two
+  clean, correctly-signed, correctly-positioned absorption dips — Kα1 at $\omega\approx0$ eV and
+  Kα2 at $\omega\approx-19.3$ eV (matching the expected $-19.93$ eV to within the feature's own
+  width), with the mirror-image $+20$ eV region now smooth/featureless. This matches the
+  qualitative structure of real SACLA XFEL data (both Kα1 and Kα2 as genuine absorption dips,
+  "reverse saturable absorption"). A quantitative comparison (dip depth/width vs. pulse energy)
+  would need a more realistic SASE-averaged simulation, not just this single-Gaussian-pulse test
+  config — still open (linked document §9).

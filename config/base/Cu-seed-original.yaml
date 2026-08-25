@@ -5,16 +5,13 @@
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
 sigma1_Ka1_2s: 2.45e-7
 sigma1_Ka1_2p3: 1.52e-7
-sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
+sigma1_Ka1_other: 4.34e-7
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
 sigma2_Ka1_1s: 6.53e-7
 sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 4.15e-7
-sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
-
-sigma1_Ka1_2p1: 6.89383e-8
-sigma2_Ka1_2p1: 4.98609e-7
+sigma2_Ka1_other: 4.58e-7 
 
 additional_dephasing: 0
 
@@ -89,4 +86,4 @@ enable_self_absorption: True
 turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
-use_2s_pathway: True
+use_2s_pathway: False

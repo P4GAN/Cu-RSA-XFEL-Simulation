@@ -555,3 +555,31 @@ def build_all_satellite_channels(Ka1_energy_eV=8047.91):
         satellite_channel_parameters(spectator, spectator, Ka1_energy_eV)
         for spectator in ('3d+', '3d-', '3p+', '3p-')
     ]
+
+
+# ---------------------------------------------------------------------------
+# Top-level: 2p1/2 (L2, Kalpha2) pathway ground-state/further-ionization cross sections
+# (docs/theory-and-2s-satellite-pathways.md, Part III section 20's parameter table)
+# ---------------------------------------------------------------------------
+
+L2_HOLE = '2p1,0'  # bare 2p1/2 (L2) hole, no spectator
+
+
+def l2_pathway_parameters(Ka1_energy_eV=8047.91):
+    """
+    The two new config keys XLO_sim.py reads when `use_L2_pathway: True` and that have no
+    literature/base-config analogue (unlike GammaL2eVN, which is a literature natural width
+    already present in config/base/*.yaml the same way GammaL3eVN/GammaKeVN are, and is left
+    alone here): the ground-state photoionization cross section directly into the 2p1/2 hole
+    (`sigma1_Ka1_2p1`, mirrors `sigma1_Ka1_2p3`), and the total further-ionization cross section
+    of an already-2p1/2-holed ion (`sigma2_Ka1_2p1`, mirrors `sigma2_Ka1_2p3`).
+
+    Returns
+    -------
+    dict
+        {'sigma1_Ka1_2p1', 'sigma2_Ka1_2p1'} in nm^2, at the given photon energy.
+    """
+    return {
+        'sigma1_Ka1_2p1': spectator_ionization_cross_section_nm2('', L2_HOLE, Ka1_energy_eV),
+        'sigma2_Ka1_2p1': total_photoionization_cross_section_nm2(L2_HOLE, Ka1_energy_eV),
+    }

@@ -56,6 +56,17 @@ def main():
     yaml_block = {'satellite_channels': channels}
     print(yaml.dump(yaml_block, sort_keys=False, default_flow_style=False))
 
+    print('=' * 70)
+    print('2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III):')
+    l2_params = xt.l2_pathway_parameters(args.Ka1_energy_eV)
+    for key, value in l2_params.items():
+        print(f'  {key:20s} = {value:.6g}')
+    print()
+    print('Ready to paste into config/base/*.yaml (alongside the existing GammaL2eVN literature '
+          'value, use_L2_pathway: True):')
+    print()
+    print(yaml.dump(l2_params, sort_keys=False, default_flow_style=False))
+
 
 if __name__ == '__main__':
     main()

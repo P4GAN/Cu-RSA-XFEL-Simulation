@@ -6,17 +6,16 @@
 sigma1_Ka1_2s: 2.45e-7
 sigma1_Ka1_2p3: 1.52e-7
 sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
+sigma1_Ka1_2p1: 6.89383e-8
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
 sigma2_Ka1_1s: 6.53e-7
 sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 4.15e-7
 sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
-
-sigma1_Ka1_2p1: 6.89383e-8
 sigma2_Ka1_2p1: 4.98609e-7
 
-additional_dephasing: 0
+additional_dephasing: 10
 
 #Chemical composition of the sample
 #Cu
@@ -25,7 +24,7 @@ compound:
     N_atoms: 0
     sigma_compound_Ka1: 0
 
-    
+
 #sample concentration in atoms per cubic nm
 #solid copper:  84, nitrate 4M solution: 2.509
 n: 82.509
@@ -40,7 +39,7 @@ GammaL2eVN: 1.04
 GammaL3eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
-GammaA_L1_to_L3M45eVN: 5.07 # 1.57
+GammaA_L1_to_L3M45eVN: 1.57 # 5.07 
 
 additional_dephasing: 0.0
 
@@ -90,3 +89,42 @@ turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
 use_2s_pathway: True
+use_L2_pathway: True
+
+satellite_channels:
+- name: 3d+
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.5733
+  Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
+  Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+- name: 3d-
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.3121
+  Gamma_L_eV: 0.6348
+  Gamma_K_eV: 1.5447
+  sigma_Ka1_from_2p: 5.93000e-10
+  sigma_Ka1_from_1s: 6.4346e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+- name: 3p+
+  detuning_eV: 2.7600
+  Gamma_A_2s_eV: 1.4535
+  Gamma_L_eV: 2.6325      # >> base 0.61 eV
+  Gamma_K_eV: 3.8524      # >> base 1.49 eV
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 4.97595e-07
+  sigma_ion_from_1s: 5.67499e-07
+- name: 3p-
+  detuning_eV: 2.9300
+  Gamma_A_2s_eV: 0.6458
+  Gamma_L_eV: 3.1793      # >> base 0.61 eV
+  Gamma_K_eV: 4.3649      # >> base 1.49 eV
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 4.97588e-07
+  sigma_ion_from_1s: 5.67491e-07

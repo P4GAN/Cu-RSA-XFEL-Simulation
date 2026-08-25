@@ -155,18 +155,25 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_x
 
     """
 
-    nlevel = rho_base_ijxy.shape[0]
+    # The satellite block's own local level count is always X.nlevel_base (6) -- NOT
+    # rho_base_ijxy.shape[0], which is the *base* block's level count and grows to 8 when
+    # use_L2_pathway extends it. Local indices 0..nlevel_base-1 have the same L3/K meaning in both
+    # blocks (L2 is appended after, at indices nlevel_base, nlevel_base+1), so reading
+    # rho_base_ijxy[i, i] for i < nlevel_base is correct regardless of whether the base block was
+    # extended.
+    nlevel_sat = X.nlevel_base
     nx, ny = rho_2s_xy.shape
-    feed = np.zeros((nlevel, nx, ny), dtype=complex)
+    feed = np.zeros((nlevel_sat, nx, ny), dtype=complex)
 
-    auger_weight = X.ei_L3 / np.sum(X.ei_L3)
+    ei_L3_sat = X.ei_L3[:nlevel_sat]
+    auger_weight = ei_L3_sat / np.sum(ei_L3_sat)
     feed += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
 
     rate_2p_xy = chan.S_feed_2p[0] * J_Omega_minus_xy + chan.S_feed_2p[1] * J_Omega_plus_xy
     rate_1s_xy = chan.S_feed_1s[0] * J_Omega_minus_xy + chan.S_feed_1s[1] * J_Omega_plus_xy
 
-    for i in range(nlevel):
-        if X.ei_L3[i] > 0:
+    for i in range(nlevel_sat):
+        if ei_L3_sat[i] > 0:
             feed[i] += rate_2p_xy * rho_base_ijxy[i, i]
         else:
             feed[i] += rate_1s_xy * rho_base_ijxy[i, i]
@@ -208,7 +215,7 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
     feed_diag_ixy = feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, J_Omega_minus_xy, J_Omega_plus_xy)
 
     return _MB_nlevel_regular_core(
-        rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
+        rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus_satellite, X.Tijs_minus_satellite,
         chan.Mij, chan.Gamma_sp_Gij, chan.S_ion_Fi[:, :],
         feed_diag_ixy, chan.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy,
@@ -295,7 +302,7 @@ def MB_ground_regular(t, rho_ground_xy, params):
 
 
 
-def Omega_source_regular(X, rho_ijxy):
+def Omega_source_regular(X, rho_ijxy, Tijs_plus=None, Tijs_minus=None):
     """
     Calculate the classical contribution to ASE field at a given point of space and time (t,z).
 
@@ -303,6 +310,12 @@ def Omega_source_regular(X, rho_ijxy):
     ----------
     rho_ijxy: np.ndarray
         Density matrix a given t,z
+    Tijs_plus, Tijs_minus: np.ndarray or None
+        Dipole tensors sized to match rho_ijxy's own local level count. Default (None) to X's base
+        block tensors (X.Tijs_plus/X.Tijs_minus, sized X.nlevel) -- pass X.Tijs_plus_satellite/
+        X.Tijs_minus_satellite (sized X.nlevel_base) when rho_ijxy is a satellite channel's local
+        block instead, since that block stays nlevel_base-sized even when use_L2_pathway extends
+        the base block to X.nlevel = nlevel_base + 2.
     params: list
         List containing the XLO_sim object, t index and z index
 
@@ -311,12 +324,16 @@ def Omega_source_regular(X, rho_ijxy):
     np.ndarray
 
     """
-        
+    if Tijs_plus is None:
+        Tijs_plus = X.Tijs_plus
+    if Tijs_minus is None:
+        Tijs_minus = X.Tijs_minus
+
     rho_ijxy_hermitian = rho_ijxy + np.conj(np.swapaxes(rho_ijxy, 0, 1))
-    
-    Omega_plus_source = np.einsum('ijs, jixy-> sxy', X.Tijs_minus, rho_ijxy_hermitian)
-    Omega_minus_source = np.einsum('jis, ijxy-> sxy', X.Tijs_plus, rho_ijxy_hermitian)
-        
+
+    Omega_plus_source = np.einsum('ijs, jixy-> sxy', Tijs_minus, rho_ijxy_hermitian)
+    Omega_minus_source = np.einsum('jis, ijxy-> sxy', Tijs_plus, rho_ijxy_hermitian)
+
     return X.field_source_factor * np.einsum('p, psxy -> psxy', X.e_sign, np.asarray([Omega_plus_source, Omega_minus_source]))
 
 

@@ -364,6 +364,13 @@ class XLO_sim:
             ei_L3_sat = self.ei_L3[:nlevel_base]
             ei_K_sat = self.ei_K[:nlevel_base]
             ei_L2_sat = np.zeros(nlevel_base)
+        # Persisted (rather than left as __init__-local) so post-run analysis code (tools.py's
+        # compute_run_outputs) can isolate the L3-only/L2-only/K-only contributions to a satellite
+        # channel's Tijs_plus_satellite/Tijs_minus_satellite, exactly as self.ei_L3/ei_K/ei_L2 already
+        # let it do for the base block.
+        self.ei_L3_satellite = ei_L3_sat
+        self.ei_K_satellite = ei_K_sat
+        self.ei_L2_satellite = ei_L2_sat
         self.Mij = (self.GammaL3fsm1N * np.outer(self.ei_L3, self.ei_L3) +
                     self.GammaKfsm1N * np.outer(self.ei_K, self.ei_K) +
                     self.Gamma_ij * (np.outer(self.ei_L3, self.ei_K) + np.outer(self.ei_K, self.ei_L3)))

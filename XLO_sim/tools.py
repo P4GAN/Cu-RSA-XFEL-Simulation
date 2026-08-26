@@ -784,6 +784,23 @@ def compute_run_outputs(X, tpad, ypad):
     rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
     t_axis = X.t
 
+    # rho_gg_t_last/rho_eg_t_last above use the base block's Tijs_plus/Tijs_minus, whose "lower"
+    # role mask is ei_L3+ei_L2 combined (XLO_sim.py) -- so when use_L2_pathway is on they silently
+    # sum the 2p_3/2 (L3, Kalpha1) and 2p_1/2 (L2, Kalpha2) contributions together, and rho_eg_t_last
+    # additionally keeps only one of Tijs' two sigma (circular-polarization) branches ([0]). The
+    # keys below isolate each manifold and each coherence individually instead, by further masking
+    # Tijs_plus/Tijs_minus along their "lower" index with ei_L3/ei_L2 (zero for a manifold that
+    # isn't configured, so these are harmless/zero when use_L2_pathway is off) and summing both
+    # sigma branches rather than picking one.
+    Tijs_plus_L3 = X.Tijs_plus * X.ei_L3[None, :, None]
+    Tijs_minus_L3 = X.Tijs_minus * X.ei_L3[:, None, None]
+    Tijs_plus_L2 = X.Tijs_plus * X.ei_L2[None, :, None]
+    Tijs_minus_L2 = X.Tijs_minus * X.ei_L2[:, None, None]
+    rho_l3_t_last = np.einsum('ijs, jkt, kis-> t', Tijs_plus_L3, rho_ijt_center, Tijs_minus_L3, optimize=True)
+    rho_l2_t_last = np.einsum('ijs, jkt, kis-> t', Tijs_plus_L2, rho_ijt_center, Tijs_minus_L2, optimize=True)
+    rho_eg_l3_t_last = np.einsum('ijs,jit->st', Tijs_minus_L3, rho_ijt_center, optimize=True).sum(axis=0)
+    rho_eg_l2_t_last = np.einsum('ijs,jit->st', Tijs_minus_L2, rho_ijt_center, optimize=True).sum(axis=0)
+
     # Satellite channels reuse the base block's Tijs_plus/Tijs_minus, sliced to the satellite
     # blocks' own local nlevel_base size (X.Tijs_plus_satellite/X.Tijs_minus_satellite -- see
     # XLO_sim.py; these equal X.Tijs_plus/X.Tijs_minus whenever use_L2_pathway is off, so this is a
@@ -797,6 +814,21 @@ def compute_run_outputs(X, tpad, ypad):
     rho_ee_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
     rho_gg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
     rho_eg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+
+    # Per-channel L3-only/L2-only counterparts of rho_l3_t_last/rho_l2_t_last/rho_eg_l3_t_last/
+    # rho_eg_l2_t_last above -- same ei_L3/ei_L2 masking trick, applied to the satellite block's own
+    # Tijs_plus_satellite/Tijs_minus_satellite/ei_L3_satellite/ei_L2_satellite (XLO_sim.py), which are
+    # channel-independent (every channel shares one local template), so the masked tensors are built
+    # once here rather than inside the per-channel loop.
+    Tijs_plus_L3_sat = X.Tijs_plus_satellite * X.ei_L3_satellite[None, :, None]
+    Tijs_minus_L3_sat = X.Tijs_minus_satellite * X.ei_L3_satellite[:, None, None]
+    Tijs_plus_L2_sat = X.Tijs_plus_satellite * X.ei_L2_satellite[None, :, None]
+    Tijs_minus_L2_sat = X.Tijs_minus_satellite * X.ei_L2_satellite[:, None, None]
+    rho_l3_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_l2_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_eg_l3_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_eg_l2_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+
     for k, rho_sat_ijtxyz in enumerate(X.rho_sat_ijtxyz):
         rho_sat_ijt_center = rho_sat_ijtxyz[:, :, :, cx, cy, -1]
         rho_ee_t_last_sat[k] = np.einsum(
@@ -805,6 +837,14 @@ def compute_run_outputs(X, tpad, ypad):
             'ijs, jkt, kis-> t', X.Tijs_plus_satellite, rho_sat_ijt_center, X.Tijs_minus_satellite, optimize=True)
         rho_eg_t_last_sat[k] = np.einsum(
             'ijs,jit->st', X.Tijs_minus_satellite, rho_sat_ijt_center, optimize=True)[0]
+        rho_l3_t_last_sat[k] = np.einsum(
+            'ijs, jkt, kis-> t', Tijs_plus_L3_sat, rho_sat_ijt_center, Tijs_minus_L3_sat, optimize=True)
+        rho_l2_t_last_sat[k] = np.einsum(
+            'ijs, jkt, kis-> t', Tijs_plus_L2_sat, rho_sat_ijt_center, Tijs_minus_L2_sat, optimize=True)
+        rho_eg_l3_t_last_sat[k] = np.einsum(
+            'ijs,jit->st', Tijs_minus_L3_sat, rho_sat_ijt_center, optimize=True).sum(axis=0)
+        rho_eg_l2_t_last_sat[k] = np.einsum(
+            'ijs,jit->st', Tijs_minus_L2_sat, rho_sat_ijt_center, optimize=True).sum(axis=0)
 
     return {
         "womega_ar": womega_ar,
@@ -817,12 +857,20 @@ def compute_run_outputs(X, tpad, ypad):
         "rho_ee_t_last": rho_ee_t_last,
         "rho_gg_t_last": rho_gg_t_last,
         "rho_eg_t_last": rho_eg_t_last,
+        "rho_l3_t_last": rho_l3_t_last,
+        "rho_l2_t_last": rho_l2_t_last,
+        "rho_eg_l3_t_last": rho_eg_l3_t_last,
+        "rho_eg_l2_t_last": rho_eg_l2_t_last,
         "rho_ground_t_last": rho_ground_t_last,
         "rho_other_t_last": rho_other_t_last,
         "rho_2s_t_last": rho_2s_t_last,
         "rho_ee_t_last_sat": rho_ee_t_last_sat,
         "rho_gg_t_last_sat": rho_gg_t_last_sat,
         "rho_eg_t_last_sat": rho_eg_t_last_sat,
+        "rho_l3_t_last_sat": rho_l3_t_last_sat,
+        "rho_l2_t_last_sat": rho_l2_t_last_sat,
+        "rho_eg_l3_t_last_sat": rho_eg_l3_t_last_sat,
+        "rho_eg_l2_t_last_sat": rho_eg_l2_t_last_sat,
         "satellite_channel_names": satellite_channel_names,
         "t_axis": t_axis,
     }

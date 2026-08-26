@@ -134,7 +134,11 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
     4 lower-manifold (2p+X) msublevels (Eq. S2), plus sublevel-preserving spectator photoionization
     of the base block's 2p-hole diagonal into the same lower manifold (Eq. S3), plus
     sublevel-preserving spectator photoionization of the base block's 1s-hole diagonal into the
-    2 upper-manifold (1sX) msublevels (Eq. S4).
+    2 upper-manifold (1sX) msublevels (Eq. S4), plus a direct K-hole (1s) non-radiative "KLM-type"
+    Auger feed into the same lower manifold, sourced from the base block's own bare K-hole
+    population rather than rho_2s_xy (Gamma_A_K_fs; a second, independent production route
+    alongside Eq. S2's 2s-hole route -- see the inline comment at its call site below. Defaults to
+    0/no-op, since no config currently supplies Gamma_A_K_eV).
 
     Double-satellite channels (docs/double-spectator-satellite-implementation-plan.md, chan.feed_from
     non-empty) instead feed exclusively from one or more *parent* satellite channels' own lower
@@ -199,6 +203,24 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
     auger_weight_K = ei_K_sat_local / np.sum(ei_K_sat_local)
     feed[:nlevel_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
 
+    # Direct K-hole (1s) non-radiative Auger feed ("KLM"-type: the 1s hole is filled by a 2p
+    # electron while an M-shell electron is ejected instead), landing directly on this channel's
+    # own Lk manifold with no 2s-hole intermediate needed -- a second, independent production
+    # route alongside the 2s-Auger feed just above, sourced from the BASE block's own bare K-hole
+    # (1s) population instead of rho_2s_xy. This population is already leaving the base block's
+    # K-hole diagonal via its own total decay width (X.Mij[K,K]/Gamma_sp_Gij, unchanged by this
+    # term) -- Gamma_A_K_fs only gives an explicit destination to part of that pre-existing,
+    # previously-untracked non-radiative loss, exactly the same bookkeeping role Gamma_A_2s_eV
+    # already plays for the 2s-hole's own total decay width. Spread evenly via the same
+    # auger_weight convention as the 2s-Auger feed -- a simplification (the true angular
+    # branching should mirror the Kalpha1/Gij radiative branching, since it's the same "which 2p
+    # electron fills the 1s vacancy" physics with the ejected particle swapped for an electron
+    # instead of a photon; revisit if this rate turns out to be non-negligible once real XATOM
+    # numbers are available). Gamma_A_K_fs defaults to 0 (XLO_sim.py), so this is an exact no-op
+    # unless a config explicitly supplies Gamma_A_K_eV.
+    rho_K_base_xy = sum(np.real(rho_base_ijxy[i, i]) for i in range(nlevel_base) if ei_K_sat_local[i] > 0)
+    feed[:nlevel_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_K_fs, rho_K_base_xy)
+
     # Double-satellite feed (docs/double-spectator-satellite-implementation-plan.md section 3):
     # redirected fraction of one or more parent channels' own Gamma_L_eV (manifold='lower') or
     # Gamma_K_eV (manifold='upper') decay, spread evenly over this channel's own corresponding 4
@@ -244,6 +266,13 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
         n_L2 = nlevel_sat - nlevel_base
         feed[nlevel_base:] += np.einsum(
             'i,xy->ixy', (chan.Gamma_A_L2_fs / n_L2) * np.ones(n_L2), rho_2s_xy)
+
+        # L2k-manifold analogue of the K-hole KLM feed above (1s hole filled by a 2p1/2 electron
+        # instead of 2p3/2): same source population (rho_K_base_xy), same even-spread convention,
+        # different destination manifold and its own independent rate Gamma_A_K_to_L2_fs (defaults
+        # to 0 -- no-op -- exactly like Gamma_A_L2_fs's own role for the 2s-Auger feed).
+        feed[nlevel_base:] += np.einsum(
+            'i,xy->ixy', (chan.Gamma_A_K_to_L2_fs / n_L2) * np.ones(n_L2), rho_K_base_xy)
 
         rate_2p1_xy = chan.S_feed_2p1[0] * J_Omega_minus_xy + chan.S_feed_2p1[1] * J_Omega_plus_xy
         for offset in range(n_L2):

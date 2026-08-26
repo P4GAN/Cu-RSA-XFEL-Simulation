@@ -458,6 +458,25 @@ class XLO_sim:
             # sigma_Ka1_from_2p/1s -- their entire feed comes from feed_from instead (resolved
             # below), so these default to 0 rather than being required.
             Gamma_A_fs = channel.get('Gamma_A_2s_eV', 0.0) / self.hbar
+            # Direct K-hole (1s) non-radiative "KLM-type" Auger feed into this channel's own Lk
+            # manifold (Model.py's feed_diag_satellite_block) -- a second, independent production
+            # route alongside the 2s-Auger feed above, redirecting part of the K-hole's own
+            # ALREADY-occurring non-radiative decay (see the budget check after this loop).
+            # Optional, defaults to 0 for any channel/config that doesn't set it (e.g. every
+            # double_satellite_channels entry -- no 3-body "1s hole -> 2p-hole + 2 M-holes" KLM
+            # analogue has been derived for those). The four base satellite_channels entries
+            # (3d+/3d-/3p+/3p-) in config/base/*.yaml carry real values, read 2026-08-27 off a
+            # live `xatom -hole 1s1 -decay` run via xatom_tools.auger_partial_rate_eV(spectator,
+            # parent_hole_config='1s1', initial_label='1s0') -- e.g. 3p+'s 0.034 eV came from the
+            # "1s0 - 2p+ 3p+" row. These turned out to be ~1-2 orders of magnitude smaller than the
+            # existing Gamma_A_2s_eV, but the base block's own bare K-hole population is itself
+            # ~1e3-1e4x larger than rho_2s across the pulse-energy range checked (SASE ensemble
+            # data, data/sweep_double_satellite_and_L2_update_2) -- net effect: this new feed
+            # dominates the existing 2s-driven feed by 2-3 orders of magnitude, not a small
+            # correction. See the session's chat log for the full back-of-envelope; this has NOT
+            # yet been validated by an actual run_3D() (only by post-hoc analysis of saved
+            # populations from runs that predate this feed term).
+            Gamma_A_K_fs = channel.get('Gamma_A_K_eV', 0.0) / self.hbar
             S_feed_2p = np.asarray([channel.get('sigma_Ka1_from_2p', 0.0), channel.get('sigma_Ka1_from_2p', 0.0)])
             S_feed_1s = np.asarray([channel.get('sigma_Ka1_from_1s', 0.0), channel.get('sigma_Ka1_from_1s', 0.0)])
 
@@ -525,6 +544,7 @@ class XLO_sim:
             S_ion_Fi_chan[:, ei_K_sat.astype(bool)] = channel.get('sigma_ion_from_1s', 0.0)
 
             Gamma_A_L2_fs = None
+            Gamma_A_K_to_L2_fs = None
             S_feed_2p1 = None
             if self.use_L2_satellite_pathway:
                 is_double_satellite = bool(channel.get('feed_from'))
@@ -551,6 +571,9 @@ class XLO_sim:
 
                 Delta_L2_split_fs = channel['detuning_eV_L2_split'] / self.hbar
                 Gamma_A_L2_fs = channel.get('Gamma_A_2s_to_L2_eV', 0.0) / self.hbar
+                # L2k-manifold analogue of Gamma_A_K_fs above (1s hole filled by a 2p1/2 electron
+                # instead of 2p3/2) -- same optional/defaults-to-0 convention.
+                Gamma_A_K_to_L2_fs = channel.get('Gamma_A_K_to_L2_eV', 0.0) / self.hbar
                 GammaL2_fs = channel['Gamma_L2_eV'] / self.hbar
                 S_feed_2p1 = np.asarray([channel.get('sigma_Ka1_from_2p1', 0.0), channel.get('sigma_Ka1_from_2p1', 0.0)])
 
@@ -575,7 +598,9 @@ class XLO_sim:
                 name=channel['name'],
                 Delta_ij=Delta_ij_chan,
                 Gamma_A_fs=Gamma_A_fs,
+                Gamma_A_K_fs=Gamma_A_K_fs,
                 Gamma_A_L2_fs=Gamma_A_L2_fs,  # None unless use_L2_satellite_pathway
+                Gamma_A_K_to_L2_fs=Gamma_A_K_to_L2_fs,  # None unless use_L2_satellite_pathway
                 feed_from=feed_from_resolved,  # [] unless this is a double-satellite channel
                 S_feed_2p=S_feed_2p,
                 S_feed_1s=S_feed_1s,
@@ -585,7 +610,29 @@ class XLO_sim:
                 S_ion_Fi=S_ion_Fi_chan,  # further-ionization loss (theory doc §12.4)
             ))
 
-
+        # Budget check (mirrors the established GammaL1eVN/Gamma_A_2s_eV pattern, theory doc
+        # §12.7/§27): Gamma_A_K_eV/Gamma_A_K_to_L2_eV redirect part of the K-hole's own ALREADY-
+        # occurring non-radiative decay (GammaKeVN minus the radiative Kalpha1+Kalpha2 branch)
+        # into the satellite ladder -- summed over every channel, this must not exceed that
+        # non-radiative budget, or the feed would remove population faster than the K-hole
+        # actually decays non-radiatively (Mij[K,K] = GammaKfsm1N itself is untouched by this
+        # feature). Checked loudly, not silently, per this codebase's own established convention;
+        # 0 for every config that doesn't set these keys, so this is a no-op check otherwise.
+        Gamma_K_nonradiative_eV = (
+            self.config['GammaKeVN'] - self.config['GammarKalpha1eVN'] - self.config['GammarKalpha2eVN'])
+        Gamma_A_K_total_eV = sum(
+            channel.get('Gamma_A_K_eV', 0.0) + channel.get('Gamma_A_K_to_L2_eV', 0.0)
+            for channel in self.satellite_channels
+        )
+        if Gamma_A_K_total_eV > Gamma_K_nonradiative_eV:
+            raise ValueError(
+                f"satellite_channels' Gamma_A_K_eV/Gamma_A_K_to_L2_eV sum to "
+                f"{Gamma_A_K_total_eV:.4f} eV, exceeding the K-hole's own non-radiative decay "
+                f"budget (GammaKeVN - GammarKalpha1eVN - GammarKalpha2eVN = "
+                f"{Gamma_K_nonradiative_eV:.4f} eV) -- this would feed the satellite ladder "
+                f"faster than the K-hole actually decays non-radiatively. Reduce these values or "
+                f"recheck the underlying XATOM branching."
+            )
 
     def configure(self, seed_field=None):
         """

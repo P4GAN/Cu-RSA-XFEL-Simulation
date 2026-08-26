@@ -74,7 +74,7 @@ seed_duration_FWHM_t: 0.1
 t_peak: 1.5
 seed_width_FWHM_x: 480
 seed_width_FWHM_y: 640
-
+seed_center_E: 8045
 
 #calculation regime
 is_spontaneous_only: False

@@ -429,13 +429,24 @@ def state_total_decay_width_eV(hole_config):
     return parse_auger(run_xatom_cached(hole_config, decay=True)).total_decay_width_eV
 
 
-def auger_partial_rate_eV(spectator, parent_hole_config='2s1'):
+def auger_partial_rate_eV(spectator, parent_hole_config='2s1', initial_label='2s0', final1_label='2p+'):
     """
     Gamma_A^(2s->L_k) (eV): the single resolved 2s-hole Auger channel feeding the 2p+X_k
     double-hole final state, read directly off the parent's Auger table -- no statistical-weight
     guessing needed (contrast theory doc section 12.1(a)'s placeholder g=2j+1 split, which this
     supersedes when XATOM is available). E.g. for spectator='3d+', looks up the
     "2s0 - 2p+ 3d+ :" row.
+
+    initial_label/final1_label default to the 2s-hole route's own labels ('2s0'/'2p+'), preserving
+    every existing call site's behavior exactly. Pass initial_label='1s0' (with
+    parent_hole_config='1s1') to instead read off the K-hole's own "KLM-type" Auger table (the
+    direct feed added 2026-08-27 -- Gamma_A_K_eV in config/base/*.yaml, XLO_sim.py, Model.py's
+    feed_diag_satellite_block); final1_label='2p-' selects the L2k-manifold sibling
+    (Gamma_A_K_to_L2_eV), mirroring auger_partial_rate_L2_eV's own final1='2p-' convention below.
+    Confirmed against a live `xatom -hole 1s1 -decay` run (2026-08-27): the '1s0' initial label
+    for a bare 1s1 parent is exactly analogous to the confirmed '2s1'->'2s0' pattern (see e.g. the
+    "1s0 - 2p+ 3d+ :" row XATOM actually prints) -- the values currently in config/base/*.yaml's
+    Gamma_A_K_eV/Gamma_A_K_to_L2_eV were read off this way, not guessed.
     """
     spectator_config = SPECTATOR_HOLE.get(spectator, spectator)
     auger = parse_auger(run_xatom_cached(parent_hole_config, decay=True))
@@ -445,11 +456,12 @@ def auger_partial_rate_eV(spectator, parent_hole_config='2s1'):
     # row) -- so the spectator's *label* (not its hole-count fragment) is what appears in the
     # Auger table.
     spectator_label = spectator if spectator in SPECTATOR_HOLE else _label_from_hole_fragment(spectator_config)
-    line = auger.find(initial='2s0', final1='2p+', final2=spectator_label)
+    line = auger.find(initial=initial_label, final1=final1_label, final2=spectator_label)
     if line is None:
         raise ValueError(
-            f"no Auger line '2s0 - 2p+ {spectator_label}' found for parent {parent_hole_config!r}; "
-            f"available finals: {[(l.final1, l.final2) for l in auger.lines if l.initial == '2s0']}"
+            f"no Auger line '{initial_label} - {final1_label} {spectator_label}' found for parent "
+            f"{parent_hole_config!r}; available finals: "
+            f"{[(l.final1, l.final2) for l in auger.lines if l.initial == initial_label]}"
         )
     return line.rate_eV
 

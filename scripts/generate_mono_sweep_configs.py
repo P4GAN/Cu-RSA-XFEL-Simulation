@@ -20,11 +20,13 @@ import os
 
 import yaml
 
+import numpy as np
+
 DEFAULT_E_SEED_VALUES = [0.1, 1, 5, 20, 30] #[200, 150, 100, 70, 40, 20, 10, 5, 1, 0.1]
 # Offsets from the Cu Kalpha1 line (eV) used to build the default absolute
 # energy grid in main() below (anchored to --base-yaml's hwKalpha1N), when
 # --energy isn't given explicitly.
-DEFAULT_DENERGY_VALUES = list(range(8000, 8015, 5)) + list(range(8015, 8060, 0.5)) + list(range(8060, 8100, 10))
+DEFAULT_DENERGY_VALUES = np.concatenate([np.arange(8000, 8015, 5), np.arange(8015, 8060, 0.5), np.arange(8060, 8100, 10)])
 # [-15, -12, -9, -6, -5, -4, -3, -2, -1, -0.5, 0, 0.5, 1, 2, 3, 4, 5, 6, 9, 12, 15]
 
 # Must match CHUNKS_PER_CONFIG / ARRAY_THROTTLE in submit_mono_sweep.sh --

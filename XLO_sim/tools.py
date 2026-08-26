@@ -2,6 +2,7 @@ import os
 import resource
 import sys
 import time
+import traceback
 import multiprocessing as mp
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -1021,7 +1022,9 @@ def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, npro
         elapsed = time.perf_counter() - chunk_t0
         print(f"{type(e).__name__} after {len(results)}/{len(reps)} completed repetitions "
               f"({format_duration(elapsed)} elapsed) -- a worker likely died (e.g. OOM-killed) or raised; "
-              f"see traceback below", flush=True)
+              f"traceback follows:", flush=True)
+        traceback.print_exc(file=sys.stdout)
+        sys.stdout.flush()
         if results:
             np.savez_compressed(partial_path, **accumulate_run_outputs(results))
             print(f"Saved {len(results)} completed repetitions to {partial_path} before re-raising", flush=True)

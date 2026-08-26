@@ -272,7 +272,7 @@ def Ocelot_SASE_seed_111_dcm_pstxy(X):
     # The transverse domain is considered to be space [m], since I hace input
     # parameters in time [fs], the correct conversion is needed
     
-    kwargs={'xlamds':1e-9*X.lambdaKalpha1N,                     # [m] - central wavelength
+    kwargs={'xlamds':1e-9*X.lambdaCenter,                     # [m] - central wavelength
             'seed': X.random_seed,
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
             'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
@@ -331,7 +331,7 @@ def Ocelot_SASE_seed_pstxy(X):
     # The transverse domain is considered to be space [m], since I hace input
     # parameters in time [fs], the correct conversion is needed
     
-    kwargs={'xlamds':1e-9*X.lambdaKalpha1N,                     # [m] - central wavelength
+    kwargs={'xlamds':1e-9*X.lambdaCenter,                     # [m] - central wavelength
             'seed': X.random_seed,
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
             'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value)

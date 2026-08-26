@@ -118,6 +118,7 @@ class XLO_sim:
         self.sigma_compound_Ka1 = sum(element['N_atoms'] * element['sigma_compound_Ka1'] for element in self.compound.values())
 
         self.lambdaKalpha1N = 2.0 * np.pi * self.c * self.hbar / self.hwKalpha1N
+        self.lambdaCenter = 2.0 * np.pi * self.c * self.hbar / self.seed_center_E
         self.k0 = 2.0 * np.pi / self.lambdaKalpha1N
 
         self.Hij = np.tril(np.ones((self.nlevel, self.nlevel)), -1)

@@ -61,12 +61,12 @@ hwKalpha2N: 8027.98
 
 
 #simulation domain and padding parameters
-tgrid: 2400
+tgrid: 20000
 zgrid: 15
 xgrid: 15
 ygrid: 15
 
-tmax: 25.0
+tmax: 45.0
 
 zmax: 20.0e+3
 xmax: 250.0
@@ -79,12 +79,12 @@ tpad: 0
 auto_grid: False
 
 #seed parameters
-seed_pulse_format: 'Ocelot_SASE_seed_pstxy'
+seed_pulse_format: 'Ocelot_SASE_seed_111_dcm_pstxy'
 E_seed_uJ: 40
 seed_duration_FWHM_t: 6.0
 t_peak: 10
-seed_width_FWHM_x: 180
-seed_width_FWHM_y: 220
+seed_width_FWHM_x: 100
+seed_width_FWHM_y: 170
 seed_FEL_bandwidth: 1.5e-3
 seed_center_E: 8045
 

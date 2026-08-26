@@ -87,6 +87,8 @@ seed_width_FWHM_x: 100
 seed_width_FWHM_y: 170
 seed_FEL_bandwidth: 1.5e-3
 seed_center_E: 8045
+monochromator_target_energy_eV: 8047.91
+seed_delay: 0
 
 #calculation regime
 is_spontaneous_only: False

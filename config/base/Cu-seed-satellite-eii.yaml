@@ -1,18 +1,5 @@
 #units: nm, fs
 
-# Deterministic (non-SASE) coherent Gaussian pulse, on a self-seeded-beam-like footing:
-# narrow FWHM beam (100 x 170 nm, per docs/Results_RSA_seeded.pdf slide 4) and a short
-# few-fs pulse whose central photon energy is set explicitly via
-# monochromator_target_energy_eV (see tools.Gaussian_pulse_aniso_seed's detuning phase
-# ramp). One run = one (E_seed_uJ, monochromator_target_energy_eV) point, no SASE
-# repetition-averaging needed -- this is the fast stand-in for the self-seeded
-# transmittance-vs-photon-energy scan, meant to be swept by
-# scripts/generate_gaussian_sweep_configs.py + scripts/run_gaussian_sweep.py.
-#
-# Physics (level structure, cross sections, satellite channels) copied as-is from
-# config/base/Cu-seed-satellite.yaml -- the current full model (L2/Kalpha2 pathway +
-# all 4 satellite channels).
-
 #photoionization crosssections of Cu
 
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
@@ -38,6 +25,8 @@ sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 3.8542e-7 # 4.15e-7 - 2.9579e-8 (sum of satellite_channels' sigma_Ka1_from_2p)
 sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
 sigma2_Ka1_2p1: 4.98609e-7
+
+additional_dephasing: 10
 
 #Chemical composition of the sample
 #Cu
@@ -74,17 +63,18 @@ additional_dephasing: 0.0
 hwKalpha1N: 8047.91
 hwKalpha2N: 8027.98
 
+
 #simulation domain and padding parameters
-tgrid: 2000
+tgrid: 200
 zgrid: 15
 xgrid: 8
 ygrid: 8
 
-tmax: 15.
+tmax: 8.
 
 zmax: 20.0e+3
-xmax: 250.0
-ymax: 250.0
+xmax: 1000.0
+ymax: 1000.0
 
 xpad: 20
 ypad: 20
@@ -95,15 +85,11 @@ auto_grid: False
 #seed parameters
 seed_pulse_format: 'Gaussian_pulse_aniso_seed'
 E_seed_uJ: 40
-seed_duration_FWHM_t: 2.0
-t_peak: 6.0
-seed_width_FWHM_x: 100
-seed_width_FWHM_y: 170
-
-# Central photon energy the Gaussian pulse is seeded at (see
-# tools.Gaussian_pulse_aniso_seed). Overridden per sweep point by
-# generate_gaussian_sweep_configs.py; defaults to on-resonance (== hwKalpha1N).
-monochromator_target_energy_eV: 8047.91
+seed_duration_FWHM_t: 0.1
+t_peak: 1.5
+seed_width_FWHM_x: 480
+seed_width_FWHM_y: 640
+seed_center_E: 8045
 
 #calculation regime
 is_spontaneous_only: False
@@ -121,10 +107,32 @@ is_Cartesian_pol: True
 use_2s_pathway: True
 use_L2_pathway: True
 
+# --- Electron-impact ionization (EII), Phase A ------------------------------------------------
+# docs/theory-electron-impact-ionization.md, docs/eii-implementation-plan.md. Copy of
+# Cu-seed-satellite.yaml with the (now-superseded) PHANTOM EII FEED hand-estimate removed and
+# replaced by the real, dynamical EII mechanism: a KLL-Auger hot-electron population
+# (rho_eii_kll_xy), fed by the K-hole's own already-existing non-radiative decay rate
+# (GammaKeVN - GammarKalpha1eVN - GammarKalpha2eVN), decaying into a thermalized bath
+# (rho_eii_th_xy) with time constant tau_th_fs, and ionizing 3d/3p electrons out of the base
+# block's own 2p-hole population directly into the 4 satellite_channels below (sublevel-preserving,
+# Model.py's feed_diag_satellite_block).
+use_eii: True
+eii:
+  # Order-of-magnitude placeholder only (theory doc §10/§13) -- no Cu-specific value exists yet;
+  # theory doc §1.2 cites Leonov et al., IUCrJ (2014)'s Si simulation (tens of fs at 8 keV pulse
+  # energy) as the only calibration data point currently in hand.
+  tau_th_fs: 10.0
+  # KLL Auger electron kinetic energy (eV), theory doc Eq. E5's Auger branch -- read directly off
+  # a live `xatom -s Cu -relativity -hole 1s1 -decay` run's "1s0 - 2p+ 2p+" row (2026-08-28,
+  # xatom_tools.auger_electron_birth_energy_eV('1s0', '2p+', '2p+', parent_hole_config='1s1')),
+  # matching docs/estimates-on-role-of-eii.pdf's own "~7 keV" order-of-magnitude estimate for this
+  # channel almost exactly.
+  birth_energy_eV: 7194.05
+
 satellite_channels:
 - name: 3d+
   detuning_eV: -0.8000
-  Gamma_A_2s_eV: 1.5733
+  Gamma_A_2s_eV: 1.5733  # PHANTOM bump removed (see eii: block above for the real mechanism)
   Gamma_A_K_eV: 0.002590  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d+' row (xatom_tools.auger_partial_rate_eV('3d+', parent_hole_config='1s1', initial_label='1s0'))
   Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
   Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
@@ -132,6 +140,11 @@ satellite_channels:
   sigma_Ka1_from_1s: 8.0409e-10
   sigma_ion_from_2p: 5.01453e-07
   sigma_ion_from_1s: 5.71517e-07
+  # EII cross section (nm^2, Eq. E1) of the 3d+ subshell, evaluated at eii.birth_energy_eV for the
+  # base block's own bare 2p-hole ('2p0,1') configuration -- theory doc section 8.1, sublevel-
+  # preserving feed. From xatom_tools.eii_kll_electron_parameters()['shells']['3d+']['sigma_nm2']
+  # (2026-08-28).
+  sigma_eii_nm2: 0.00023189389862806315
   # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
   # l2_satellite_channel_parameters); requires use_L2_pathway: True.
   detuning_eV_L2_split: 21.2700000000
@@ -141,7 +154,7 @@ satellite_channels:
   sigma_Ka1_from_2p1: 7.41039e-10
 - name: 3d-
   detuning_eV: -0.8000
-  Gamma_A_2s_eV: 1.3121
+  Gamma_A_2s_eV: 1.3121  # PHANTOM bump removed (see eii: block above for the real mechanism)
   Gamma_A_K_eV: 0.003083  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d-' row (xatom_tools.auger_partial_rate_eV('3d-', parent_hole_config='1s1', initial_label='1s0'))
   Gamma_L_eV: 0.6348
   Gamma_K_eV: 1.5447
@@ -149,6 +162,7 @@ satellite_channels:
   sigma_Ka1_from_1s: 6.4346e-10
   sigma_ion_from_2p: 5.01453e-07
   sigma_ion_from_1s: 5.71517e-07
+  sigma_eii_nm2: 0.00018306246061488494  # xatom_tools.eii_kll_electron_parameters()['shells']['3d-']
   # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
   # l2_satellite_channel_parameters); requires use_L2_pathway: True.
   detuning_eV_L2_split: 21.2600000000
@@ -158,7 +172,7 @@ satellite_channels:
   sigma_Ka1_from_2p1: 5.93e-10
 - name: 3p+
   detuning_eV: 2.7600
-  Gamma_A_2s_eV: 1.4535
+  Gamma_A_2s_eV: 1.4535  # PHANTOM bump removed (see eii: block above for the real mechanism)
   Gamma_A_K_eV: 0.034001  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p+' row (xatom_tools.auger_partial_rate_eV('3p+', parent_hole_config='1s1', initial_label='1s0'))
   Gamma_L_eV: 2.6325      # >> base 0.61 eV
   Gamma_K_eV: 3.8524      # >> base 1.49 eV
@@ -166,6 +180,7 @@ satellite_channels:
   sigma_Ka1_from_1s: 2.02344e-08
   sigma_ion_from_2p: 4.97595e-07
   sigma_ion_from_1s: 5.67499e-07
+  sigma_eii_nm2: 5.3266361278043134e-05  # xatom_tools.eii_kll_electron_parameters()['shells']['3p+']
   # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
   # l2_satellite_channel_parameters); requires use_L2_pathway: True.
   detuning_eV_L2_split: 21.3100000000
@@ -175,7 +190,7 @@ satellite_channels:
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
   detuning_eV: 2.9300
-  Gamma_A_2s_eV: 0.6458
+  Gamma_A_2s_eV: 0.6458  # PHANTOM bump removed (see eii: block above for the real mechanism)
   Gamma_A_K_eV: 0.028913  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p-' row (xatom_tools.auger_partial_rate_eV('3p-', parent_hole_config='1s1', initial_label='1s0'))
   Gamma_L_eV: 3.1793      # >> base 0.61 eV
   Gamma_K_eV: 4.3649      # >> base 1.49 eV
@@ -183,6 +198,7 @@ satellite_channels:
   sigma_Ka1_from_1s: 1.01334e-08
   sigma_ion_from_2p: 4.97588e-07
   sigma_ion_from_1s: 5.67491e-07
+  sigma_eii_nm2: 2.5817486546257128e-05  # xatom_tools.eii_kll_electron_parameters()['shells']['3p-']
   # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
   # l2_satellite_channel_parameters); requires use_L2_pathway: True.
   detuning_eV_L2_split: 21.3100000000

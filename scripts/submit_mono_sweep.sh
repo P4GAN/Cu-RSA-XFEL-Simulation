@@ -63,7 +63,7 @@ if [[ ! -f "$MANIFEST" ]]; then
 fi
 mapfile -t YAML_FILES < "$MANIFEST"
 
-NREP=40
+NREP=25
 CHUNKS_PER_CONFIG=1
 REPS_PER_CHUNK=$(( NREP / CHUNKS_PER_CONFIG ))
 

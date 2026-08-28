@@ -9,14 +9,12 @@
 # doc section 9) and further-ionization loss (section 8's fast -pcs calls) for every
 # double_satellite_channels entry.
 
-# TESTING VARIANT: the clean baseline -- both the +EII_PHANTOM bump (Gamma_A_2s_eV /
-# Gamma_feed_eV restored to their pre-bump originals) AND the KLM feed (Gamma_A_K_eV /
-# Gamma_A_K_to_L2_eV zeroed) are switched off, so this reproduces the satellite physics exactly as
-# it stood before either mechanism was added. Compare against Cu-seed-double-satellite.yaml (both
-# on), Cu-seed-double-satellite-no-klm-feed.yaml (only +EII_PHANTOM on) to attribute each
-# mechanism's effect separately. Every line touched here is tagged `# RESTORED_FOR_TEST` or
-# `# ZEROED_FOR_TEST`; grep for either tag to see what this variant changed relative to the real
-# config.
+# TESTING VARIANT: the clean baseline -- the KLM feed (Gamma_A_K_eV / Gamma_A_K_to_L2_eV zeroed)
+# is switched off, so this reproduces the satellite physics without that mechanism. The EII bump
+# that used to distinguish this file from Cu-seed-double-satellite.yaml has since been reverted
+# there too, so the only remaining difference between the two files is the KLM feed. Every line
+# touched here is tagged `# RESTORED_FOR_TEST` or `# ZEROED_FOR_TEST`; grep for either tag to see
+# what this variant changed relative to the real config.
 
 #photoionization crosssections of Cu
 

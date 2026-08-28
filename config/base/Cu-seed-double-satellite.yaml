@@ -112,31 +112,10 @@ is_Cartesian_pol: True
 use_2s_pathway: True
 use_L2_pathway: True
 
-# --- PHANTOM EII FEED (rough hand-estimate, config-only bump) -------------------------------
-# See docs/theory-electron-impact-ionization.md Sec 1.1/8.1. A ~7 keV KLL Auger electron
-# ionizes 3d in ~0.25 fs and 3p in ~2 fs, ASSUMING one hot electron per atom (n_e^(KLL) =
-# n_atom) -- i.e. reference rates Gamma_3d_max = 4 fs^-1, Gamma_3p_max =
-# 0.5 fs^-1 at that (unphysically high) density. The bump below scales this
-# by F_KLL_PLACEHOLDER = 0.1, a PLACEHOLDER standing in for the real
-# (KLL-sourced hot-electron density)/(atomic density) ratio at the time/place of interest --
-# NOT yet estimated from the actual pulse fluence or simulated K-hole population.
-# >>> REPLACE F_KLL_PLACEHOLDER (see scripts/../apply_phantom_eii_bump.py) with a real
-# estimate before trusting these numbers. <<<
-#   dGamma_3d_eV = Gamma_3d_max * F_KLL_PLACEHOLDER * hbar[0.6582119569 eV*fs] = +0.2633 eV
-#   dGamma_3p_eV = Gamma_3p_max * F_KLL_PLACEHOLDER * hbar[0.6582119569 eV*fs] = +0.0329 eV
-# Added ADDITIVELY to every existing 3d+/3d-/3p+/3p- Gamma_A_2s_eV and every existing
-# double_satellite_channels feed_from Gamma_feed_eV entry (all use dGamma_3d_eV: per theory
-# doc Sec 8.1, the existing feed_from pathway is a 3p-spectator self-decay that nets two 3d
-# holes, so the shell being phantom-ionized a second time is 3d, not 3p). Deliberately NOT
-# re-derived from the Gamma_L_eV/Gamma_K_eV/Gamma_L2_eV carve-out budgets below -- EII is a
-# genuinely new, additive external process (theory doc Sec 5/8.1), not a re-partition of the
-# atom's own existing decay width. Touched lines are marked `# +EII_PHANTOM`; grep for that
-# tag to find/undo every value this script touched.
-# ----------------------------------------------------------------------------------------------
 satellite_channels:
 - name: 3d+
   detuning_eV: -0.8000
-  Gamma_A_2s_eV: 1.8366  # +EII_PHANTOM(orig=1.5733, delta=+0.2633)
+  Gamma_A_2s_eV: 1.5733
   Gamma_A_K_eV: 0.002590  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d+' row (xatom_tools.auger_partial_rate_eV('3d+', parent_hole_config='1s1', initial_label='1s0'))
   Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
   Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
@@ -155,7 +134,7 @@ satellite_channels:
   sigma_Ka1_from_2p1: 7.41039e-10
 - name: 3d-
   detuning_eV: -0.8000
-  Gamma_A_2s_eV: 1.5754  # +EII_PHANTOM(orig=1.3121, delta=+0.2633)
+  Gamma_A_2s_eV: 1.3121
   Gamma_A_K_eV: 0.003083  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d-' row (xatom_tools.auger_partial_rate_eV('3d-', parent_hole_config='1s1', initial_label='1s0'))
   Gamma_L_eV: 0.6348
   Gamma_K_eV: 1.5447
@@ -170,7 +149,7 @@ satellite_channels:
   sigma_Ka1_from_2p1: 5.93e-10
 - name: 3p+
   detuning_eV: 2.7600
-  Gamma_A_2s_eV: 1.4864  # +EII_PHANTOM(orig=1.4535, delta=+0.0329)
+  Gamma_A_2s_eV: 1.4535
   Gamma_A_K_eV: 0.034001  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p+' row (xatom_tools.auger_partial_rate_eV('3p+', parent_hole_config='1s1', initial_label='1s0'))
   # WAS 2.6325 eV (bare/uncarved total decay width of the 2p+3p+ configuration, L_k). Carved out
   # here: 1.7398 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries in
@@ -203,7 +182,7 @@ satellite_channels:
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
   detuning_eV: 2.9300
-  Gamma_A_2s_eV: 0.6787  # +EII_PHANTOM(orig=0.6458, delta=+0.0329)
+  Gamma_A_2s_eV: 0.6458
   Gamma_A_K_eV: 0.028913  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p-' row (xatom_tools.auger_partial_rate_eV('3p-', parent_hole_config='1s1', initial_label='1s0'))
   # WAS 3.1793 eV (bare/uncarved total decay width of the 2p+3p- configuration). Carved out here:
   # 2.1897 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries below
@@ -251,20 +230,20 @@ double_satellite_channels:
   Gamma_L2_eV: 0.651793
   feed_from:
   - channel: 3p+
-    Gamma_feed_eV: 0.898283  # +EII_PHANTOM(orig=0.6349831403273791, delta=+0.2633)
+    Gamma_feed_eV: 0.6349831403273791
   - channel: 3p-
-    Gamma_feed_eV: 0.309565  # +EII_PHANTOM(orig=0.04626534312315371, delta=+0.2633)
+    Gamma_feed_eV: 0.04626534312315371
   - channel: 3p+
-    Gamma_feed_eV: 0.9936  # +EII_PHANTOM(orig=0.7303, delta=+0.2633)
+    Gamma_feed_eV: 0.7303
     manifold: upper
   - channel: 3p-
-    Gamma_feed_eV: 0.3132  # +EII_PHANTOM(orig=0.0499, delta=+0.2633)
+    Gamma_feed_eV: 0.0499
     manifold: upper
   - channel: 3p+
-    Gamma_feed_eV: 0.8983  # +EII_PHANTOM(orig=0.6350, delta=+0.2633)
+    Gamma_feed_eV: 0.6350
     manifold: L2
   - channel: 3p-
-    Gamma_feed_eV: 0.3096  # +EII_PHANTOM(orig=0.0463, delta=+0.2633)
+    Gamma_feed_eV: 0.0463
     manifold: L2
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07
@@ -276,20 +255,20 @@ double_satellite_channels:
   Gamma_L2_eV: 0.609449
   feed_from:
   - channel: 3p+
-    Gamma_feed_eV: 1.287439  # +EII_PHANTOM(orig=1.0241386173085028, delta=+0.2633)
+    Gamma_feed_eV: 1.0241386173085028
   - channel: 3p-
-    Gamma_feed_eV: 1.947356  # +EII_PHANTOM(orig=1.6840555508530808, delta=+0.2633)
+    Gamma_feed_eV: 1.6840555508530808
   - channel: 3p+
-    Gamma_feed_eV: 1.4868  # +EII_PHANTOM(orig=1.2235, delta=+0.2633)
+    Gamma_feed_eV: 1.2235
     manifold: upper
   - channel: 3p-
-    Gamma_feed_eV: 2.2332  # +EII_PHANTOM(orig=1.9699, delta=+0.2633)
+    Gamma_feed_eV: 1.9699
     manifold: upper
   - channel: 3p+
-    Gamma_feed_eV: 1.2874  # +EII_PHANTOM(orig=1.0241, delta=+0.2633)
+    Gamma_feed_eV: 1.0241
     manifold: L2
   - channel: 3p-
-    Gamma_feed_eV: 1.9474  # +EII_PHANTOM(orig=1.6841, delta=+0.2633)
+    Gamma_feed_eV: 1.6841
     manifold: L2
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07
@@ -301,20 +280,20 @@ double_satellite_channels:
   Gamma_L2_eV: 0.555031
   feed_from:
   - channel: 3p+
-    Gamma_feed_eV: 0.34395  # +EII_PHANTOM(orig=0.08064992289744662, delta=+0.2633)
+    Gamma_feed_eV: 0.08064992289744662
   - channel: 3p-
-    Gamma_feed_eV: 0.722723  # +EII_PHANTOM(orig=0.45942343968413835, delta=+0.2633)
+    Gamma_feed_eV: 0.45942343968413835
   - channel: 3p+
-    Gamma_feed_eV: 0.3485  # +EII_PHANTOM(orig=0.0852, delta=+0.2633)
+    Gamma_feed_eV: 0.0852
     manifold: upper
   - channel: 3p-
-    Gamma_feed_eV: 0.7737  # +EII_PHANTOM(orig=0.5104, delta=+0.2633)
+    Gamma_feed_eV: 0.5104
     manifold: upper
   - channel: 3p+
-    Gamma_feed_eV: 0.3439  # +EII_PHANTOM(orig=0.0806, delta=+0.2633)
+    Gamma_feed_eV: 0.0806
     manifold: L2
   - channel: 3p-
-    Gamma_feed_eV: 0.7227  # +EII_PHANTOM(orig=0.4594, delta=+0.2633)
+    Gamma_feed_eV: 0.4594
     manifold: L2
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07

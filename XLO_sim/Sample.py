@@ -298,11 +298,20 @@ class XLO_sample:
             rho_other_xy = rho_other_ic_xy.copy()
             rho_2s_xy = rho_2s_ic_xy.copy()
 
-            curr_rho_ground_txy = np.empty((tgrid, xgrid, ygrid))
-            curr_rho_other_txy = np.empty((tgrid, xgrid, ygrid))
-            curr_rho_2s_txy = np.empty((tgrid, xgrid, ygrid))
-            curr_rho_diag_txy = np.empty((nlevel, tgrid, xgrid, ygrid), dtype=complex)
-            curr_rho_sat_diag_txy = [np.empty((satellite_nlevel, tgrid, xgrid, ygrid), dtype=complex)
+            # float32/complex64 here (not the module-wide float64/complex128 default): these
+            # buffers are only ever read back through Model.absorption()'s [iz-1, iz] window
+            # (immediately upcast via .astype(complex)/np.zeros(dtype=complex) below), never fed
+            # into the RK4 state itself -- rho_ijxy/rho_sat_ijxy/rho_ground_xy/etc. stay full
+            # float64/complex128 throughout, so this only narrows the *stored z-history trace* of
+            # the absorption lookback, not the marching arithmetic. Dominant memory cost of this
+            # method (curr_rho_sat_diag_txy alone is n_sat*satellite_nlevel*tgrid*xgrid*ygrid
+            # complex values), so halving these dtypes is the single biggest lever on
+            # run_mono_sweep.py's OOM'ing workers.
+            curr_rho_ground_txy = np.empty((tgrid, xgrid, ygrid), dtype=np.float32)
+            curr_rho_other_txy = np.empty((tgrid, xgrid, ygrid), dtype=np.float32)
+            curr_rho_2s_txy = np.empty((tgrid, xgrid, ygrid), dtype=np.float32)
+            curr_rho_diag_txy = np.empty((nlevel, tgrid, xgrid, ygrid), dtype=np.complex64)
+            curr_rho_sat_diag_txy = [np.empty((satellite_nlevel, tgrid, xgrid, ygrid), dtype=np.complex64)
                                      for k in range(n_sat)]
 
             is_final_iz = (iz == zgrid - 1)

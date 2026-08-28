@@ -14,7 +14,13 @@
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
 sigma1_Ka1_2s: 2.45e-7
 sigma1_Ka1_2p3: 1.52e-7
-sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
+sigma1_Ka1_other: 6.4434e-8 # XATOM ground-state -pcs sum of 3s+3p+3d+4s subshells at 8047.91 eV
+# (xatom_tools.parse_photoabsorption('', photon_energy=8047.91, pcs=True).per_subshell, every
+# subshell except 1s -- photoionization-forbidden below the K edge at this energy, so never a
+# ground-pump target -- and the explicitly tracked 2s/2p3/2p1 channels). Replaces the old 1.89e-7
+# (4.34e-7 - 2.45e-7, a different, non-XATOM total baseline): that value predated sigma1_Ka1_2p1
+# and was never carved out when the L2 pathway was added, so it double-counted 2p1/2's ~12% share
+# on top of already being ~3x too large relative to a self-consistent XATOM ground-state total.
 sigma1_Ka1_2p1: 6.89383e-8
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels

@@ -34,7 +34,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=40
 #SBATCH --mem=32G
-#SBATCH --time=01:15:00
+#SBATCH --time=08:15:00
 #SBATCH --array=0-39
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err

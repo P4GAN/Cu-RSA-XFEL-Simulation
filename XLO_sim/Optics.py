@@ -96,11 +96,8 @@ class XLO_optics:
         np.ndarray
 
         """
-        # scipy.fft's pocketfft is consistently ~1.5x faster than numpy's here (verified
-        # empirically at these array sizes), with workers=1 kept fixed since this runs
-        # under SLURM with one process per core already -- workers=-1 would oversubscribe
-        # cores rather than help. overwrite_x=True is safe: both call sites (the Fresnel
-        # propagators) pass in a freshly created array that is never read again afterward.
+        # scipy's pocketfft is ~1.5x faster than numpy here; workers=1 since SLURM already gives
+        # one process per core. overwrite_x is safe: callers never reuse the input array after.
         return sp_fft.fft2(wavefront, workers=1, overwrite_x=True)
 
 
@@ -203,14 +200,9 @@ class XLO_optics:
     
     def _drift_kernel_tensor(self, X, z, lambda_rad):
         """
-        (2, 2, kx, ky) drift-kernel tensor, cached per (z, lambda_rad).
-
-        Callers marching in z/t (Sample.py) hit this with the same (z, lambda_rad) pair
-        every single (iz, it) step -- z is always the fixed z-grid step X.dz, never the
-        running z-position, so the kernel is a true constant for the life of a run.
-        Recomputing the exp() over the full padded k-grid on every call was previously
-        the single biggest cost in the propagation step; memoizing it turns that into a
-        one-time computation plus a dict lookup.
+        (2, 2, kx, ky) drift-kernel tensor, cached per (z, lambda_rad) -- z is always the fixed
+        z-grid step X.dz here, so this is a true constant for the life of a run and was
+        previously the single biggest cost in the propagation step.
         """
         key = (z, lambda_rad)
         tensor = self._drift_kernel_tensor_cache.get(key)
@@ -307,10 +299,8 @@ class XLO_optics:
         
         pad_shape = [(0, 0), (0, 0), (self.xpad, self.xpad), (self.ypad, self.ypad)]
 
-        # kappa is only defined on the interior (xgrid, ygrid) grid, and exp(-kappa*dz/4)
-        # would just evaluate to 1.0 across the padding either way -- so exponentiate the
-        # small interior array once instead of zero-padding kappa first and running exp()
-        # over the whole (often much larger) padded array.
+        # Exponentiate the small interior array once instead of zero-padding kappa first and
+        # running exp() over the whole (often much larger) padded array.
         kappa_exp = np.exp(-kappa * X.dz / 4.0)
 
         wavefront_pad = self.my_pad(wavefront * kappa_exp[:, :, :, :, 0], pad_shape)

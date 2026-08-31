@@ -51,12 +51,8 @@ class XLO_sample:
         rho_other_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
         rho_2s_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
 
-        # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): one local
-        # X.satellite_nlevel-level block per channel -- NOT X.nlevel, which grows independently to
-        # X.nlevel_base + 2 when use_L2_pathway extends the base block. X.satellite_nlevel is
-        # X.nlevel_base (6) normally, or +2 when this channel set also carries the 2p1/2-satellite
-        # extension (X.use_L2_satellite_pathway, requires use_L2_pathway too -- XLO_sim.py). Empty
-        # list if none configured.
+        # One local X.satellite_nlevel-level block per channel (not X.nlevel, which grows
+        # independently when use_L2_pathway extends the base block). Empty list if none configured.
         rho_sat_ijtxyz = [np.zeros((X.satellite_nlevel, X.satellite_nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
                           for _ in X.satellite_channel_params]
 
@@ -87,17 +83,10 @@ class XLO_sample:
 
     def _evaluate_n_level_3D_full(self, X):
         """
-        Original full-z-history implementation of evaluate_n_level_3D (see
-        that docstring). Stores every z plane of every field/density-matrix
-        array for the whole run, which is what Plot.py and the analysis
-        notebooks need to show propagation through the sample depth -- at
-        production grid sizes (e.g. tgrid=3200, x=y=z=25) that's tens of GB
-        per repetition (rho_ijtxyz alone is ~29 GB), so this path is only
-        suitable for interactive/notebook use, not the batch run_*_sweep.py
-        scripts. Those pass X.keep_z_history=False to use
-        _evaluate_n_level_3D_lean instead, which reproduces the exact same
-        z-marching physics but only keeps the z=0/z=-1 planes those scripts'
-        outputs actually read (see tools.compute_run_outputs).
+        Original full-z-history implementation of evaluate_n_level_3D. Stores every z plane of
+        every array, which Plot.py/notebooks need but costs tens of GB per repetition at
+        production grid sizes -- batch run_*_sweep.py scripts set X.keep_z_history=False to use
+        _evaluate_n_level_3D_lean instead (same physics, only keeps what's read back).
         """
 
         rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, rho_sat_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy = self.init_n_level_3D(X)
@@ -124,9 +113,8 @@ class XLO_sample:
                 d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
 
-                # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II):
-                # one full 6-level block per channel, fed from the base block's and rho_2s_xy's
-                # pre-update (start-of-step) values, same convention as the other blocks above.
+                # One block per satellite channel, fed from the base block's/rho_2s_xy's pre-update
+                # (start-of-step) values, same convention as the other blocks above.
                 d_rho_sat_it = [
                     tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
                                      [X, chan, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_2s_xy, rho_sat_ijxy,
@@ -184,82 +172,29 @@ class XLO_sample:
 
     def _evaluate_n_level_3D_lean(self, X):
         """
-        Memory-lean counterpart of _evaluate_n_level_3D_full for batch/statistics
-        jobs (X.keep_z_history=False): same z-marching physics, same RK45 calls
-        in the same order on the same inputs, but storage is cut from O(zgrid)
-        to O(1) per array by keeping only what's ever read back afterwards.
+        Memory-lean counterpart of _evaluate_n_level_3D_full for batch/statistics jobs
+        (X.keep_z_history=False): identical z-marching physics, but keeps only what
+        tools.compute_run_outputs reads back instead of every z plane -- 2-slot rolling prev/curr
+        buffers for rho_ground/other/2s_txyz and for the diagonal of rho_ijtxyz/rho_sat_ijtxyz
+        (Model.absorption only reads the diagonal of the latter two), plus a center-pixel-only,
+        final-z-only full matrix for rho_ijtxyz/rho_sat_ijtxyz. rho_ground/other/2s_txyz are also
+        narrowed to float32/complex64 (their imaginary part is always exactly 0).
 
-        Three categories of array, treated differently:
+        Deliberately reproduces _evaluate_n_level_3D_full's off-by-one for Omega_pstxyz (index -1
+        there is the state after the *second-to-last* iz, not the true final one) so lean and full
+        mode agree exactly -- do not "fix" this without also changing the full-history path.
 
-        - rho_ground/other/2s_txyz: Model.absorption() reads a 2-plane [iz-1, iz]
-          window while marching (see _evaluate_n_level_3D_full), so these need a
-          2-slot rolling buffer (prev/curr z) during the loop. Nothing downstream
-          reads any z but the last one (tools.compute_run_outputs only ever
-          indexes X.rho_ground_txyz/etc at [...,-1]), so after the loop only the
-          last z's buffer is exposed, as a length-1 z axis (so existing
-          [...,-1]/[...,0]-style indexing elsewhere keeps working unchanged).
-        - rho_ijtxyz/rho_sat_ijtxyz: Model.absorption()'s [iz-1, iz] window is
-          passed through an einsum ('si,iixyz->sxyz') that only ever reads the
-          DIAGONAL of these two arrays -- off-diagonal entries are computed but
-          never used. The only other consumer, tools.compute_run_outputs, reads
-          the FULL (off-diagonal included) matrix, but only at the single center
-          pixel (X.xgrid//2, X.ygrid//2) and only at the last z. So: the rolling
-          prev/curr buffer needed *during* marching only ever needs to be
-          diagonal-only, full (x,y) grid (nlevel per level instead of nlevel**2,
-          an 8x/64x reduction at nlevel=8) -- built from the same live rho_ijxy/
-          rho_sat_ijxy working arrays Model.Omega_source_regular already reads
-          per-it, so no separate full-matrix history needs to exist at all
-          during marching. Only at the FINAL iz, a full (off-diagonal included)
-          but center-pixel-only history is captured instead (xgrid*ygrid smaller
-          for typical production grids), since that's the only thing
-          compute_run_outputs actually reads back out of these two arrays.
-          Neither reduction changes a single floating-point operation of the
-          physics -- both are exactly what full mode already computes, just not
-          keeping copies nothing reads. Not applicable to full mode (Plot.py and
-          the analysis notebooks need the true full-grid, full-history matrices).
-        - Omega_pstxyz/Pfield_txyz/J_Omega_(minus|plus)_txyz: never
-          read back from storage during the marching -- only the live "xy"
-          rolling variables (Omega_pstxy etc.) are, so no rolling buffer is
-          needed at all, just a snapshot at z=0 and z=-1, taken at exactly the
-          same point in the loop _evaluate_n_level_3D_full would have written
-          them into the big array. That includes replicating
-          _evaluate_n_level_3D_full's existing off-by-one for Omega_pstxyz:
-          `if (iz != X.zgrid-1): Omega_pstxyz[...,iz+1] = Omega_pstxy` means
-          Omega_pstxyz[...,-1] there is actually the state after the
-          *second-to-last* iz's update, not the true final one -- reproduced
-          here rather than "fixed", so lean and full mode agree exactly.
-
-        Only rho_ground/other/2s_txyz get the extra real-dtype narrowing (fix
-        for the complex128-storing-real-values waste in init_n_level_3D):
-        verified empirically (see PR discussion) that their imaginary part is
-        exactly 0 throughout the run, since Model.MB_ground/other/2s_regular
-        are pure population rate equations with no phase terms -- rho_ijtxyz
-        stays complex since its off-diagonal coherences are genuinely complex.
-
-        rho_ijtxyz/rho_sat_ijtxyz end up with a length-1 (x,y) footprint here
-        (the captured center pixel), unlike full mode's true X.xgrid x X.ygrid --
-        tools.compute_run_outputs clamps its center-pixel index to each array's
-        own shape to read the right thing either way.
-
-        Not used for interactive/notebook work -- Plot.py and the analysis
-        notebooks need the full z/x/y profile, which this deliberately discards.
+        Not used for interactive/notebook work -- Plot.py needs the full z/x/y profile.
         """
 
         nlevel, tgrid, xgrid, ygrid, zgrid = X.nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid
         cx, cy = int(X.xgrid / 2), int(X.ygrid / 2)  # matches tools.compute_run_outputs exactly
 
-        # t=0 initial-condition templates. Identical for every z in
-        # init_n_level_3D (each is set via a uniform [...,:,:,:] assignment
-        # over all x,y,z), so unlike the full-history path there is no need to
-        # store/re-read per-z copies of these -- just re-copy the same
-        # template into the rolling "xy" working array at the start of every
-        # iz iteration, exactly reproducing what
-        # `rho_ijtxyz[:,:,0,:,:,iz].copy()` etc. would have read.
+        # t=0 initial-condition template, identical for every z -- re-copied into the rolling "xy"
+        # working array at the start of every iz iteration rather than stored per-z.
         rho_ij_ic_xy = np.zeros((nlevel, nlevel, xgrid, ygrid), dtype=complex)
 
         n_sat = len(X.satellite_channel_params)
-        # X.satellite_nlevel is X.nlevel_base (6) normally, or +2 when this channel set also
-        # carries the 2p1/2-satellite extension -- see init_n_level_3D's rho_sat_ijtxyz.
         satellite_nlevel = X.satellite_nlevel
         rho_sat_ij_ic_xy = [np.zeros((satellite_nlevel, satellite_nlevel, X.xgrid, X.ygrid), dtype=complex)
                             for k in range(n_sat)]
@@ -298,14 +233,9 @@ class XLO_sample:
             rho_other_xy = rho_other_ic_xy.copy()
             rho_2s_xy = rho_2s_ic_xy.copy()
 
-            # float32/complex64 here (not the module-wide float64/complex128 default): these
-            # buffers are only ever read back through Model.absorption()'s [iz-1, iz] window
-            # (immediately upcast via .astype(complex)/np.zeros(dtype=complex) below), never fed
-            # into the RK4 state itself -- rho_ijxy/rho_sat_ijxy/rho_ground_xy/etc. stay full
-            # float64/complex128 throughout, so this only narrows the *stored z-history trace* of
-            # the absorption lookback, not the marching arithmetic. Dominant memory cost of this
-            # method (curr_rho_sat_diag_txy alone is n_sat*satellite_nlevel*tgrid*xgrid*ygrid
-            # complex values), so halving these dtypes is the single biggest lever on
+            # float32/complex64: these buffers only ever get read back through Model.absorption()'s
+            # lookback window (upcast to complex there), never fed into the RK4 state itself, so
+            # this only narrows the stored history trace -- the single biggest memory lever on
             # run_mono_sweep.py's OOM'ing workers.
             curr_rho_ground_txy = np.empty((tgrid, xgrid, ygrid), dtype=np.float32)
             curr_rho_other_txy = np.empty((tgrid, xgrid, ygrid), dtype=np.float32)
@@ -328,9 +258,8 @@ class XLO_sample:
                 d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
                 d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
 
-                # 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II):
-                # one full local block per channel, fed from the base block's and rho_2s_xy's
-                # pre-update (start-of-step) values, same convention as the other blocks above.
+                # One block per satellite channel, fed from the base block's/rho_2s_xy's pre-update
+                # (start-of-step) values, same convention as the other blocks above.
                 d_rho_sat_it = [
                     tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
                                      [X, chan, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_2s_xy, rho_sat_ijxy,
@@ -357,20 +286,15 @@ class XLO_sample:
                     final_rho_ijt_center[:, :, it] = rho_ijxy[:, :, cx, cy]
 
                 if iz != 0:
-                    # Same [iz-1, iz] window Model.absorption() would have gotten
-                    # from rho_ground_txyz[it,:,:,iz-1:iz+1] etc. in the
-                    # full-history path -- cast back to complex to match its
-                    # input dtype exactly (these hold real-only values either way).
+                    # Same [iz-1, iz] window Model.absorption() reads in the full-history path.
                     window_ground = np.stack([prev_rho_ground_txy[it, :, :],
                                               curr_rho_ground_txy[it, :, :]], axis=-1).astype(complex)
                     window_other = np.stack([prev_rho_other_txy[it, :, :],
                                              curr_rho_other_txy[it, :, :]], axis=-1).astype(complex)
                     window_2s = np.stack([prev_rho_2s_txy[it, :, :],
                                           curr_rho_2s_txy[it, :, :]], axis=-1).astype(complex)
-                    # Model.absorption only ever reads the DIAGONAL of its rho_ijxyz argument
-                    # (einsum 'si,iixyz->sxyz') -- embedding just the diagonal into an
-                    # otherwise-zero (nlevel,nlevel,x,y,2) array reproduces its output exactly,
-                    # without ever materializing a full off-diagonal history (see docstring).
+                    # Only the diagonal is populated -- Model.absorption never reads off-diagonal
+                    # entries of this argument (see docstring).
                     window_ij = np.zeros((nlevel, nlevel, xgrid, ygrid, 2), dtype=complex)
                     window_ij[diag_idx, diag_idx, :, :, 0] = prev_rho_diag_txy[:, it, :, :]
                     window_ij[diag_idx, diag_idx, :, :, 1] = curr_rho_diag_txy[:, it, :, :]
@@ -385,11 +309,6 @@ class XLO_sample:
                                                          window_2s, window_ij, window_sat_ij)
                     Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
 
-                # rho_ijxy/rho_sat_ijxy[k] hold exactly the same (just-updated) values that were
-                # written into curr_rho_diag_txy[:,it,:,:] etc. above (same assignment, no
-                # off-diagonal-discarding), so sourcing directly from them is identical to the
-                # old curr_rho_ijtxy[:,:,it,:,:]-based read -- just without needing that full
-                # array to exist.
                 Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, rho_ijxy)
                 for k in range(n_sat):
                     Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
@@ -401,9 +320,7 @@ class XLO_sample:
             # ######################
             # Loop over simulation time window ends
 
-            # Matches `if (iz != X.zgrid-1): Omega_pstxyz[...,iz+1] = Omega_pstxy`
-            # in the full-history path, evaluated only at the one iz where
-            # iz+1 == zgrid-1 (see docstring for the off-by-one this reproduces).
+            # Reproduces the full-history path's off-by-one (see docstring).
             if iz == zgrid - 2:
                 Omega_pstxyz_zlast = Omega_pstxy.copy()
 

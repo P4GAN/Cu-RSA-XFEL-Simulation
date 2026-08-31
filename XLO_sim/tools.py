@@ -767,10 +767,8 @@ def compute_run_outputs(X, tpad, ypad):
     womega_ar, I_int_thy_w_0, I_thy0_w_0 = SF_spectrum_w(X, 0, ypad, tpad)
     womega_ar, I_int_thy_w_last, I_thy0_w_last = SF_spectrum_w(X, -1, ypad, tpad)
 
-    # In keep_z_history=False (lean) runs, X.rho_ijtxyz/rho_sat_ijtxyz only ever store the single
-    # center pixel they capture during marching (Sample._evaluate_n_level_3D_lean), at index 0 of
-    # a length-1 (x,y) footprint rather than X.xgrid/X.ygrid -- clamping to each array's own shape
-    # resolves to the true center index in full mode and to 0 (where lean mode wrote it) otherwise.
+    # Lean (keep_z_history=False) runs only store a length-1 (x,y) footprint at the center pixel;
+    # clamping resolves to the true center in full mode and to 0 (where lean mode wrote it) otherwise.
     cx = min(int(X.xgrid / 2), X.rho_ijtxyz.shape[3] - 1)
     cy = min(int(X.ygrid / 2), X.rho_ijtxyz.shape[4] - 1)
     rho_ijt_center = X.rho_ijtxyz[:, :, :, cx, cy, -1]
@@ -785,14 +783,9 @@ def compute_run_outputs(X, tpad, ypad):
     rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
     t_axis = X.t
 
-    # rho_gg_t_last/rho_eg_t_last above use the base block's Tijs_plus/Tijs_minus, whose "lower"
-    # role mask is ei_L3+ei_L2 combined (XLO_sim.py) -- so when use_L2_pathway is on they silently
-    # sum the 2p_3/2 (L3, Kalpha1) and 2p_1/2 (L2, Kalpha2) contributions together, and rho_eg_t_last
-    # additionally keeps only one of Tijs' two sigma (circular-polarization) branches ([0]). The
-    # keys below isolate each manifold and each coherence individually instead, by further masking
-    # Tijs_plus/Tijs_minus along their "lower" index with ei_L3/ei_L2 (zero for a manifold that
-    # isn't configured, so these are harmless/zero when use_L2_pathway is off) and summing both
-    # sigma branches rather than picking one.
+    # rho_gg_t_last/rho_eg_t_last sum the L3 (Kalpha1) and L2 (Kalpha2) contributions together when
+    # use_L2_pathway is on. The keys below isolate each manifold/coherence individually instead, by
+    # masking Tijs_plus/Tijs_minus with ei_L3/ei_L2 (zero, hence harmless, when L2 is off).
     Tijs_plus_L3 = X.Tijs_plus * X.ei_L3[None, :, None]
     Tijs_minus_L3 = X.Tijs_minus * X.ei_L3[:, None, None]
     Tijs_plus_L2 = X.Tijs_plus * X.ei_L2[None, :, None]
@@ -802,13 +795,8 @@ def compute_run_outputs(X, tpad, ypad):
     rho_eg_l3_t_last = np.einsum('ijs,jit->st', Tijs_minus_L3, rho_ijt_center, optimize=True).sum(axis=0)
     rho_eg_l2_t_last = np.einsum('ijs,jit->st', Tijs_minus_L2, rho_ijt_center, optimize=True).sum(axis=0)
 
-    # Satellite channels reuse the base block's Tijs_plus/Tijs_minus, sliced to the satellite
-    # blocks' own local nlevel_base size (X.Tijs_plus_satellite/X.Tijs_minus_satellite -- see
-    # XLO_sim.py; these equal X.Tijs_plus/X.Tijs_minus whenever use_L2_pathway is off, so this is a
-    # no-op change for every pre-existing config), so the ee/gg/eg contraction template above
-    # applies verbatim per channel. Stacked into (n_sat, t) arrays -- rather than a name-keyed dict
-    # -- so that accumulate_run_outputs' np.stack/np.isnan reduction (which assumes every value is a
-    # plain numeric array) applies to these exactly like every other per-repetition key;
+    # Stacked into (n_sat, t) arrays, rather than a name-keyed dict, so accumulate_run_outputs'
+    # np.stack/np.isnan reduction applies to these like any other per-repetition key;
     # satellite_channel_names carries the per-row labels as a run-level (non-accumulated) axis.
     n_sat = len(X.satellite_channel_params)
     satellite_channel_names = tuple(chan.name for chan in X.satellite_channel_params)
@@ -816,11 +804,8 @@ def compute_run_outputs(X, tpad, ypad):
     rho_gg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
     rho_eg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
 
-    # Per-channel L3-only/L2-only counterparts of rho_l3_t_last/rho_l2_t_last/rho_eg_l3_t_last/
-    # rho_eg_l2_t_last above -- same ei_L3/ei_L2 masking trick, applied to the satellite block's own
-    # Tijs_plus_satellite/Tijs_minus_satellite/ei_L3_satellite/ei_L2_satellite (XLO_sim.py), which are
-    # channel-independent (every channel shares one local template), so the masked tensors are built
-    # once here rather than inside the per-channel loop.
+    # Per-channel L3-only/L2-only counterparts of rho_l3_t_last/rho_l2_t_last above, built once
+    # since every channel shares the same local template.
     Tijs_plus_L3_sat = X.Tijs_plus_satellite * X.ei_L3_satellite[None, :, None]
     Tijs_minus_L3_sat = X.Tijs_minus_satellite * X.ei_L3_satellite[:, None, None]
     Tijs_plus_L2_sat = X.Tijs_plus_satellite * X.ei_L2_satellite[None, :, None]

@@ -601,29 +601,11 @@ def l2_pathway_parameters(Ka1_energy_eV=8047.91):
 # Top-level: 2p1/2-spectator ("Kalpha2-satellite") extension of each existing satellite channel
 # (docs/theory-and-2s-satellite-pathways.md Part II + Part III combined: each satellite channel's
 # local block gains its own 2p1/2+X_k manifold, exactly as use_L2_pathway extends the base block).
-#
-# Physical picture: the satellite channel's upper/K-like state (1sX_k, local indices 4,5) is one
-# physical configuration that already decays to the tracked 2p+X_k (Ka1-satellite) manifold *and*,
-# per Gij's existing 1/9,2/9 bookkeeping, to an untracked 1/3 fraction (the Ka2-satellite analogue,
-# "lost from the model" exactly like the base system's bare Kalpha2 branch before use_L2_pathway
-# existed). These functions make that branch explicit by computing the same class of parameters
-# l2_pathway_parameters() computes for the base block, but for each spectator configuration:
-#   - the Ka1-satellite/Ka2-satellite splitting for that specific double-hole configuration (not
-#     assumed identical to the bare-ion DeltaomegaL2mL3A -- computed directly per channel since
-#     it's a cheap total-energy difference, same trick as satellite_detuning_eV/l2_hole vs l3_hole
-#     sharing the same spectator and charge state, so the DFT functional's systematic error cancels)
-#   - Gamma_L2_eV: this double-hole state's own decay width (mirrors Gamma_L_eV/Gamma_K_eV)
-#   - Gamma_A_2s_to_L2_eV: the sibling 2s-hole Auger channel that fills the 2s vacancy with a
-#     2p1/2 electron instead of 2p3/2 (final1='2p-' instead of '2p+' in the same cached Auger
-#     table auger_partial_rate_eV already reads -- a real, independently-tabulated XATOM Auger
-#     line, not a guess; this is a channel the existing GammaA_L1_to_L3M45eVN/satellite Gamma_A_2s_eV
-#     bookkeeping never included at all, since Eq. M2's original form only ever fed the L3 manifold
-#     -- so this is a net-new addition to the Gamma_L1 budget accounting, not a re-carve of an
-#     existing bucket)
-#   - sigma_Ka1_from_2p1: sublevel-preserving spectator photoionization feed into 2p1/2+X_k from
-#     the *base block's own 2p1/2-hole population* (mirrors sigma_Ka1_from_2p, which draws from the
-#     base block's 2p3/2-hole population) -- only meaningful/nonzero source when use_L2_pathway is
-#     also enabled, since otherwise the base block has no 2p1/2 population to draw from.
+# Computes the same class of parameters l2_pathway_parameters() computes for the base block, but
+# per spectator configuration: the Ka1/Ka2-satellite splitting, Gamma_L2_eV (this double-hole
+# state's own decay width), Gamma_A_2s_to_L2_eV (the sibling 2s-hole Auger channel filling the 2s
+# vacancy with a 2p1/2 electron instead of 2p3/2), and sigma_Ka1_from_2p1 (spectator photoionization
+# feed from the base block's own 2p1/2-hole population, meaningful only when use_L2_pathway is on).
 
 def l2_satellite_splitting_eV(spectator):
     """
@@ -713,21 +695,16 @@ def build_all_satellite_channels_with_L2(Ka1_energy_eV=8047.91):
 # Top-level: double-M-shell-spectator ("double-satellite") channels
 # (docs/double-spectator-satellite-implementation-plan.md)
 #
-# Physical picture (found empirically, not assumed): a single-spectator channel's own spectator
-# hole can itself Auger-decay a second time (an M-shell Coster-Kronig process), landing on a
-# double-spectator configuration while the 2p+ core hole survives as a bystander throughout. This
-# is the *dominant* production route for 3d+3d+/3d-3d+/3d-3d- (bare 3p-hole Auger tables show >90%
-# of the total width goes this way; bare 3d-holes have NO Auger channel open at all -- energy
-# conservation forbids it, filling from 4s only releases ~7.8 eV, ~0.6 eV short of what's needed to
-# eject a second weakly-bound electron). So unlike every function above, these channels are NOT fed
-# by a cross-section x field-flux term -- they're fed by redirecting a fraction of an *existing*
-# single-spectator channel's own Gamma_L_eV (currently 100% generic loss) into an explicit
-# destination, using XATOM's own branching ratios for that redirection.
+# Physical picture: a single-spectator channel's own spectator hole can itself Auger-decay a
+# second time (an M-shell Coster-Kronig process), landing on a double-spectator configuration while
+# the 2p+ core hole survives as a bystander -- the dominant production route for 3d+3d+/3d-3d+/
+# 3d-3d- (bare 3d-holes have no Auger channel open at all; energy conservation forbids it). So
+# unlike every function above, these channels are fed by redirecting a fraction of an existing
+# single-spectator channel's own Gamma_L_eV (currently 100% generic loss), using XATOM's own
+# branching ratios, rather than by a cross-section x field-flux term.
 #
-# XATOM's own "nl<n_->,<n_+>" notation packs ALL holes in one subshell into one fragment (verified
-# directly, not assumed): "3d0,2" = 2 holes in 3d+ (5/2), "3d1,1" = 1 hole in 3d- (3/2) + 1 in 3d+
-# (5/2), "3d2,0" = 2 holes in 3d- (3/2) -- i.e. exactly the fragment SPECTATOR_HOLE already uses,
-# generalized from "0,1"/"1,0" to any pair of small integers summing to 2.
+# XATOM's "nl<n_->,<n_+>" notation packs all holes in one subshell into one fragment: "3d0,2" = 2
+# holes in 3d+ (5/2), "3d1,1" = 1 hole in 3d- (3/2) + 1 in 3d+ (5/2), "3d2,0" = 2 holes in 3d- (3/2).
 
 DOUBLE_SPECTATOR_HOLE = {
     ('3d+', '3d+'): '3d0,2',

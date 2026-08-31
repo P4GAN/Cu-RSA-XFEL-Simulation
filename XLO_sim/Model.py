@@ -154,63 +154,63 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
 
     """
 
-    # Local level count is chan.Mij.shape[0] (nlevel_base, or +2 with the L2-satellite extension),
-    # not rho_base_ijxy.shape[0] (the base block's own, independently-extended level count).
+    # Local level count is chan.Mij.shape[0] (6, or 8 with the L2-satellite extension), not
+    # rho_base_ijxy.shape[0] (the base block's own, independently-extended level count).
     nlevel_sat = chan.Mij.shape[0]
-    nlevel_base = X.nlevel_base
+    n_base = 6
     nx, ny = rho_2s_xy.shape
     feed = np.zeros((nlevel_sat, nx, ny), dtype=complex)
 
-    ei_L3_sat = X.ei_L3[:nlevel_base]
-    ei_K_sat_local = X.ei_K[:nlevel_base]
+    ei_L3_sat = X.ei_L3[:n_base]
+    ei_K_sat_local = X.ei_K[:n_base]
     auger_weight = ei_L3_sat / np.sum(ei_L3_sat)
     auger_weight_K = ei_K_sat_local / np.sum(ei_K_sat_local)
-    feed[:nlevel_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
+    feed[:n_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_fs, rho_2s_xy)
 
     # Direct K-hole (1s) non-radiative "KLM-type" Auger feed, independent of the 2s-Auger route
     # above, sourced from the base block's own K-hole population instead of rho_2s_xy. Spread
     # evenly via the same auger_weight convention. Defaults to 0 (no-op) unless a config supplies
     # Gamma_A_K_eV.
-    rho_K_base_xy = sum(np.real(rho_base_ijxy[i, i]) for i in range(nlevel_base) if ei_K_sat_local[i] > 0)
-    feed[:nlevel_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_K_fs, rho_K_base_xy)
+    rho_K_base_xy = sum(np.real(rho_base_ijxy[i, i]) for i in range(n_base) if ei_K_sat_local[i] > 0)
+    feed[:n_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_A_K_fs, rho_K_base_xy)
 
     # Double-satellite feed (docs/double-spectator-satellite-implementation-plan.md sec 3/9):
     # redirected fraction of a parent channel's own Lk ('lower'), Uk ('upper'), or L2k ('L2')
     # decay, spread evenly over this channel's corresponding manifold. No-op when feed_from is empty.
-    n_L2 = nlevel_sat - nlevel_base
+    n_L2 = nlevel_sat - n_base
     for parent_index, Gamma_feed_fs, manifold in chan.feed_from:
         parent_rho = rho_sat_ijxy[parent_index]
         if manifold == 'L2':
-            parent_pop_xy = sum(np.real(parent_rho[i, i]) for i in range(nlevel_base, nlevel_base + n_L2))
-            feed[nlevel_base:nlevel_base + n_L2] += np.einsum(
+            parent_pop_xy = sum(np.real(parent_rho[i, i]) for i in range(n_base, n_base + n_L2))
+            feed[n_base:n_base + n_L2] += np.einsum(
                 'i,xy->ixy', np.ones(n_L2) / n_L2, Gamma_feed_fs * parent_pop_xy)
             continue
         src_mask, dst_weight = (ei_L3_sat, auger_weight) if manifold == 'lower' else (ei_K_sat_local, auger_weight_K)
-        parent_pop_xy = sum(np.real(parent_rho[i, i]) for i in range(nlevel_base) if src_mask[i] > 0)
-        feed[:nlevel_base] += np.einsum('i,xy->ixy', dst_weight, Gamma_feed_fs * parent_pop_xy)
+        parent_pop_xy = sum(np.real(parent_rho[i, i]) for i in range(n_base) if src_mask[i] > 0)
+        feed[:n_base] += np.einsum('i,xy->ixy', dst_weight, Gamma_feed_fs * parent_pop_xy)
 
     rate_2p_xy = chan.S_feed_2p[0] * J_Omega_minus_xy + chan.S_feed_2p[1] * J_Omega_plus_xy
     rate_1s_xy = chan.S_feed_1s[0] * J_Omega_minus_xy + chan.S_feed_1s[1] * J_Omega_plus_xy
 
-    for i in range(nlevel_base):
+    for i in range(n_base):
         if ei_L3_sat[i] > 0:
             feed[i] += rate_2p_xy * rho_base_ijxy[i, i]
         else:
             feed[i] += rate_1s_xy * rho_base_ijxy[i, i]
 
-    if nlevel_sat > nlevel_base:
-        n_L2 = nlevel_sat - nlevel_base
-        feed[nlevel_base:] += np.einsum(
+    if nlevel_sat > n_base:
+        n_L2 = nlevel_sat - n_base
+        feed[n_base:] += np.einsum(
             'i,xy->ixy', (chan.Gamma_A_L2_fs / n_L2) * np.ones(n_L2), rho_2s_xy)
 
         # L2k analogue of the K-hole KLM feed above; own rate Gamma_A_K_to_L2_fs, defaults to 0.
-        feed[nlevel_base:] += np.einsum(
+        feed[n_base:] += np.einsum(
             'i,xy->ixy', (chan.Gamma_A_K_to_L2_fs / n_L2) * np.ones(n_L2), rho_K_base_xy)
 
         rate_2p1_xy = chan.S_feed_2p1[0] * J_Omega_minus_xy + chan.S_feed_2p1[1] * J_Omega_plus_xy
         for offset in range(n_L2):
-            i_base = nlevel_base + offset
-            feed[nlevel_base + offset] += rate_2p1_xy * rho_base_ijxy[i_base, i_base]
+            i_base = n_base + offset
+            feed[n_base + offset] += rate_2p1_xy * rho_base_ijxy[i_base, i_base]
 
     return feed
 

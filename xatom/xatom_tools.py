@@ -598,6 +598,76 @@ def l2_pathway_parameters(Ka1_energy_eV=8047.91):
 
 
 # ---------------------------------------------------------------------------
+# Top-level: "other" catch-all state (theory doc Part I section 6, Eq. 29/30; the paper's
+# rho^(aux)) recomputed for the subshells actually left in it once 2s, 2p1/2 (and the always
+# excluded 1s, 2p3/2) have their own explicit channels.
+# ---------------------------------------------------------------------------
+
+# The 6 remaining "other" subshells at the ground-state configuration, as labeled in a ground
+# -pcs run's per_subshell table, mapped to the single-hole XATOM hole-config string used to probe
+# that subshell's own further-ionization cross section. 3s/4s (l=0, no j-splitting) use the bare
+# "-hole nl1" form (same convention as BASE_UPPER_HOLE='1s1'); 3p/3d reuse SPECTATOR_HOLE's
+# "0,1"/"1,0" j-resolved single-hole strings.
+OTHER_HOLE = {
+    '3s0': '3s1',
+    '3p-': '3p1,0',
+    '3p+': '3p0,1',
+    '4s0': '4s1',
+    '3d-': '3d1,0',
+    '3d+': '3d0,1',
+}
+
+
+def other_state_parameters(Ka1_energy_eV=8047.91):
+    """
+    `sigma1_Ka1_other`/`sigma2_Ka1_other`, computed directly from the 6 subshells that actually
+    remain in the "other" catch-all once 2s and 2p1/2 are tracked explicitly (1s/2p3/2 were never
+    part of it).
+
+    The two cross sections are not the same kind of quantity, so they're computed differently:
+
+    - `sigma1_Ka1_other` (ground -> other pump) is an exact sum. Ground-state photoionization
+      branches additively into distinct final holes, so one XATOM `-pcs` run on the neutral atom
+      gives every subshell's share directly, and the total for "other" is just the sum over the 6
+      subshells not already claimed by 1s/2s/2p3/2p1 -- no averaging involved. (This reproduces
+      config/base/*.yaml's `sigma1_Ka1_other: 6.4434e-8 # ... sum of 3s+3p+3d+4s subshells`
+      comment exactly, now done programmatically instead of by hand.)
+    - `sigma2_Ka1_other` (other's own further-ionization rate) is *not* a branching decomposition
+      of one process -- it's a single effective rate applied to a population that mixes 6
+      physically distinct already-holed ions (3s/3p+/3p-/4s/3d+/3d-), each with its own, different
+      total photoionization cross section (probed here one XATOM run per subshell via
+      `total_photoionization_cross_section_nm2`). A single scalar can only be some average over
+      those 6 values. This weights each by its own sigma1 share (how much of "other" that subshell
+      actually contributes when freshly created from the ground state, i.e. the natural weight
+      given the absorption coefficient's linear dependence on population, PDF Eq. 34) rather than
+      averaging the 6 subshells unweighted. In practice the 6 subshells' sigma2 values are all
+      within ~3% of each other here, so the weighted and unweighted means come out nearly
+      identical -- but the weighted version is used since the weights are already computed as a
+      side effect of the sigma1 sum above, at no extra cost.
+
+    Returns
+    -------
+    dict
+        {'sigma1_Ka1_other', 'sigma2_Ka1_other'} in nm^2, at the given photon energy, plus
+        'per_subshell_sigma1'/'per_subshell_sigma2' dicts (keyed like OTHER_HOLE) for inspection.
+    """
+    pa = parse_photoabsorption(run_xatom_cached('', photon_energy=Ka1_energy_eV, pcs=True))
+    sigma1 = {label: pa.per_subshell[label][0] * 1e-4 for label in OTHER_HOLE}  # Mb -> nm^2
+    sigma2 = {label: total_photoionization_cross_section_nm2(hole, Ka1_energy_eV)
+              for label, hole in OTHER_HOLE.items()}
+
+    sigma1_other = sum(sigma1.values())
+    sigma2_other = sum(sigma1[label] * sigma2[label] for label in OTHER_HOLE) / sigma1_other
+
+    return {
+        'sigma1_Ka1_other': sigma1_other,
+        'sigma2_Ka1_other': sigma2_other,
+        'per_subshell_sigma1': sigma1,
+        'per_subshell_sigma2': sigma2,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Top-level: 2p1/2-spectator ("Kalpha2-satellite") extension of each existing satellite channel
 # (docs/theory-and-2s-satellite-pathways.md Part II + Part III combined: each satellite channel's
 # local block gains its own 2p1/2+X_k manifold, exactly as use_L2_pathway extends the base block).

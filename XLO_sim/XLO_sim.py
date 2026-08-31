@@ -10,37 +10,6 @@ from . import Optics as XLO_optics
 import h5py
 
 
-def _add_L2_manifold(Tijs, Gij, ei_K, nlevel_local, i_lower_start):
-    """
-    Mutate Tijs/Gij in place to add a 2p1/2 manifold at local indices [i_lower_start, +1],
-    dipole-coupled to the local 1s-like manifold (the two indices where ei_K==1). Clebsch-Gordan
-    values shared by the base block and every L2-satellite channel (docs/theory-and-2s-satellite-pathways.md
-    Part III sec 18; sign per docs/2p1_2-implementation-plan.md sec 4.1). K indices sorted ascending:
-    lower index pairs with the m=-1/2 new sublevel (sigma 0), higher with m=+1/2 (sigma 1).
-
-    Returns ei_L2, the new manifold's indicator array (length nlevel_local).
-    """
-    k_indices = np.flatnonzero(ei_K)
-    if k_indices.size != 2:
-        raise ValueError('L2 manifold extension requires exactly 2 local 1s-like sublevels')
-    k_lo, k_hi = int(k_indices[0]), int(k_indices[1])
-    i_m, i_p = i_lower_start, i_lower_start + 1
-
-    Tijs[i_p, k_lo, 1] = -np.sqrt(2.0) / 3.0
-    Tijs[k_lo, i_p, 1] = -np.sqrt(2.0) / 3.0
-    Tijs[i_m, k_hi, 0] = np.sqrt(2.0) / 3.0
-    Tijs[k_hi, i_m, 0] = np.sqrt(2.0) / 3.0
-
-    Gij[i_p, k_lo] = 2.0 / 9.0
-    Gij[i_m, k_lo] = 1.0 / 9.0
-    Gij[i_m, k_hi] = 2.0 / 9.0
-    Gij[i_p, k_hi] = 1.0 / 9.0
-
-    ei_L2 = np.zeros(nlevel_local)
-    ei_L2[i_m:i_p + 1] = 1
-    return ei_L2
-
-
 class XLO_sim:
 
     def __init__(self, YAML):
@@ -62,19 +31,20 @@ class XLO_sim:
         if 'double_satellite_channels' in self.config and self.config['double_satellite_channels']:
             self.satellite_channels = list(self.satellite_channels) + list(self.config['double_satellite_channels'])
 
+        if self.nlevel != 6:
+            raise ValueError('nlevel must be 6 (the 2-level model is no longer supported)')
+
         # 2p1/2 (L2, Kalpha2) pathway: shares the base block's 1s (K) population, so it extends
-        # the base block by 2 levels (local indices nlevel_base, nlevel_base+1) rather than being
-        # a separate block (docs/theory-and-2s-satellite-pathways.md, Part III).
+        # the base 6-level block by 2 levels (local indices 6, 7) rather than being a separate
+        # block (docs/theory-and-2s-satellite-pathways.md, Part III).
         self.use_L2_pathway = self.config.get('use_L2_pathway', False)
-        nlevel_base = self.nlevel
-        self.nlevel_base = nlevel_base
         if self.use_L2_pathway:
-            self.nlevel = nlevel_base + 2
+            self.nlevel = 8
 
         # Auto-enabled 2p1/2-satellite extension: when both L2 and satellite channels are on, each
         # channel's local block also gains its own 2p1/2+X_k manifold (2 extra local levels).
         self.use_L2_satellite_pathway = self.use_L2_pathway and bool(self.satellite_channels)
-        self.satellite_nlevel = nlevel_base + (2 if self.use_L2_satellite_pathway else 0)
+        self.satellite_nlevel = 8 if self.use_L2_satellite_pathway else 6
 
         self.sigma_compound_Ka1 = sum(element['N_atoms'] * element['sigma_compound_Ka1'] for element in self.compound.values())
 
@@ -133,98 +103,81 @@ class XLO_sim:
         S_other_F = np.zeros(2)
         S_2s_F = np.zeros(2)
 
-        if nlevel_base==6:
+        Tijs[0,4,0] = 1.0 / np.sqrt(3)
+        Tijs[1,5,0] = 1.0 / 3.0
+        Tijs[2,4,1] = 1.0 / 3.0
+        Tijs[3,5,1] = 1.0 / np.sqrt(3)
+        Tijs[4,0,0] = 1.0 / np.sqrt(3)
+        Tijs[4,2,1] = 1.0 / 3.0
+        Tijs[5,1,0] = 1.0 / 3.0
+        Tijs[5,3,1] = 1.0 / np.sqrt(3)
 
-            Tijs[0,4,0] = 1.0 / np.sqrt(3)
-            Tijs[1,5,0] = 1.0 / 3.0
-            Tijs[2,4,1] = 1.0 / 3.0
-            Tijs[3,5,1] = 1.0 / np.sqrt(3)
-            Tijs[4,0,0] = 1.0 / np.sqrt(3)
-            Tijs[4,2,1] = 1.0 / 3.0
-            Tijs[5,1,0] = 1.0 / 3.0
-            Tijs[5,3,1] = 1.0 / np.sqrt(3)
-            
-            Gij[0,4] = 1.0 / 3.0
-            Gij[1,4] = 2.0 / 9.0
-            Gij[1,5] = 1.0 / 9.0
-            Gij[2,4] = 1.0 / 9.0
-            Gij[2,5] = 2.0 / 9.0
-            Gij[3,5] = 1.0 / 3.0
+        Gij[0,4] = 1.0 / 3.0
+        Gij[1,4] = 2.0 / 9.0
+        Gij[1,5] = 1.0 / 9.0
+        Gij[2,4] = 1.0 / 9.0
+        Gij[2,5] = 2.0 / 9.0
+        Gij[3,5] = 1.0 / 3.0
 
-            S_ground_Fi[0, 0] = self.sigma1_Ka1_2p3 * 0.12
-            S_ground_Fi[0, 1] = self.sigma1_Ka1_2p3 * 0.18
-            S_ground_Fi[0, 2] = self.sigma1_Ka1_2p3 * 0.28
-            S_ground_Fi[0, 3] = self.sigma1_Ka1_2p3 * 0.42
-            S_ground_Fi[0, self.nlevel] = self.sigma1_Ka1_2s
-            S_ground_Fi[0, self.nlevel + 1] = self.sigma1_Ka1_other
+        S_ground_Fi[0, 0] = self.sigma1_Ka1_2p3 * 0.12
+        S_ground_Fi[0, 1] = self.sigma1_Ka1_2p3 * 0.18
+        S_ground_Fi[0, 2] = self.sigma1_Ka1_2p3 * 0.28
+        S_ground_Fi[0, 3] = self.sigma1_Ka1_2p3 * 0.42
+        S_ground_Fi[0, self.nlevel] = self.sigma1_Ka1_2s
+        S_ground_Fi[0, self.nlevel + 1] = self.sigma1_Ka1_other
 
-            S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 * 0.42
-            S_ground_Fi[1, 1] = self.sigma1_Ka1_2p3 * 0.28
-            S_ground_Fi[1, 2] = self.sigma1_Ka1_2p3 * 0.18
-            S_ground_Fi[1, 3] = self.sigma1_Ka1_2p3 * 0.12
-            S_ground_Fi[1, self.nlevel] = self.sigma1_Ka1_2s
-            S_ground_Fi[1, self.nlevel + 1] = self.sigma1_Ka1_other
+        S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 * 0.42
+        S_ground_Fi[1, 1] = self.sigma1_Ka1_2p3 * 0.28
+        S_ground_Fi[1, 2] = self.sigma1_Ka1_2p3 * 0.18
+        S_ground_Fi[1, 3] = self.sigma1_Ka1_2p3 * 0.12
+        S_ground_Fi[1, self.nlevel] = self.sigma1_Ka1_2s
+        S_ground_Fi[1, self.nlevel + 1] = self.sigma1_Ka1_other
 
-            S_ion_Fi[0, 0] = self.sigma2_Ka1_2p3 * 0.70
-            S_ion_Fi[0, 1] = self.sigma2_Ka1_2p3 * 0.83
-            S_ion_Fi[0, 2] = self.sigma2_Ka1_2p3 * 1.06
-            S_ion_Fi[0, 3] = self.sigma2_Ka1_2p3 * 1.41
-            S_ion_Fi[0, 4] = self.sigma2_Ka1_1s * 0.75
-            S_ion_Fi[0, 5] = self.sigma2_Ka1_1s * 1.25
+        S_ion_Fi[0, 0] = self.sigma2_Ka1_2p3 * 0.70
+        S_ion_Fi[0, 1] = self.sigma2_Ka1_2p3 * 0.83
+        S_ion_Fi[0, 2] = self.sigma2_Ka1_2p3 * 1.06
+        S_ion_Fi[0, 3] = self.sigma2_Ka1_2p3 * 1.41
+        S_ion_Fi[0, 4] = self.sigma2_Ka1_1s * 0.75
+        S_ion_Fi[0, 5] = self.sigma2_Ka1_1s * 1.25
 
-            S_ion_Fi[1, 0] = self.sigma2_Ka1_2p3 * 1.41
-            S_ion_Fi[1, 1] = self.sigma2_Ka1_2p3 * 1.06
-            S_ion_Fi[1, 2] = self.sigma2_Ka1_2p3 * 0.83
-            S_ion_Fi[1, 3] = self.sigma2_Ka1_2p3 * 0.70
-            S_ion_Fi[1, 4] = self.sigma2_Ka1_1s * 1.25
-            S_ion_Fi[1, 5] = self.sigma2_Ka1_1s * 0.75
+        S_ion_Fi[1, 0] = self.sigma2_Ka1_2p3 * 1.41
+        S_ion_Fi[1, 1] = self.sigma2_Ka1_2p3 * 1.06
+        S_ion_Fi[1, 2] = self.sigma2_Ka1_2p3 * 0.83
+        S_ion_Fi[1, 3] = self.sigma2_Ka1_2p3 * 0.70
+        S_ion_Fi[1, 4] = self.sigma2_Ka1_1s * 1.25
+        S_ion_Fi[1, 5] = self.sigma2_Ka1_1s * 0.75
 
-            self.ei_L3 = np.zeros(self.nlevel); self.ei_L3[0:4] = 1
-            self.ei_K = np.zeros(self.nlevel); self.ei_K[4:6] = 1
-
-        if nlevel_base==2:
-            Tijs[0,1,0] = 1 # np.sqrt(2.0/3.0)
-            Tijs[1,0,0] = 1 # np.sqrt(2.0/3.0)
-
-            Gij[0,1] = 1 # 2.0 / 3.0
-
-            S_ground_Fi[0, 0] = self.sigma1_Ka1_2p3 
-            S_ground_Fi[0, 2] = self.sigma1_Ka1_2s
-            S_ground_Fi[0, 3] = self.sigma1_Ka1_other
-
-            S_ground_Fi[1, 0] = self.sigma1_Ka1_2p3 
-            S_ground_Fi[1, 2] = self.sigma1_Ka1_2s
-            S_ground_Fi[1, 3] = self.sigma1_Ka1_other
-
-            S_ion_Fi[0, 0] = self.sigma2_Ka1_2p3 
-            S_ion_Fi[0, 1] = self.sigma2_Ka1_1s 
-
-            S_ion_Fi[1, 0] = self.sigma2_Ka1_2p3 
-            S_ion_Fi[1, 1] = self.sigma2_Ka1_1s 
-
-            self.ei_L3 = np.asarray([1, 0])
-            self.ei_K = np.asarray([0, 1])
+        self.ei_L3 = np.zeros(self.nlevel); self.ei_L3[0:4] = 1
+        self.ei_K = np.zeros(self.nlevel); self.ei_K[4:6] = 1
 
         if self.use_L2_pathway:
-            # 2p1/2 (L2), local indices nlevel_base (m=-1/2), nlevel_base+1 (m=+1/2). Tijs/Gij from
-            # Clebsch-Gordan algebra (docs/theory-and-2s-satellite-pathways.md Part III). The j=l-1/2
-            # relative sign between the two m-branches is physical, not a convention choice -- get it
-            # wrong and a net-absorptive feature can flip to net-emissive (verified via sympy.physics.wigner).
-            i_m, i_p = nlevel_base, nlevel_base + 1
-            self.ei_L2 = _add_L2_manifold(Tijs, Gij, self.ei_K, self.nlevel, i_lower_start=nlevel_base)
+            # 2p1/2 (L2), local indices 6 (m=-1/2), 7 (m=+1/2); 1s (K) at local indices 4,5. Tijs/Gij
+            # from Clebsch-Gordan algebra (docs/theory-and-2s-satellite-pathways.md Part III). The
+            # j=l-1/2 relative sign between the two m-branches is physical, not a convention choice --
+            # get it wrong and a net-absorptive feature can flip to net-emissive (verified via
+            # sympy.physics.wigner).
+            Tijs[7, 4, 1] = -np.sqrt(2.0) / 3.0
+            Tijs[4, 7, 1] = -np.sqrt(2.0) / 3.0
+            Tijs[6, 5, 0] = np.sqrt(2.0) / 3.0
+            Tijs[5, 6, 0] = np.sqrt(2.0) / 3.0
+            Gij[7, 4] = 2.0 / 9.0
+            Gij[6, 4] = 1.0 / 9.0
+            Gij[6, 5] = 2.0 / 9.0
+            Gij[7, 5] = 1.0 / 9.0
+            self.ei_L2 = np.zeros(self.nlevel); self.ei_L2[6:8] = 1
 
             # Ground-state photoionization directly into 2p1/2. m-resolved branching isn't derived
             # (unlike Tijs/Gij) -- even 50/50 split across msublevels is a placeholder.
-            S_ground_Fi[0, i_m] = self.sigma1_Ka1_2p1 * 0.5
-            S_ground_Fi[0, i_p] = self.sigma1_Ka1_2p1 * 0.5
-            S_ground_Fi[1, i_m] = self.sigma1_Ka1_2p1 * 0.5
-            S_ground_Fi[1, i_p] = self.sigma1_Ka1_2p1 * 0.5
+            S_ground_Fi[0, 6] = self.sigma1_Ka1_2p1 * 0.5
+            S_ground_Fi[0, 7] = self.sigma1_Ka1_2p1 * 0.5
+            S_ground_Fi[1, 6] = self.sigma1_Ka1_2p1 * 0.5
+            S_ground_Fi[1, 7] = self.sigma1_Ka1_2p1 * 0.5
 
             # Further ionization of an already-2p1/2-holed ion, mirrors the base 2p3/2 S_ion_Fi rows.
-            S_ion_Fi[0, i_m] = self.sigma2_Ka1_2p1
-            S_ion_Fi[0, i_p] = self.sigma2_Ka1_2p1
-            S_ion_Fi[1, i_m] = self.sigma2_Ka1_2p1
-            S_ion_Fi[1, i_p] = self.sigma2_Ka1_2p1
+            S_ion_Fi[0, 6] = self.sigma2_Ka1_2p1
+            S_ion_Fi[0, 7] = self.sigma2_Ka1_2p1
+            S_ion_Fi[1, 6] = self.sigma2_Ka1_2p1
+            S_ion_Fi[1, 7] = self.sigma2_Ka1_2p1
         else:
             self.ei_L2 = np.zeros(self.nlevel)
 
@@ -253,30 +206,39 @@ class XLO_sim:
         self.Tijs_minus = np.einsum('ijs, ij->ijs', self.Tijs, role_mask_upper_lower.T)
         if self.use_L2_satellite_pathway:
             # Independent local template, not sliced from the base block: the base block's global
-            # nlevel_base/+1 indices hold the bare 2p1/2 hole, a different physical state from a
-            # satellite channel's own local 2p1/2+X_k manifold. Same Clebsch-Gordan values via
-            # _add_L2_manifold, placed in a fresh satellite_nlevel-sized array.
+            # indices 6,7 hold the bare 2p1/2 hole, a different physical state from a satellite
+            # channel's own local 2p1/2+X_k manifold. Same Clebsch-Gordan values, placed in a fresh
+            # satellite_nlevel-sized array.
             Tijs_sat = np.zeros((self.satellite_nlevel, self.satellite_nlevel, 2), dtype=complex)
             Gij_sat = np.zeros((self.satellite_nlevel, self.satellite_nlevel), dtype=complex)
-            Tijs_sat[:nlevel_base, :nlevel_base, :] = Tijs[:nlevel_base, :nlevel_base, :]
-            Gij_sat[:nlevel_base, :nlevel_base] = Gij[:nlevel_base, :nlevel_base]
-            ei_L3_sat = np.zeros(self.satellite_nlevel); ei_L3_sat[:nlevel_base] = self.ei_L3[:nlevel_base]
-            ei_K_sat = np.zeros(self.satellite_nlevel); ei_K_sat[:nlevel_base] = self.ei_K[:nlevel_base]
-            ei_L2_sat = _add_L2_manifold(Tijs_sat, Gij_sat, ei_K_sat, self.satellite_nlevel, i_lower_start=nlevel_base)
+            Tijs_sat[:6, :6, :] = Tijs[:6, :6, :]
+            Gij_sat[:6, :6] = Gij[:6, :6]
+            ei_L3_sat = np.zeros(self.satellite_nlevel); ei_L3_sat[:6] = self.ei_L3[:6]
+            ei_K_sat = np.zeros(self.satellite_nlevel); ei_K_sat[:6] = self.ei_K[:6]
+
+            Tijs_sat[7, 4, 1] = -np.sqrt(2.0) / 3.0
+            Tijs_sat[4, 7, 1] = -np.sqrt(2.0) / 3.0
+            Tijs_sat[6, 5, 0] = np.sqrt(2.0) / 3.0
+            Tijs_sat[5, 6, 0] = np.sqrt(2.0) / 3.0
+            Gij_sat[7, 4] = 2.0 / 9.0
+            Gij_sat[6, 4] = 1.0 / 9.0
+            Gij_sat[6, 5] = 2.0 / 9.0
+            Gij_sat[7, 5] = 1.0 / 9.0
+            ei_L2_sat = np.zeros(self.satellite_nlevel); ei_L2_sat[6:8] = 1
+
             role_mask_sat = np.outer(ei_K_sat, ei_L3_sat + ei_L2_sat)
             self.Tijs_plus_satellite = np.einsum('ijs, ij->ijs', Tijs_sat, role_mask_sat)
             self.Tijs_minus_satellite = np.einsum('ijs, ij->ijs', Tijs_sat, role_mask_sat.T)
         else:
-            # Satellite channels are always local nlevel_base (6) blocks (2p3/2<->1s only), even
-            # when use_L2_pathway extended the base block to 8 -- L2 is appended after the base 6,
-            # so the top-left nlevel_base x nlevel_base corner is unaffected and slicing recovers
-            # exactly what the satellite blocks need.
-            self.Tijs_plus_satellite = self.Tijs_plus[:nlevel_base, :nlevel_base, :]
-            self.Tijs_minus_satellite = self.Tijs_minus[:nlevel_base, :nlevel_base, :]
-            Gij_sat = Gij[:nlevel_base, :nlevel_base]
-            ei_L3_sat = self.ei_L3[:nlevel_base]
-            ei_K_sat = self.ei_K[:nlevel_base]
-            ei_L2_sat = np.zeros(nlevel_base)
+            # Satellite channels are always local 6-level blocks (2p3/2<->1s only), even when
+            # use_L2_pathway extended the base block to 8 -- L2 is appended after the base 6, so
+            # the top-left 6x6 corner is unaffected and slicing recovers exactly what's needed.
+            self.Tijs_plus_satellite = self.Tijs_plus[:6, :6, :]
+            self.Tijs_minus_satellite = self.Tijs_minus[:6, :6, :]
+            Gij_sat = Gij[:6, :6]
+            ei_L3_sat = self.ei_L3[:6]
+            ei_K_sat = self.ei_K[:6]
+            ei_L2_sat = np.zeros(6)
         self.ei_L3_satellite = ei_L3_sat
         self.ei_K_satellite = ei_K_sat
         self.ei_L2_satellite = ei_L2_sat

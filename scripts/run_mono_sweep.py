@@ -13,16 +13,19 @@ monochromator_target_energy_eV by generate_mono_sweep_configs.py rather than
 overridden at run time.
 
 Output layout: one run_at_seed_..._energy_..._reps_<start>-<end>.npz per
-array-task chunk (not per repetition -- see tools.accumulate_run_outputs),
-all in the same runs_seed_<E>_uJ__energy_<E_target>_eV/ folder regardless of
-which array task produced them. tools.data_from_folder() combines chunks'
-sum/sumsq/n_reps losslessly, so it doesn't matter how NREP was split across
-array tasks.
+invocation (not per repetition -- see tools.accumulate_run_outputs), in a
+runs_seed_<E>_uJ__energy_<E_target>_eV/ folder. tools.data_from_folder()
+combines any chunk files found there losslessly, so it doesn't matter how
+many times this was invoked for the same config.
+
+submit_mono_sweep.sh runs 8 of these concurrently per SLURM array task (one
+per config, --nproc 5 each) rather than one config using the whole node --
+NREP=5 is too few repetitions to keep a 40-core node busy on its own.
 
 Example:
     python scripts/run_mono_sweep.py \\
         --yaml config/generated/mono_transmittance_vs_intensity/Cu-seed-mono-SASE_40.00uJ_8041.91eV.yaml \\
-        --rep-start 0 --rep-end 20 --nproc 40 --data-path data/mono_sweep_2026-08-12
+        --rep-start 0 --rep-end 5 --nproc 5 --data-path data/mono_sweep_2026-08-12
 """
 
 import os  # noqa: E402  (must come before numpy loads)

@@ -758,11 +758,25 @@ def compute_run_outputs(X, tpad, ypad):
     run_duration_sweep.py and run_convergence_sweep.py, which differ only in
     how they seed/configure X before calling X.run_3D().
 
-    rho_eg_t_last is contracted directly from a single (x, y, z) point of
-    X.rho_ijtxyz rather than via the full-grid P_pstxyz = einsum(...) used
-    historically -- same result (P_pstxyz's only consumer was that one
-    point), but avoids materializing a (p, s, t, x, y, z) array per worker
-    just to throw away everything but one (s, t) slice.
+    rho_eg_l3_t_last/rho_eg_l2_t_last are contracted directly from a single
+    (x, y, z) point of X.rho_ijtxyz rather than via the full-grid
+    P_pstxyz = einsum(...) used historically -- same result (P_pstxyz's only
+    consumer was that one point), but avoids materializing a
+    (p, s, t, x, y, z) array per worker just to throw away everything but
+    one (s, t) slice.
+
+    rho_K_t_last is the 1s-hole (K) population -- the upper/excited state of
+    the Kalpha coherent block (Tijs_minus*rho*Tijs_plus restricts to the
+    K-manifold on both sides; see XLO_sim.py's Tijs_plus/Tijs_minus role-mask
+    comment and the decay-direction diagram in
+    docs/theory-and-2s-satellite-pathways.md). It has no L3/L2 split the way
+    the 2p-hole (lower/ground) side does, since the K manifold isn't
+    L3/L2-resolved. The 2p-hole population/coherence counterparts (what used
+    to be called rho_gg_t_last/rho_eg_t_last, i.e. Tijs_plus*rho*Tijs_minus
+    restricted to the L3+L2 manifold) are intentionally NOT saved here --
+    they are exactly rho_l3_t_last+rho_l2_t_last and
+    rho_eg_l3_t_last+rho_eg_l2_t_last respectively (Tijs_plus_L3+Tijs_plus_L2
+    == Tijs_plus by construction), so storing them would be pure redundancy.
     """
     womega_ar, I_int_thy_w_0, I_thy0_w_0 = SF_spectrum_w(X, 0, ypad, tpad)
     womega_ar, I_int_thy_w_last, I_thy0_w_last = SF_spectrum_w(X, -1, ypad, tpad)
@@ -775,17 +789,16 @@ def compute_run_outputs(X, tpad, ypad):
 
     I_t_0 = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, 0], X.Omega_pstxyz[1, :, :, :, :, 0])
     I_t_last = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, -1], X.Omega_pstxyz[1, :, :, :, :, -1])
-    rho_ee_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, rho_ijt_center, X.Tijs_plus, optimize=True)
-    rho_gg_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, rho_ijt_center, X.Tijs_minus, optimize=True)
-    rho_eg_t_last = np.einsum('ijs,jit->st', X.Tijs_minus, rho_ijt_center, optimize=True)[0]
+    rho_K_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, rho_ijt_center, X.Tijs_plus, optimize=True)
     rho_ground_t_last = X.rho_ground_txyz[:, cx, cy, -1]
     rho_other_t_last = X.rho_other_txyz[:, cx, cy, -1]
     rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
     t_axis = X.t
 
-    # rho_gg_t_last/rho_eg_t_last sum the L3 (Kalpha1) and L2 (Kalpha2) contributions together when
-    # use_L2_pathway is on. The keys below isolate each manifold/coherence individually instead, by
-    # masking Tijs_plus/Tijs_minus with ei_L3/ei_L2 (zero, hence harmless, when L2 is off).
+    # 2p-hole population/coherence, split by manifold (L3=Kalpha1, L2=Kalpha2) via masking
+    # Tijs_plus/Tijs_minus with ei_L3/ei_L2 (ei_L2 is zero, hence harmless, when L2 is off). Their sum
+    # would reproduce the combined 2p-hole quantity (formerly saved as rho_gg_t_last/rho_eg_t_last)
+    # exactly, since Tijs_plus_L3+Tijs_plus_L2 == Tijs_plus by construction -- not stored separately.
     Tijs_plus_L3 = X.Tijs_plus * X.ei_L3[None, :, None]
     Tijs_minus_L3 = X.Tijs_minus * X.ei_L3[:, None, None]
     Tijs_plus_L2 = X.Tijs_plus * X.ei_L2[None, :, None]
@@ -800,9 +813,7 @@ def compute_run_outputs(X, tpad, ypad):
     # satellite_channel_names carries the per-row labels as a run-level (non-accumulated) axis.
     n_sat = len(X.satellite_channel_params)
     satellite_channel_names = tuple(chan.name for chan in X.satellite_channel_params)
-    rho_ee_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
-    rho_gg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
-    rho_eg_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_K_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
 
     # Per-channel L3-only/L2-only counterparts of rho_l3_t_last/rho_l2_t_last above, built once
     # since every channel shares the same local template.
@@ -817,12 +828,8 @@ def compute_run_outputs(X, tpad, ypad):
 
     for k, rho_sat_ijtxyz in enumerate(X.rho_sat_ijtxyz):
         rho_sat_ijt_center = rho_sat_ijtxyz[:, :, :, cx, cy, -1]
-        rho_ee_t_last_sat[k] = np.einsum(
+        rho_K_t_last_sat[k] = np.einsum(
             'ijs, jkt, kis-> t', X.Tijs_minus_satellite, rho_sat_ijt_center, X.Tijs_plus_satellite, optimize=True)
-        rho_gg_t_last_sat[k] = np.einsum(
-            'ijs, jkt, kis-> t', X.Tijs_plus_satellite, rho_sat_ijt_center, X.Tijs_minus_satellite, optimize=True)
-        rho_eg_t_last_sat[k] = np.einsum(
-            'ijs,jit->st', X.Tijs_minus_satellite, rho_sat_ijt_center, optimize=True)[0]
         rho_l3_t_last_sat[k] = np.einsum(
             'ijs, jkt, kis-> t', Tijs_plus_L3_sat, rho_sat_ijt_center, Tijs_minus_L3_sat, optimize=True)
         rho_l2_t_last_sat[k] = np.einsum(
@@ -840,9 +847,7 @@ def compute_run_outputs(X, tpad, ypad):
         "I_thy0_w_last": I_thy0_w_last,
         "I_t_0": I_t_0,
         "I_t_last": I_t_last,
-        "rho_ee_t_last": rho_ee_t_last,
-        "rho_gg_t_last": rho_gg_t_last,
-        "rho_eg_t_last": rho_eg_t_last,
+        "rho_K_t_last": rho_K_t_last,
         "rho_l3_t_last": rho_l3_t_last,
         "rho_l2_t_last": rho_l2_t_last,
         "rho_eg_l3_t_last": rho_eg_l3_t_last,
@@ -850,9 +855,7 @@ def compute_run_outputs(X, tpad, ypad):
         "rho_ground_t_last": rho_ground_t_last,
         "rho_other_t_last": rho_other_t_last,
         "rho_2s_t_last": rho_2s_t_last,
-        "rho_ee_t_last_sat": rho_ee_t_last_sat,
-        "rho_gg_t_last_sat": rho_gg_t_last_sat,
-        "rho_eg_t_last_sat": rho_eg_t_last_sat,
+        "rho_K_t_last_sat": rho_K_t_last_sat,
         "rho_l3_t_last_sat": rho_l3_t_last_sat,
         "rho_l2_t_last_sat": rho_l2_t_last_sat,
         "rho_eg_l3_t_last_sat": rho_eg_l3_t_last_sat,
@@ -886,11 +889,21 @@ def accumulate_run_outputs(results):
     chunks' saved accumulators (e.g. from different array tasks writing
     into the same runs_.../ folder) can be combined losslessly later by
     summing again and dividing sum by count -- see data_from_folder().
+
+    Every saved array is downcast to single precision here (complex64/
+    float32, count to int32) -- these are statistical outputs averaged over
+    a handful to a few dozen stochastic SASE repetitions, so float32's ~7
+    significant digits is far below that averaging's own ~1/sqrt(n_reps)
+    noise floor. Roughly halves on-disk size for every run_*_sweep.py
+    script with no meaningful precision loss.
     """
     acc = {"n_reps": len(results)}
     for key in results[0]:
         if key in RUN_OUTPUT_AXIS_KEYS:
-            acc[key] = results[0][key]
+            value = results[0][key]
+            if isinstance(value, np.ndarray) and np.issubdtype(value.dtype, np.floating):
+                value = value.astype(np.float32)
+            acc[key] = value
             continue
         stacked = np.stack([r[key] for r in results])
         valid = ~np.isnan(stacked)
@@ -899,9 +912,10 @@ def accumulate_run_outputs(results):
             print(f"Warning: {key} has {n_bad} NaN value(s) across {len(results)} repetitions "
                   f"-- excluded from the accumulated sum", flush=True)
         finite = np.where(valid, stacked, 0)
-        acc[f"{key}_sum"] = finite.sum(axis=0)
-        acc[f"{key}_sumsq"] = (np.abs(finite) ** 2).sum(axis=0)
-        acc[f"{key}_count"] = valid.sum(axis=0)
+        key_sum = finite.sum(axis=0)
+        acc[f"{key}_sum"] = key_sum.astype(np.complex64 if np.iscomplexobj(key_sum) else np.float32)
+        acc[f"{key}_sumsq"] = (np.abs(finite) ** 2).sum(axis=0).astype(np.float32)
+        acc[f"{key}_count"] = valid.sum(axis=0).astype(np.int32)
     return acc
 
 

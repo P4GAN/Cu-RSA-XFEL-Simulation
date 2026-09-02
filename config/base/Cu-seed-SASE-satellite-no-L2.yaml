@@ -1,0 +1,148 @@
+#units: nm, fs
+
+#photoionization crosssections of Cu
+
+#Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
+#Recomputed via XATOM 2026-09-03 (xatom/recompute_all_parameters.py, Ka1_energy_eV=8047.91);
+#sigma1_Ka1_other = "other" 6-subshell sum (xatom_tools.other_state_parameters) + 2p_1/2 share
+#(not separately tracked here, use_L2_pathway is off).
+sigma1_Ka1_2s: 2.45189e-7
+sigma1_Ka1_2p3: 1.36345e-7
+sigma1_Ka1_other: 1.33372e-7
+
+#Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
+#sigma2_Ka1_1s/2p3 carved out for the satellite_channels below (theory doc §12.7): the S3/S4
+#spectator-photoionization transfer (sigma_Ka1_from_2p/1s per channel) is a *transfer* out of the
+#base 2p-hole/1s-hole population into the explicit satellite states, not an additional process on
+#top of the total further-ionization rate -- so it must be subtracted here.
+sigma2_Ka1_1s: 5.37287e-7 # 5.69102e-7 - 3.18153e-8 (sum of satellite_channels' sigma_Ka1_from_1s)
+sigma2_Ka1_2s: 4.05292e-7
+sigma2_Ka1_2p3: 4.69440e-7 # 4.99019e-7 - 2.95786e-8 (sum of satellite_channels' sigma_Ka1_from_2p)
+sigma2_Ka1_other: 5.02242e-7
+
+
+#Chemical composition of the sample
+#Cu
+compound:
+  O:
+    N_atoms: 0
+    sigma_compound_Ka1: 0
+
+
+#sample concentration in atoms per cubic nm
+#solid copper:  84, nitrate 4M solution: 2.509
+n: 82.509
+
+#number of atomic levels in the calculation
+nlevel: 6
+
+#radiative rates
+GammaKeVN: 1.49
+GammaL1eVN: 8.13
+GammaL2eVN: 1.04
+GammaL3eVN: 0.61
+GammarKalpha1eVN: 0.39375
+GammarKalpha2eVN: 0.202668
+#Fully carved out (theory doc §12.7): the 4 satellite_channels below (3d+/3d-/3p+/3p-) now
+#explicitly track the entire 2s-hole Auger -> 2p_3/2+spectator (M45+M23) branching via their own
+#Gamma_A_2s_eV, replacing rather than adding to this generic feed.
+GammaA_L1_to_L3M45eVN: 0.0
+
+additional_dephasing: 0
+
+#K alpha atomic transitions photon energy
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+
+#simulation domain and padding parameters
+tgrid: 2400
+zgrid: 15
+xgrid: 15
+ygrid: 15
+
+tmax: 25.0
+
+zmax: 20.0e+3
+xmax: 250.0
+ymax: 250.0
+
+xpad: 60
+ypad: 60
+tpad: 0
+
+auto_grid: False
+
+#seed parameters
+seed_pulse_format: 'Ocelot_SASE_seed_pstxy'
+E_seed_uJ: 40
+seed_duration_FWHM_t: 6.0
+t_peak: 10
+seed_width_FWHM_x: 180
+seed_width_FWHM_y: 220
+seed_FEL_bandwidth: 1.5e-3
+seed_center_E: 8045
+
+#calculation regime
+is_spontaneous_only: False
+is_use_stochastic: False
+random_seed: -1
+enable_noise_mask: True
+Esxy_noise_cutoff: 2.0e-3
+# run_mode: 'simultaneous', 'consecutive'
+run_mode: 'simultaneous'
+enable_self_diffraction: True
+enable_self_absorption: True
+turn_off_coherences: False
+enable_kfilter: False
+is_Cartesian_pol: True
+use_2s_pathway: True
+
+#2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): each entry is its
+#own detuned, sublevel-resolved 6-level block (2p+X <-> 1sX), fed by 2s-hole Auger decay and by
+#spectator-shell photoionization of the base 1s-hole/2p-hole populations. Requires nlevel: 6.
+#No use_L2_pathway here -- the 2p_1/2 (L2, Kalpha2-satellite) extension is deliberately left off
+#for this run (see Cu-seed-SASE-satellite.yaml for the same channels with L2 added).
+#Recomputed via XATOM 2026-09-03 (xatom/recompute_all_parameters.py ->
+#xatom_tools.satellite_channel_parameters + the Gamma_A_K_eV KLM-feed addition).
+satellite_channels:
+- name: 3d+
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.5733
+  Gamma_A_K_eV: 0.002590
+  Gamma_L_eV: 0.6070
+  Gamma_K_eV: 1.5447
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+- name: 3d-
+  detuning_eV: -0.8000
+  Gamma_A_2s_eV: 1.3121
+  Gamma_A_K_eV: 0.003083
+  Gamma_L_eV: 0.6348
+  Gamma_K_eV: 1.5447
+  sigma_Ka1_from_2p: 5.93000e-10
+  sigma_Ka1_from_1s: 6.4346e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+- name: 3p+
+  detuning_eV: 2.7600
+  Gamma_A_2s_eV: 1.4535
+  Gamma_A_K_eV: 0.034001
+  Gamma_L_eV: 2.6325
+  Gamma_K_eV: 3.8524
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 4.97595e-07
+  sigma_ion_from_1s: 5.67499e-07
+- name: 3p-
+  detuning_eV: 2.9300
+  Gamma_A_2s_eV: 0.6458
+  Gamma_A_K_eV: 0.028913
+  Gamma_L_eV: 3.1793
+  Gamma_K_eV: 4.3649
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 4.97588e-07
+  sigma_ion_from_1s: 5.67491e-07

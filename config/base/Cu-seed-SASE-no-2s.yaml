@@ -16,7 +16,6 @@ sigma2_Ka1_2s: 4.05292e-7
 sigma2_Ka1_2p3: 4.99019e-7
 sigma2_Ka1_other: 5.02242e-7
 
-
 #Chemical composition of the sample
 #Cu
 compound:
@@ -39,10 +38,7 @@ GammaL2eVN: 1.04
 GammaL3eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
-#Recomputed as sum of the 4 satellite_channels' Gamma_A_2s_eV (xatom/recompute_all_parameters.py),
-#superseding the old M45-only hand estimate -- this run lumps all 4 channels into the base L3
-#population rather than resolving them explicitly (satellite_channels absent below).
-GammaA_L1_to_L3M45eVN: 4.98469
+GammaA_L1_to_L3M45eVN: 0
 
 additional_dephasing: 0
 
@@ -92,4 +88,4 @@ enable_self_absorption: True
 turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
-use_2s_pathway: True
+use_2s_pathway: False

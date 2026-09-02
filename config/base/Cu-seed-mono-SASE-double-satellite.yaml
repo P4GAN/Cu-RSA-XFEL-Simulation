@@ -3,25 +3,29 @@
 #photoionization crosssections of Cu
 
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
-sigma1_Ka1_2s: 2.45e-7
-sigma1_Ka1_2p3: 1.52e-7
-sigma1_Ka1_other: 1.2006e-7 # 4.34e-7 - 2.45e-7 - 6.89383e-8
+#Recomputed via XATOM 2026-09-03 (xatom/recompute_all_parameters.py, Ka1_energy_eV=8047.91).
+sigma1_Ka1_2s: 2.45189e-7
+sigma1_Ka1_2p3: 1.36345e-7
+sigma1_Ka1_other: 6.44339e-8 # other_state_parameters() 6-subshell sum (2p_1/2 tracked separately below)
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
-# sigma2_Ka1_1s/2p3 carved out for the satellite_channels below (theory doc §12.7): the S3/S4
-# spectator-photoionization transfer (sigma_Ka1_from_2p/1s per channel) is a *transfer* out of the
-# base 2p-hole/1s-hole population into the explicit satellite states, not an additional process on
-# top of the total further-ionization rate -- so it must be subtracted here, or that fraction of
-# further-ionization gets credited to both the base loss/opacity term and the satellite population.
-sigma2_Ka1_1s: 6.2118e-7 # 6.53e-7 - 3.1815e-8 (sum of satellite_channels' sigma_Ka1_from_1s)
-sigma2_Ka1_2s: 4.05e-7
-sigma2_Ka1_2p3: 3.8542e-7 # 4.15e-7 - 2.9579e-8 (sum of satellite_channels' sigma_Ka1_from_2p)
-sigma2_Ka1_other: 5.0613e-7 # sigma1-weighted avg of remaining "other" subshells' sigma2 (xatom_tools.other_state_parameters)
+# sigma2_Ka1_1s/2p3/2p1 carved out for the satellite_channels below (theory doc §12.7): the S3/S4
+# spectator-photoionization transfer (sigma_Ka1_from_2p/1s/2p1 per channel) is a *transfer* out of the
+# base 2p-hole/1s-hole/2p1-hole population into the explicit satellite states, not an additional
+# process on top of the total further-ionization rate -- so it must be subtracted here, or that
+# fraction of further-ionization gets credited to both the base loss/opacity term and the satellite
+# population.
+sigma2_Ka1_1s: 5.37287e-7 # 5.69102e-7 - 3.18153e-8 (sum of satellite_channels' sigma_Ka1_from_1s)
+sigma2_Ka1_2s: 4.05292e-7
+sigma2_Ka1_2p3: 4.69440e-7 # 4.99019e-7 - 2.95786e-8 (sum of satellite_channels' sigma_Ka1_from_2p)
+sigma2_Ka1_other: 5.06130e-7 # sigma1-weighted avg of remaining "other" subshells' sigma2 (xatom_tools.other_state_parameters)
 
 #2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III, section 20),
-#computed via xatom/print_satellite_parameters.py -> xatom_tools.l2_pathway_parameters()
+#computed via xatom/recompute_all_parameters.py -> xatom_tools.l2_pathway_parameters()
 sigma1_Ka1_2p1: 6.89383e-8
-sigma2_Ka1_2p1: 4.98609e-7
+#Carved by sum of satellite_channels' sigma_Ka1_from_2p1 (same transfer logic as sigma2_Ka1_1s/2p3
+#above, applied consistently to the 2p_1/2 manifold -- not carved in earlier revisions of this file).
+sigma2_Ka1_2p1: 4.69030e-7 # 4.98609e-7 - 2.95786e-8
 
 
 #Chemical composition of the sample

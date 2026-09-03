@@ -112,78 +112,64 @@ is_Cartesian_pol: True
 use_2s_pathway: True
 use_L2_pathway: True
 
-#2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part II): each entry is its
-#own detuned, sublevel-resolved 6-level block (2p+X <-> 1sX), fed by 2s-hole Auger decay and by
-#spectator-shell photoionization of the base 1s-hole/2p-hole populations. Requires nlevel: 6.
-#Leave empty/absent to reproduce the existing (undetuned, lumped-into-2p-hole) behaviour exactly.
-#Gamma_A_2s_eV/sigma_*_from_2p/sigma_*_from_1s values below are per-channel and are carved out of
-#GammaA_L1_to_L3M45eVN/sigma2_*_2p3/sigma2_*_1s respectively (theory doc §12.7, done above).
 satellite_channels:
 - name: 3d+
-  detuning_eV: -0.8000
+  detuning_eV: -0.8
   Gamma_A_2s_eV: 1.5733
-  Gamma_A_K_eV: 0.002590  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d+' row (xatom_tools.auger_partial_rate_eV('3d+', parent_hole_config='1s1', initial_label='1s0'))
-  Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
-  Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
+  Gamma_A_K_eV: 0.00259
+  Gamma_L_eV: 0.60698
+  Gamma_K_eV: 1.54468
   sigma_Ka1_from_2p: 7.41039e-10
   sigma_Ka1_from_1s: 8.0409e-10
   sigma_ion_from_2p: 5.01453e-07
-  sigma_ion_from_1s: 5.71517e-07
-  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
-  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
-  detuning_eV_L2_split: 21.2700000000
-  Gamma_A_2s_to_L2_eV: 0.7136594214
-  Gamma_A_K_to_L2_eV: 0.002064  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3d+' row (same call with final1_label='2p-')
-  Gamma_L2_eV: 0.655904
+  sigma_ion_from_1s: 5.715170000000001e-07
+  detuning_eV_L2_split: 21.27
+  Gamma_A_2s_to_L2_eV: 0.7137
+  Gamma_A_K_to_L2_eV: 0.002064
+  Gamma_L2_eV: 0.6559
   sigma_Ka1_from_2p1: 7.41039e-10
 - name: 3d-
-  detuning_eV: -0.8000
+  detuning_eV: -0.8
   Gamma_A_2s_eV: 1.3121
-  Gamma_A_K_eV: 0.003083  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d-' row (xatom_tools.auger_partial_rate_eV('3d-', parent_hole_config='1s1', initial_label='1s0'))
-  Gamma_L_eV: 0.6348
-  Gamma_K_eV: 1.5447
-  sigma_Ka1_from_2p: 5.93000e-10
-  sigma_Ka1_from_1s: 6.4346e-10
+  Gamma_A_K_eV: 0.003083
+  Gamma_L_eV: 0.63478
+  Gamma_K_eV: 1.54468
+  sigma_Ka1_from_2p: 5.93e-10
+  sigma_Ka1_from_1s: 6.434600000000001e-10
   sigma_ion_from_2p: 5.01453e-07
-  sigma_ion_from_1s: 5.71517e-07
-  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
-  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
-  detuning_eV_L2_split: 21.2600000000
-  Gamma_A_2s_to_L2_eV: 0.5308669343
-  Gamma_A_K_to_L2_eV: 0.000637  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3d-' row (same call with final1_label='2p-')
+  sigma_ion_from_1s: 5.715170000000001e-07
+  detuning_eV_L2_split: 21.26
+  Gamma_A_2s_to_L2_eV: 0.5309
+  Gamma_A_K_to_L2_eV: 0.000637
   Gamma_L2_eV: 0.60921
   sigma_Ka1_from_2p1: 5.93e-10
 - name: 3p+
-  detuning_eV: 2.7600
+  detuning_eV: 2.76
   Gamma_A_2s_eV: 1.4535
-  Gamma_A_K_eV: 0.034001  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p+' row (xatom_tools.auger_partial_rate_eV('3p+', parent_hole_config='1s1', initial_label='1s0'))
-  Gamma_L_eV: 2.6325      # >> base 0.61 eV
-  Gamma_K_eV: 3.8524      # >> base 1.49 eV
+  Gamma_A_K_eV: 0.034001
+  Gamma_L_eV: 2.63249
+  Gamma_K_eV: 3.85244
   sigma_Ka1_from_2p: 1.88202e-08
   sigma_Ka1_from_1s: 2.02344e-08
   sigma_ion_from_2p: 4.97595e-07
   sigma_ion_from_1s: 5.67499e-07
-  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
-  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
-  detuning_eV_L2_split: 21.3100000000
-  Gamma_A_2s_to_L2_eV: 0.7901723972
-  Gamma_A_K_to_L2_eV: 0.028999  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3p+' row (same call with final1_label='2p-')
+  detuning_eV_L2_split: 21.31
+  Gamma_A_2s_to_L2_eV: 0.7902
+  Gamma_A_K_to_L2_eV: 0.028999
   Gamma_L2_eV: 2.72362
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
-  detuning_eV: 2.9300
+  detuning_eV: 2.93
   Gamma_A_2s_eV: 0.6458
-  Gamma_A_K_eV: 0.028913  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p-' row (xatom_tools.auger_partial_rate_eV('3p-', parent_hole_config='1s1', initial_label='1s0'))
-  Gamma_L_eV: 3.1793      # >> base 0.61 eV
-  Gamma_K_eV: 4.3649      # >> base 1.49 eV
+  Gamma_A_K_eV: 0.028913
+  Gamma_L_eV: 3.1793
+  Gamma_K_eV: 4.36494
   sigma_Ka1_from_2p: 9.4244e-09
   sigma_Ka1_from_1s: 1.01334e-08
   sigma_ion_from_2p: 4.97588e-07
   sigma_ion_from_1s: 5.67491e-07
-  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
-  # l2_satellite_channel_parameters); requires use_L2_pathway: True.
-  detuning_eV_L2_split: 21.3100000000
-  Gamma_A_2s_to_L2_eV: 0.5062406297
-  Gamma_A_K_to_L2_eV: 0.002563  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3p-' row (same call with final1_label='2p-')
+  detuning_eV_L2_split: 21.31
+  Gamma_A_2s_to_L2_eV: 0.5062
+  Gamma_A_K_to_L2_eV: 0.002563
   Gamma_L2_eV: 3.05808
   sigma_Ka1_from_2p1: 9.4244e-09

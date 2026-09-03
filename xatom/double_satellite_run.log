@@ -1,7 +1,0 @@
-[01:14:31] Stage 1/5: base cross sections already cached, skipping.
-[01:14:31] Stage 2/5: satellite_channels already cached, skipping.
-[01:14:31] Stage 3/5: KLM feed already cached, skipping.
-[01:14:31] Stage 4/5: L2 satellite extension already cached, skipping.
-[01:14:31] Stage 5/5: double_satellite_channels (lower/upper/L2 manifolds) -- SLOW, be patient ...
-[01:15:27] Stage 5/5 done.
-[01:15:27] All done. Results in /Users/parkinpham/Programming/Physics/DESY_Internship/Cu-RSA-XFEL-Simulation/xatom/recomputed_parameters.json

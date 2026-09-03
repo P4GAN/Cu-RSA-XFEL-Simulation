@@ -1,11 +1,9 @@
 double_satellite_channels:
 - name: 3d+3d+
-  detuning_eV: -1.6999999999970896
+  detuning_eV: -1.7
   Gamma_L_eV: 0.572227
   Gamma_K_eV: 1.55265
-  sigma_ion_from_2p: 5.042530000000001e-07
-  sigma_ion_from_1s: 5.74315e-07
-  detuning_eV_L2_split: 21.260000000002037
+  detuning_eV_L2_split: 21.26
   Gamma_L2_eV: 0.651793
   feed_from:
   - channel: 3p+
@@ -24,13 +22,13 @@ double_satellite_channels:
   - channel: 3p-
     Gamma_feed_eV: 0.04626534312315371
     manifold: L2
-- name: 3d-3d+
-  detuning_eV: -1.6899999999950523
-  Gamma_L_eV: 0.602927
-  Gamma_K_eV: 1.55265
   sigma_ion_from_2p: 5.042530000000001e-07
   sigma_ion_from_1s: 5.74315e-07
-  detuning_eV_L2_split: 21.260000000002037
+- name: 3d-3d+
+  detuning_eV: -1.69
+  Gamma_L_eV: 0.602927
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
   Gamma_L2_eV: 0.609449
   feed_from:
   - channel: 3p+
@@ -49,13 +47,13 @@ double_satellite_channels:
   - channel: 3p-
     Gamma_feed_eV: 1.6840555508530808
     manifold: L2
-- name: 3d-3d-
-  detuning_eV: -1.680000000000291
-  Gamma_L_eV: 0.627541
-  Gamma_K_eV: 1.55265
   sigma_ion_from_2p: 5.042530000000001e-07
   sigma_ion_from_1s: 5.74315e-07
-  detuning_eV_L2_split: 21.260000000002037
+- name: 3d-3d-
+  detuning_eV: -1.68
+  Gamma_L_eV: 0.627541
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
   Gamma_L2_eV: 0.555031
   feed_from:
   - channel: 3p+
@@ -74,3 +72,5 @@ double_satellite_channels:
   - channel: 3p-
     Gamma_feed_eV: 0.45942343968413835
     manifold: L2
+  sigma_ion_from_2p: 5.042530000000001e-07
+  sigma_ion_from_1s: 5.74315e-07

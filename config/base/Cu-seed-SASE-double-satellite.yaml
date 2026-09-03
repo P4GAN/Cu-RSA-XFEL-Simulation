@@ -114,118 +114,71 @@ use_L2_pathway: True
 
 satellite_channels:
 - name: 3d+
-  detuning_eV: -0.8000
+  detuning_eV: -0.8
   Gamma_A_2s_eV: 1.5733
-  Gamma_A_K_eV: 0.002590  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d+' row (xatom_tools.auger_partial_rate_eV('3d+', parent_hole_config='1s1', initial_label='1s0'))
-  Gamma_L_eV: 0.6070      # base GammaL3eVN default was 0.61 — close
-  Gamma_K_eV: 1.5447      # base GammaKeVN default was 1.49 — close
+  Gamma_A_K_eV: 0.00259
+  Gamma_L_eV: 0.60698
+  Gamma_K_eV: 1.54468
   sigma_Ka1_from_2p: 7.41039e-10
   sigma_Ka1_from_1s: 8.0409e-10
   sigma_ion_from_2p: 5.01453e-07
-  sigma_ion_from_1s: 5.71517e-07
-  # 2p1/2-satellite (Kalpha2-satellite) extension of this channel (xatom_tools.py's
-  # l2_satellite_channel_parameters); requires use_L2_pathway: True. 3d+/3d- don't feed any
-  # double_satellite_channels entry (bare 3d holes are Auger-stable, see implementation plan doc
-  # section 1), so unlike 3p+/3p- below, nothing here is carved out.
-  detuning_eV_L2_split: 21.2700000000
-  Gamma_A_2s_to_L2_eV: 0.7136594214
-  Gamma_A_K_to_L2_eV: 0.002064  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3d+' row (same call with final1_label='2p-')
-  Gamma_L2_eV: 0.655904
+  sigma_ion_from_1s: 5.715170000000001e-07
+  detuning_eV_L2_split: 21.27
+  Gamma_A_2s_to_L2_eV: 0.7137
+  Gamma_A_K_to_L2_eV: 0.002064
+  Gamma_L2_eV: 0.6559
   sigma_Ka1_from_2p1: 7.41039e-10
 - name: 3d-
-  detuning_eV: -0.8000
+  detuning_eV: -0.8
   Gamma_A_2s_eV: 1.3121
-  Gamma_A_K_eV: 0.003083  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3d-' row (xatom_tools.auger_partial_rate_eV('3d-', parent_hole_config='1s1', initial_label='1s0'))
-  Gamma_L_eV: 0.6348
-  Gamma_K_eV: 1.5447
-  sigma_Ka1_from_2p: 5.93000e-10
-  sigma_Ka1_from_1s: 6.4346e-10
+  Gamma_A_K_eV: 0.003083
+  Gamma_L_eV: 0.63478
+  Gamma_K_eV: 1.54468
+  sigma_Ka1_from_2p: 5.93e-10
+  sigma_Ka1_from_1s: 6.434600000000001e-10
   sigma_ion_from_2p: 5.01453e-07
-  sigma_ion_from_1s: 5.71517e-07
-  detuning_eV_L2_split: 21.2600000000
-  Gamma_A_2s_to_L2_eV: 0.5308669343
-  Gamma_A_K_to_L2_eV: 0.000637  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3d-' row (same call with final1_label='2p-')
+  sigma_ion_from_1s: 5.715170000000001e-07
+  detuning_eV_L2_split: 21.26
+  Gamma_A_2s_to_L2_eV: 0.5309
+  Gamma_A_K_to_L2_eV: 0.000637
   Gamma_L2_eV: 0.60921
   sigma_Ka1_from_2p1: 5.93e-10
 - name: 3p+
-  detuning_eV: 2.7600
+  detuning_eV: 2.76
   Gamma_A_2s_eV: 1.4535
-  Gamma_A_K_eV: 0.034001  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p+' row (xatom_tools.auger_partial_rate_eV('3p+', parent_hole_config='1s1', initial_label='1s0'))
-  # WAS 2.6325 eV (bare/uncarved total decay width of the 2p+3p+ configuration, L_k). Carved out
-  # here: 1.7398 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries in
-  # double_satellite_channels below (0.6350 -> 3d+3d+, 1.0241 -> 3d-3d+, 0.0806 -> 3d-3d-).
-  # Budget check: 0.8927 + 1.7398 = 2.6325 (exact, modulo rounding).
-  Gamma_L_eV: 0.8927
-  # WAS 3.8524 eV (bare/uncarved total decay width of the 1s3p+ configuration, U_k). Carved out
-  # here: 2.0390 eV = sum of this channel's manifold: upper Gamma_feed_eV entries below (0.7303 ->
-  # 3d+3d+, 1.2235 -> 3d-3d+, 0.0852 -> 3d-3d-). Budget check: 1.8134 + 2.0390 = 3.8524 (exact,
-  # modulo rounding).
-  Gamma_K_eV: 1.8134
+  Gamma_A_K_eV: 0.034001
+  Gamma_L_eV: 0.89272
+  Gamma_K_eV: 1.81341
   sigma_Ka1_from_2p: 1.88202e-08
   sigma_Ka1_from_1s: 2.02344e-08
   sigma_ion_from_2p: 4.97595e-07
   sigma_ion_from_1s: 5.67499e-07
-  # 2p1/2-satellite (Kalpha2-satellite) extension of THIS channel (its own L2k = 2p1/2+3p+, total
-  # decay width 2.72362 eV) -- distinct from double_satellite_channels' own L2k extensions below.
-  detuning_eV_L2_split: 21.3100000000
-  Gamma_A_2s_to_L2_eV: 0.7901723972
-  Gamma_A_K_to_L2_eV: 0.028999  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3p+' row (same call with final1_label='2p-')
-  # WAS 2.72362 eV (bare/uncarved total decay width of the 2p1/2+3p+ configuration, this channel's
-  # own L2k). Carved out here: 1.7397 eV = sum of this channel's manifold: L2 Gamma_feed_eV
-  # entries below (0.6350 -> 3d+3d+, 1.0241 -> 3d-3d+, 0.0806 -> 3d-3d-) -- confirmed via direct
-  # XATOM -decay on 2p1,0_3p0,1: numerically identical to this channel's own lower-manifold
-  # (2p0,1_3p0,1) branching to 4 decimal places, i.e. the 3p spectator's self-Auger branching
-  # genuinely doesn't resolve which j the *other* core hole has (spectator approximation holding
-  # essentially exactly, not just approximately, here). Budget check: 0.98392 + 1.7397 = 2.72362
-  # (exact, modulo rounding).
-  Gamma_L2_eV: 0.98392
+  detuning_eV_L2_split: 21.31
+  Gamma_A_2s_to_L2_eV: 0.7902
+  Gamma_A_K_to_L2_eV: 0.028999
+  Gamma_L2_eV: 0.98385
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
-  detuning_eV: 2.9300
+  detuning_eV: 2.93
   Gamma_A_2s_eV: 0.6458
-  Gamma_A_K_eV: 0.028913  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p+ 3p-' row (xatom_tools.auger_partial_rate_eV('3p-', parent_hole_config='1s1', initial_label='1s0'))
-  # WAS 3.1793 eV (bare/uncarved total decay width of the 2p+3p- configuration). Carved out here:
-  # 2.1897 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries below
-  # (0.0463 -> 3d+3d+, 1.6841 -> 3d-3d+, 0.4594 -> 3d-3d-). Budget check: 0.9896 + 2.1897 = 3.1793
-  # (exact, modulo rounding).
-  Gamma_L_eV: 0.9896
-  # WAS 4.3649 eV (bare/uncarved total decay width of the 1s3p- configuration, U_k). Carved out
-  # here: 2.5302 eV = sum of this channel's manifold: upper Gamma_feed_eV entries below (0.0499
-  # -> 3d+3d+, 1.9699 -> 3d-3d+, 0.5104 -> 3d-3d-). Budget check: 1.8347 + 2.5302 = 4.3649 (exact,
-  # modulo rounding).
-  Gamma_K_eV: 1.8347
+  Gamma_A_K_eV: 0.028913
+  Gamma_L_eV: 0.98956
+  Gamma_K_eV: 1.83468
   sigma_Ka1_from_2p: 9.4244e-09
   sigma_Ka1_from_1s: 1.01334e-08
   sigma_ion_from_2p: 4.97588e-07
   sigma_ion_from_1s: 5.67491e-07
-  detuning_eV_L2_split: 21.3100000000
-  Gamma_A_2s_to_L2_eV: 0.5062406297
-  Gamma_A_K_to_L2_eV: 0.002563  # +KLM_FEED: XATOM 1s1-decay, '1s0 - 2p- 3p-' row (same call with final1_label='2p-')
-  # WAS 3.05808 eV (bare/uncarved total decay width of the 2p1/2+3p- configuration, this channel's
-  # own L2k). Carved out here: 2.1898 eV = sum of this channel's manifold: L2 Gamma_feed_eV
-  # entries below (0.0463 -> 3d+3d+, 1.6841 -> 3d-3d+, 0.4594 -> 3d-3d-) -- again numerically
-  # identical to the lower-manifold branching, see 3p+'s comment above. Budget check: 0.86828 +
-  # 2.1898 = 3.05808 (exact, modulo rounding).
-  Gamma_L2_eV: 0.86828
+  detuning_eV_L2_split: 21.31
+  Gamma_A_2s_to_L2_eV: 0.5062
+  Gamma_A_K_to_L2_eV: 0.002563
+  Gamma_L2_eV: 0.86834
   sigma_Ka1_from_2p1: 9.4244e-09
 
-# Double-M-shell-spectator channels (docs/double-spectator-satellite-implementation-plan.md).
-# Fed exclusively via feed_from -- no Gamma_A_2s_eV/sigma_Ka1_from_2p/1s keys, unlike the four
-# channels above. Values from xatom_tools.build_double_satellite_channels(manifolds=('lower',
-# 'upper','L2')). Each feed_from entry without an explicit `manifold` key feeds the lower (2p+XX)
-# manifold from the parent's own L_k (2p+X) population; `manifold: upper` feeds the upper (1sXX)
-# manifold from the parent's own U_k (1sX) population; `manifold: L2` feeds this channel's own
-# L2k (2p1/2+XX) manifold from the parent's own L2k (2p1/2+X) population (see the Gamma_L2_eV
-# carve-out comments on 3p+/3p- above) -- requires use_L2_pathway: True, which every parent
-# channel above now carries.
 double_satellite_channels:
 - name: 3d+3d+
-  detuning_eV: -1.70
+  detuning_eV: -1.7
   Gamma_L_eV: 0.572227
   Gamma_K_eV: 1.55265
-  # This channel's own 2p1/2-satellite extension (docs/double-spectator-satellite-implementation-
-  # plan.md section 9): 2p1/2+3d+3d+ vs 2p3/2+3d+3d+ splitting and this configuration's own total
-  # decay width, both from direct XATOM calls on 2p1,0_3d0,2.
   detuning_eV_L2_split: 21.26
   Gamma_L2_eV: 0.651793
   feed_from:

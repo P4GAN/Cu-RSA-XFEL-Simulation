@@ -3,18 +3,19 @@
 #photoionization crosssections of Cu
 
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
-#Recomputed via XATOM 2026-09-03 (xatom/recompute_all_parameters.py, Ka1_energy_eV=8047.91);
-#sigma1_Ka1_other = "other" 6-subshell sum (xatom_tools.other_state_parameters) + 2p_1/2 share
-#(not separately tracked here, use_L2_pathway is off).
-sigma1_Ka1_2s: 2.45189e-7
-sigma1_Ka1_2p3: 1.36345e-7
-sigma1_Ka1_other: 1.33372e-7
+#Original-paper (GRASP/RATIP) values, kept as-is 2026-09-03 -- an XATOM recompute of this base
+#cross-section set drifted 10-20% from these (see xatom/recomputed_parameters.json), but GRASP/RATIP
+#is trusted more for these than XATOM. XATOM is still used below for GammaA_L1_to_L3M45eVN (an
+#Auger branching rate with no GRASP/RATIP equivalent).
+sigma1_Ka1_2s: 2.45e-7
+sigma1_Ka1_2p3: 1.52e-7
+sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7 (2s carved out: use_2s_pathway is on below)
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
-sigma2_Ka1_1s: 5.69102e-7
-sigma2_Ka1_2s: 4.05292e-7
-sigma2_Ka1_2p3: 4.99019e-7
-sigma2_Ka1_other: 5.02242e-7
+sigma2_Ka1_1s: 6.53e-7
+sigma2_Ka1_2s: 4.05e-7
+sigma2_Ka1_2p3: 4.15e-7
+sigma2_Ka1_other: 4.58e-7
 
 
 #Chemical composition of the sample

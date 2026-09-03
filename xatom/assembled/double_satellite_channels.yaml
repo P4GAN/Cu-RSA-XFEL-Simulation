@@ -1,0 +1,76 @@
+double_satellite_channels:
+- name: 3d+3d+
+  detuning_eV: -1.7
+  Gamma_L_eV: 0.572227
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.651793
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.6349831403273791
+  - channel: 3p-
+    Gamma_feed_eV: 0.04626534312315371
+  - channel: 3p+
+    Gamma_feed_eV: 0.7303073474856997
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.049874661394821565
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.6349831403273791
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.04626534312315371
+    manifold: L2
+  sigma_ion_from_2p: 5.042530000000001e-07
+  sigma_ion_from_1s: 5.74315e-07
+- name: 3d-3d+
+  detuning_eV: -1.69
+  Gamma_L_eV: 0.602927
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.609449
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241386173085028
+  - channel: 3p-
+    Gamma_feed_eV: 1.6840555508530808
+  - channel: 3p+
+    Gamma_feed_eV: 1.2234919540852354
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 1.9699492593079289
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241386173085028
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 1.6840555508530808
+    manifold: L2
+  sigma_ion_from_2p: 5.042530000000001e-07
+  sigma_ion_from_1s: 5.74315e-07
+- name: 3d-3d-
+  detuning_eV: -1.68
+  Gamma_L_eV: 0.627541
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.555031
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.08064992289744662
+  - channel: 3p-
+    Gamma_feed_eV: 0.45942343968413835
+  - channel: 3p+
+    Gamma_feed_eV: 0.08523123188582114
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.5104393466181166
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.08064992289744662
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.45942343968413835
+    manifold: L2
+  sigma_ion_from_2p: 5.042530000000001e-07
+  sigma_ion_from_1s: 5.74315e-07

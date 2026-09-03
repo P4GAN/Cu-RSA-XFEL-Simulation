@@ -3,15 +3,19 @@
 #photoionization crosssections of Cu
 
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
+#Original-paper (GRASP/RATIP) values, kept as-is 2026-09-03 -- an XATOM recompute of this base
+#cross-section set drifted 10-20% from these (see xatom/recomputed_parameters.json), but GRASP/RATIP
+#is trusted more for these than XATOM. XATOM is still used below for GammaA_L1_to_L3M45eVN (an
+#Auger branching rate with no GRASP/RATIP equivalent).
 sigma1_Ka1_2s: 2.45e-7
 sigma1_Ka1_2p3: 1.52e-7
-sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
+sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7 (2s carved out: use_2s_pathway is on below)
 
 #Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
 sigma2_Ka1_1s: 6.53e-7
 sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 4.15e-7
-sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
+sigma2_Ka1_other: 4.58e-7
 
 
 #Chemical composition of the sample
@@ -32,11 +36,14 @@ nlevel: 6
 #radiative rates
 GammaKeVN: 1.49
 GammaL1eVN: 8.13
+GammaL2eVN: 1.04
 GammaL3eVN: 0.61
-# GammaL3M45eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
-GammaA_L1_to_L3M45eVN: 5.07 # 1.57
+#Recomputed as sum of the 4 satellite_channels' Gamma_A_2s_eV (xatom/recompute_all_parameters.py),
+#superseding the old M45-only hand estimate -- this run lumps all 4 channels into the base L3
+#population rather than resolving them explicitly (satellite_channels absent below).
+GammaA_L1_to_L3M45eVN: 4.98469
 
 additional_dephasing: 0
 
@@ -57,8 +64,8 @@ zmax: 20.0e+3
 xmax: 250.0
 ymax: 250.0
 
-xpad: 50
-ypad: 50
+xpad: 60
+ypad: 60
 tpad: 0
 
 auto_grid: False
@@ -71,6 +78,7 @@ t_peak: 10
 seed_width_FWHM_x: 180
 seed_width_FWHM_y: 220
 seed_FEL_bandwidth: 1.5e-3
+seed_center_E: 8045
 
 #calculation regime
 is_spontaneous_only: False
@@ -86,4 +94,3 @@ turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
 use_2s_pathway: True
-

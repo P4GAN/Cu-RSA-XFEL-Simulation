@@ -1,31 +1,23 @@
 #!/usr/bin/env python3
-"""Run a chunk of SASE repetitions for one (E_seed, target energy) config and save accumulated (sum/sumsq) results.
+"""Run a chunk of noise repetitions for ONE standalone config and save accumulated (sum/sumsq) results.
 
-Batch-job counterpart of notebooks/mono-transmittance-vs-intensity.ipynb (cell 7),
-generalized to take a config path and a [rep_start, rep_end) range from the
-command line so it can be driven by a SLURM array task. See
-scripts/run_intensity_sweep.py for the broadband-SASE equivalent -- the
-two share their FFT/SF_spectrum_w post-processing via XLO_sim/tools.py, but
-this one seeds through the 111 DCM monochromator response
-(tools.Ocelot_SASE_seed_111_dcm_pstxy) instead of the bare SASE seed. The
-absolute target photon energy is baked into the config's
-monochromator_target_energy_eV by generate_mono_sweep_configs.py rather than
-overridden at run time.
+Generic counterpart of run_intensity_sweep.py/run_mono_sweep.py for a *fixed set of distinct
+config/base/*.yaml files* (different physics models at the same nominal seed energy) rather than a
+parameter sweep over one base config. The two existing scripts name their output folder after the
+physical parameter being swept (runs_seed_<E>_uJ[__energy_<E>_eV]) -- fine when that parameter
+differs across configs, but our 7 target configs all share E_seed_uJ: 40, so that scheme would
+collide every one of them into the same folder. This script instead keys the output folder off the
+config file's own name (its stem), which is unique per config by construction.
 
-Output layout: one run_at_seed_..._energy_..._reps_<start>-<end>.npz per
-invocation (not per repetition -- see tools.accumulate_run_outputs), in a
-runs_seed_<E>_uJ__energy_<E_target>_eV/ folder. tools.data_from_folder()
-combines any chunk files found there losslessly, so it doesn't matter how
-many times this was invoked for the same config.
-
-submit_mono_sweep.sh runs 8 of these concurrently per SLURM array task (one
-per config, --nproc 5 each) rather than one config using the whole node --
-NREP=5 is too few repetitions to keep a 40-core node busy on its own.
+Seed-field dispatch is generic (getattr(tools, X.seed_pulse_format)(X)) instead of hardcoding
+Ocelot_SASE_seed_pstxy vs Ocelot_SASE_seed_111_dcm_pstxy -- config/base/*.yaml's seed_pulse_format
+string is always exactly the tools.py function name (verified against tools.py's def list), so this
+one script runs any of the SASE or monochromator configs unmodified.
 
 Example:
-    python scripts/run_mono_sweep.py \\
-        --yaml config/generated/mono_transmittance_vs_intensity/Cu-seed-mono-SASE_40.00uJ_8041.91eV.yaml \\
-        --rep-start 0 --rep-end 5 --nproc 5 --data-path data/mono_sweep_2026-08-12
+    python scripts/run_production_config.py \\
+        --yaml config/base/Cu-seed-SASE-double-satellite.yaml \\
+        --rep-start 0 --rep-end 200 --nproc 40 --data-path data/production_sase_2026-09-03
 """
 
 import os  # noqa: E402  (must come before numpy loads)
@@ -40,6 +32,7 @@ for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUME
 import argparse  # noqa: E402
 import shutil  # noqa: E402
 import time  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 from XLO_sim.XLO_sim import XLO_sim  # noqa: E402
 from XLO_sim import tools  # noqa: E402
@@ -57,7 +50,7 @@ def run_simulation(yaml_path, rep):
     # z=0/z=-1 planes, so skip storing the full z history (tens of GB/worker
     # at production grid sizes -- see Sample._evaluate_n_level_3D_lean).
     X.keep_z_history = False
-    seed_field = tools.Ocelot_SASE_seed_111_dcm_pstxy(X)
+    seed_field = getattr(tools, X.seed_pulse_format)(X)
     X.configure(seed_field)
     X.run_3D()
 
@@ -69,20 +62,20 @@ def run_simulation(yaml_path, rep):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--yaml", required=True, help="Path to the generated config YAML for this (E_seed, target energy) pair")
+    parser.add_argument("--yaml", required=True, help="Path to a config/base/*.yaml (used as-is, not a generated variant)")
     parser.add_argument("--rep-start", type=int, default=0, help="First repetition index (inclusive)")
     parser.add_argument("--rep-end", type=int, required=True, help="Last repetition index (exclusive)")
     parser.add_argument("--nproc", type=int, default=None,
                          help="Worker processes (default: cores actually available to this job)")
     parser.add_argument("--data-path", required=True,
-                         help="Top-level output directory (shared across array tasks for the same config)")
+                         help="Top-level output directory (shared across array tasks for this submission)")
     args = parser.parse_args()
 
     nproc = args.nproc or len(os.sched_getaffinity(0))
 
     X = XLO_sim(args.yaml)
-    target_energy_eV = X.monochromator_target_energy_eV
-    run_path = os.path.join(args.data_path, f"runs_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV")
+    config_name = Path(args.yaml).stem
+    run_path = os.path.join(args.data_path, config_name)
     os.makedirs(run_path, exist_ok=True)
     shutil.copy2(args.yaml, run_path)
 
@@ -90,8 +83,7 @@ def main():
     print(f"Running {len(reps)} repetitions ({args.rep_start}-{args.rep_end}) for {args.yaml} "
           f"on {nproc} processes -> {run_path}", flush=True)
 
-    output_stem = (f"run_at_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV"
-                    f"__reps_{args.rep_start}-{args.rep_end}")
+    output_stem = f"run_{config_name}__reps_{args.rep_start}-{args.rep_end}"
     final_path = tools.run_sweep_chunk(run_simulation, args.yaml, reps, run_path, output_stem, nproc)
     print(f"Saved {final_path}", flush=True)
 

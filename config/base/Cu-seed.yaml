@@ -13,6 +13,9 @@ sigma2_Ka1_2s: 4.05e-7
 sigma2_Ka1_2p3: 4.15e-7
 sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
 
+sigma1_Ka1_2p1: 6.89383e-8
+sigma2_Ka1_2p1: 4.98609e-7
+
 additional_dephasing: 0
 
 #Chemical composition of the sample
@@ -33,12 +36,13 @@ nlevel: 6
 #radiative rates
 GammaKeVN: 1.49
 GammaL1eVN: 8.13
+GammaL2eVN: 1.04
 GammaL3eVN: 0.61
-# GammaL3M45eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
 GammaA_L1_to_L3M45eVN: 5.07 # 1.57
 
+additional_dephasing: 0.0
 
 #K alpha atomic transitions photon energy
 hwKalpha1N: 8047.91
@@ -70,7 +74,7 @@ seed_duration_FWHM_t: 0.1
 t_peak: 1.5
 seed_width_FWHM_x: 480
 seed_width_FWHM_y: 640
-
+seed_center_E: 8045
 
 #calculation regime
 is_spontaneous_only: False

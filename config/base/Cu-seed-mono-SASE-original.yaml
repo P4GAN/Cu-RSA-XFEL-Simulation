@@ -3,17 +3,18 @@
 #photoionization crosssections of Cu
 
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
+#Original-paper (GRASP/RATIP) values, kept as-is 2026-09-03 -- an XATOM recompute of this base
+#cross-section set drifted 10-20% from these (see xatom/recomputed_parameters.json), but GRASP/RATIP
+#is trusted more for these than XATOM.
 sigma1_Ka1_2s: 2.45e-7
 sigma1_Ka1_2p3: 1.52e-7
-sigma1_Ka1_other: 1.89e-7 # 4.34e-7 - 2.45e-7
+sigma1_Ka1_other: 4.34e-7
 
-#Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
 sigma2_Ka1_1s: 6.53e-7
-sigma2_Ka1_2s: 4.05e-7
+sigma2_Ka1_2s: 0 # 2s-pathway is off (use_2s_pathway: False), ground-state 2s pump term is zeroed
+                  # at runtime (XLO_sim.py), so this population is never populated -- kept at 0.
 sigma2_Ka1_2p3: 4.15e-7
-sigma2_Ka1_other: 0.53e-7 # 4.58e-7 - 4.05e-7
-
-additional_dephasing: 0
+sigma2_Ka1_other: 4.58e-7
 
 #Chemical composition of the sample
 #Cu
@@ -28,17 +29,19 @@ compound:
 n: 82.509
 
 #number of atomic levels in the calculation
-nlevel: 2
+nlevel: 6
 
 #radiative rates
+
 GammaKeVN: 1.49
-GammaL1eVN: 8.13
+GammaL1eVN: 0
 GammaL2eVN: 1.04
 GammaL3eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
-GammaA_L1_to_L3M45eVN: 5.07 # 1.57
+GammaA_L1_to_L3M45eVN: 0.0
 
+additional_dephasing: 0
 
 #K alpha atomic transitions photon energy
 hwKalpha1N: 8047.91
@@ -46,31 +49,34 @@ hwKalpha2N: 8027.98
 
 
 #simulation domain and padding parameters
-tgrid: 200
+tgrid: 12000
 zgrid: 15
-xgrid: 8
-ygrid: 8
+xgrid: 11
+ygrid: 11
 
-tmax: 8.
+tmax: 45.0
 
 zmax: 20.0e+3
-xmax: 1000.0
-ymax: 1000.0
+xmax: 200.0
+ymax: 200.0
 
-xpad: 20
-ypad: 20
+xpad: 60
+ypad: 60
 tpad: 0
 
 auto_grid: False
 
 #seed parameters
-seed_pulse_format: 'Gaussian_pulse_aniso_seed'
+seed_pulse_format: 'Ocelot_SASE_seed_111_dcm_pstxy'
 E_seed_uJ: 40
-seed_duration_FWHM_t: 0.1
-t_peak: 1.5
-seed_width_FWHM_x: 480
-seed_width_FWHM_y: 640
-
+seed_duration_FWHM_t: 6.0
+t_peak: 10
+seed_width_FWHM_x: 100
+seed_width_FWHM_y: 170
+seed_FEL_bandwidth: 1.5e-3
+seed_center_E: 8045
+monochromator_target_energy_eV: 8047.91
+seed_delay: 0
 
 #calculation regime
 is_spontaneous_only: False
@@ -85,4 +91,5 @@ enable_self_absorption: True
 turn_off_coherences: False
 enable_kfilter: False
 is_Cartesian_pol: True
-use_2s_pathway: True
+use_2s_pathway: False
+use_L2_pathway: False

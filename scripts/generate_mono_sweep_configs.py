@@ -16,21 +16,32 @@ Run this once, locally or on a login node, before submitting the array job:
 """
 
 import argparse
+import math
 import os
 
 import yaml
 
-DEFAULT_E_SEED_VALUES = [200, 150, 100, 70, 40, 20, 10, 5, 1, 0.1]
+import numpy as np
+
+DEFAULT_E_SEED_VALUES = [0.1, 1, 5, 20, 30] #[200, 150, 100, 70, 40, 20, 10, 5, 1, 0.1]
 # Offsets from the Cu Kalpha1 line (eV) used to build the default absolute
 # energy grid in main() below (anchored to --base-yaml's hwKalpha1N), when
-# --energy isn't given explicitly.
-DEFAULT_DENERGY_OFFSETS = [-15, -12, -9, -6, -5, -4, -3, -2, -1, -0.5,
-                           0, 0.5, 1, 2, 3, 4, 5, 6, 9, 12, 15]
+# --energy isn't given explicitly. The fine region's 1 eV step is ~2-2.5
+# samples per natural linewidth (Kalpha1: GammaKeVN+GammaL3eVN = 2.10 eV
+# FWHM; Kalpha2: GammaKeVN+GammaL2eVN = 2.53 eV) -- coarser than the
+# monochromator sweep's original 0.5 eV step, but still resolves the
+# Kalpha1/Kalpha2 doublet shoulder before even counting the monochromator's
+# own bandwidth broadening the probed feature further.
+DEFAULT_DENERGY_VALUES = np.concatenate([np.arange(8000, 8015, 5), np.arange(8015, 8060, 1.0), np.arange(8060, 8100, 10)])
+# [-15, -12, -9, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 9, 12, 15]
 
-# Must match CHUNKS_PER_CONFIG / ARRAY_THROTTLE in submit_mono_sweep.sh --
-# used below only to print the matching sbatch --array bound.
-CHUNKS_PER_CONFIG = 2
-ARRAY_THROTTLE = 50
+# Must match CONFIGS_PER_TASK / ARRAY_THROTTLE in submit_mono_sweep.sh --
+# used below only to print the matching sbatch --array bound. Each array
+# task fans out CONFIGS_PER_TASK configs as concurrent background processes
+# (see submit_mono_sweep.sh), so the total task count is ceil(n_configs /
+# CONFIGS_PER_TASK) rather than one task per config.
+CONFIGS_PER_TASK = 8
+# ARRAY_THROTTLE = 50
 
 
 def yaml_modify_seed_energy_and_target_energy(input_yaml_path, output_yaml_path, new_seed_energy, target_energy_eV):
@@ -59,10 +70,10 @@ def main():
                               "(default: --base-yaml's hwKalpha1N +/- 15 eV in 3 eV steps)")
     args = parser.parse_args()
 
-    with open(args.base_yaml, "r") as f:
-        hwKalpha1N = yaml.safe_load(f)["hwKalpha1N"]
+    # with open(args.base_yaml, "r") as f:
+    #     hwKalpha1N = yaml.safe_load(f)["hwKalpha1N"]
 
-    energy_values = args.energy if args.energy is not None else [hwKalpha1N + d for d in DEFAULT_DENERGY_OFFSETS]
+    energy_values = args.energy if args.energy is not None else [d for d in DEFAULT_DENERGY_VALUES]
 
     os.makedirs(args.out_dir, exist_ok=True)
     manifest_path = os.path.join(args.out_dir, "manifest.txt")
@@ -78,9 +89,9 @@ def main():
                 print(f"wrote {out_path}")
 
     n = len(args.e_seed) * len(energy_values)
-    total_tasks = n * CHUNKS_PER_CONFIG
-    print(f"manifest: {manifest_path}  ({n} configs)")
-    print(f"\nsubmit with:\n  sbatch --array=0-{total_tasks - 1}%{ARRAY_THROTTLE} scripts/submit_mono_sweep.sh")
+    total_tasks = math.ceil(n / CONFIGS_PER_TASK)
+    print(f"manifest: {manifest_path}  ({n} configs, {CONFIGS_PER_TASK} configs/array task)")
+    print(f"\nsubmit with:\n  sbatch --array=0-{total_tasks - 1} scripts/submit_mono_sweep.sh")
 
 
 if __name__ == "__main__":

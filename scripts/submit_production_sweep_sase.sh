@@ -1,9 +1,12 @@
 #!/bin/bash
 # SLURM array job: E_seed intensity sweep (E_seed = 60, 40, 9, 2 uJ, from
-# generate_intensity_sweep_configs.py's DEFAULT_E_SEED_VALUES) for EACH of the 5 SASE-family
-# 2026-09-03-XATOM-recompute production configs. Run scripts/generate_production_sweeps.sh first.
+# generate_intensity_sweep_configs.py's DEFAULT_E_SEED_VALUES) for EACH of the 6 SASE-family
+# 2026-09-03-XATOM-recompute production configs -- including Cu-seed-SASE-double-satellite-grasp
+# (the GRASP2018+RATIP-2012 Dirac-Fock recompute variant, added 2026-09, run alongside its XATOM
+# sibling Cu-seed-SASE-double-satellite for direct comparison; see grasp/NEXT_SESSION.md). Run
+# scripts/generate_production_sweeps.sh first.
 #
-# 5 configs x 4 E_seed = 20 (config, E_seed) pairs, one array task per pair. NREP=200 (matching the
+# 6 configs x 4 E_seed = 24 (config, E_seed) pairs, one array task per pair. NREP=200 (matching the
 # reps/config already used for submit_production_sase.sh) fits in a single task on one 40-core node
 # (~5 rounds x ~2 min/rep, no need for submit_intensity_sweep.sh's CHUNKS_PER_CONFIG fan-out, which
 # exists to spread NREP=600 across multiple nodes).
@@ -25,7 +28,7 @@
 #SBATCH --cpus-per-task=40
 #SBATCH --mem=0
 #SBATCH --time=03:00:00
-#SBATCH --array=0-19
+#SBATCH --array=0-23
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 
@@ -46,6 +49,7 @@ CONFIGS=(
     Cu-seed-SASE-satellite-no-L2
     Cu-seed-SASE-satellite
     Cu-seed-SASE-double-satellite
+    Cu-seed-SASE-double-satellite-grasp
 )
 N_E_SEED=4  # must match generate_intensity_sweep_configs.py's DEFAULT_E_SEED_VALUES length
 

@@ -359,8 +359,10 @@ $$
 where $\rho_{ii}$ is the **base block's** 2p-hole diagonal population at msublevel $i$ (matching
 index). This distinction (uniform-spread Auger feed vs. sublevel-preserving photoionization feed)
 is only visible once sublevels are resolved — a direct benefit of dropping the 2-level reduction.
-As before, this is a *transfer*, not a pure loss like `S_ion_Fi` — see §12.7 for the double-counting
-fix this requires.
+Unlike the 2s-Auger feed (S2, §12.7), this is population the base 2p-hole state is **already**
+losing via its own generic further-ionization term (`S_ion_Fi`, from `sigma2_*_2p3`) regardless of
+whether this specific sub-process is separately tracked — see §12.7 for why no subtraction is
+applied here.
 
 #### 12.2 Feed into the upper manifold $U_k$ ($1sX_k$, local indices 4–5) — the requested worked example
 
@@ -423,31 +425,70 @@ $$
 \kappa_F=n\Big(\rho^{(ground)}S^{(ground)}_{Fi'}+\rho^{(other)}S^{(other)}_F+\rho^{(2s)}S^{(2s)}_F
 +\rho_{i'i'}S^{(ion.)}_{Fi'}+\sum_{k=1}^{3}\sum_{i'\in\{0..5\}}\rho^{(k)}_{i'i'}S^{(ion,k)}_{Fi'}+\sigma^{(compound)}_F\Big) \tag{S8}
 $$
-$S^{(ion,k)}$ includes **both** the transfer cross sections (S3)/(S4) — these are real photon
-absorption events and must count toward opacity even though they populate a tracked state rather
-than vanishing — **and** the optional §12.4 loss cross sections.
+$S^{(ion,k)}$ is **only** the optional §12.4 further-ionization loss cross section
+(`sigma_ion_from_2p`/`_1s`/`_2p1`, applied to the channel's *own* population $\rho^{(k)}$). It does
+**not** include the transfer cross sections (S3)/(S4): those photon-absorption events are already
+counted in the base block's own opacity term ($\rho_{i'i'}S^{(ion.)}_{Fi'}$ above, from
+`sigma2_*_2p3`/`_1s`/`_2p1`) since they're drawn from the base population $\rho_{i'i'}$ — adding them
+again here, multiplying $\rho^{(k)}$ instead, would double the opacity contribution of the same
+absorption event. See §12.7.
 
 #### 12.7 Double-counting adjustments to existing terms
 
-Every new channel above is carved out of population/opacity that the current code already accounts
-for generically. Each must be *subtracted* from its current generic home, mirroring the
-`sigma1_pump_other: ... # 3.23e-7 - 1.87e-7` pattern (§7). (The sublevel-vs-scalar distinction
-doesn't change *what* gets subtracted, only how the transferred population is distributed once
-inside a channel — S2 vs. S3/S4.)
+**Not every new channel above needs a carve-out.** The test is whether the "generic"/base-block
+quantity and the new per-channel quantity are two views of the *same measured total* (in which case
+leaving the generic term unreduced double-counts the identical physical event), or whether they are
+independently-measured quantities for genuinely different processes (in which case both can be used
+at their full, independent values with no subtraction — the base term already reflects everything
+leaving the base population regardless of which specific sub-process a modeler additionally chooses
+to track the destination of).
+
+**Needs a carve-out** (same underlying measurement, split into exhaustive sub-branches):
 
 - $\Gamma_A^{(2s\to 2p^+3d^+)}+\Gamma_A^{(2s\to 2p^+3d^-)}$ **replaces** (not adds to)
   $\Gamma_A^{(L1\to L3M45)}$'s contribution to the generic Eq. M2 feed — i.e. once these two channels
   are explicit, Eq. M2's generic feed should drop the M45 rate entirely (it would otherwise land in
-  *both* the generic 2p-hole population and the new $2p^+3d^\pm$ populations).
+  *both* the generic 2p-hole population and the new $2p^+3d^\pm$ populations). Both numbers come from
+  splitting *one* measured `Γ_A^{(L1→L3M45)}` total by spectator statistical weight — the same total,
+  re-classified, not a second independent process.
 - The new L1→L3M23 total rate, minus $\Gamma_A^{(2s\to2p^+3p^+)}$, is a *new addition* to the generic
   Eq. M2 feed (it was previously part of the unmodeled $\Gamma_{L1}-\Gamma_A^{(L1\to L3M45)}=3.06$ eV
   remainder, §7) — the generic bucket's implicit rate should increase by (3p− share) and the total
   budget $\Gamma_{L1}$ must still be respected.
-- $\sigma^{(2p\to L_k)}_F$ (S3) must be subtracted from the base 2p-hole's generic further-ionization
-  cross section (`sigma2_*_2p3`, feeding the base `S_ion_Fi` row) so the *total* opacity/loss rate
-  of the 2p-hole population is unchanged — only its fate (untracked loss vs. explicit $L_k$
-  population) changes.
-- $\sigma^{(1s\to U_k)}_F$ (S4) must likewise be subtracted from `sigma2_*_1s`.
+- The double-satellite $\Gamma_{L,k}/\Gamma_{K,k}/\Gamma_{L2,k}$ "redirect a fraction of `3p+`/`3p-`'s
+  own decay" carve-out (`docs/double-spectator-satellite-implementation-plan.md` §3/7/9) is the same
+  pattern: the fed amount and the parent's own reduced width are two branches of *one* `-decay`
+  calculation on the parent's own hole configuration, verified to sum exactly back to the original
+  bare total (e.g. `0.887+1.745=2.632` eV for `3p+`). Structurally load-bearing too: nothing in the
+  code subtracts the feed from the parent's population at the point of feeding
+  (`feed_diag_satellite_block` only ever *adds* into the child, reading the parent's population
+  without touching it — `XLO_sim/Model.py`), so the parent's own decay rate must *already* be net of
+  what's redirected, or population is created from nothing.
+
+**Does NOT need a carve-out** (independently-measured, different-process quantities — corrected
+2026-09, previously stated below as requiring subtraction, which was wrong):
+
+- $\sigma^{(2p\to L_k)}_F$ (S3, i.e. `sigma_Ka1_from_2p`) is **not** subtracted from the base
+  2p-hole's generic further-ionization cross section `sigma2_*_2p3`. `sigma2_*_2p3` is a *total*
+  further-photoionization cross section of the already-2p-hole ion (a `-pcs`-type XATOM calculation);
+  `sigma_Ka1_from_2p` is a distinct "sudden approximation" per-subshell spectator-photoabsorption
+  quantity from a different calculation class (`xatom_tools.py`'s
+  `spectator_ionization_cross_section_nm2`) — there is no verified (or even asserted) relationship
+  making one a component that sums into the other, unlike the genuine partitions above. The base
+  2p-hole population is losing the *total* `sigma2_*_2p3` amount regardless of whether this specific
+  sub-process is separately tracked as a satellite feed; carving out an unverified estimate of "how
+  much of that total is this one sub-process" would only introduce error, not remove double-counting.
+  This mirrors the established Eq. M1/M2 pattern (§7): `Γ_L1` is used in full, unreduced, for
+  $\rho^{(2s)}$'s own decay, while `Γ_A^{(L1\to L3M45)}` is a separate additive feed into $\rho_{L3}$
+  with no arithmetic link between the two — and matches how `sigma_Ka1_from_2p1` is explicitly *not*
+  subtracted from `sigma2_*_2p1` in Part IV (§24).
+- $\sigma^{(1s\to U_k)}_F$ (S4, i.e. `sigma_Ka1_from_1s`) is likewise **not** subtracted from
+  `sigma2_*_1s`, for the same reason.
+- Confirmed against the actual code (`XLO_sim/Model.py`, `XLO_sim/XLO_sim.py`): no subtraction of
+  `sigma_Ka1_from_*` from `sigma2_Ka1_*` is implemented anywhere, and the opacity term (Eq. S8, §12.6)
+  never reads `sigma_Ka1_from_*` at all — only `sigma_ion_from_*` (§12.4) enters $S^{(ion,k)}$. The
+  config previously subtracted these anyway (a documentation-driven error, not a code bug); corrected
+  in `config/base/Cu-seed-*-grasp.yaml` and `grasp/cross_section_validation.py`.
 - Ground-state pump accounting (Eq. 28/PDF) is **unaffected** — no new ground-state channel is added
   in this iteration (§12.2).
 
@@ -792,11 +833,11 @@ system's L2 pathway or the Kα1-satellite channels: $\Gamma_A^{(2s\to L2_k)}$ is
 Auger final state that the pre-existing `GammaA_L1_to_L3M45eVN`/Kα1-satellite `Gamma_A_2s_eV`
 bookkeeping never included (Eq. M2's original form only ever fed the 2p$_{3/2}$ manifold), so it is
 a **net-new addition** to the tracked fraction of $\Gamma_{L1}$'s budget, not a re-carve (§27
-budget check). Likewise `sigma_Ka1_from_2p1` is *not* subtracted from `sigma2_Ka1_2p1` (unlike Eq.
-S3/S4's carve-out of `sigma2_*_2p3`/`sigma2_*_1s`): base 2p$_{1/2}$'s further-ionization cross
-section is calibrated independently (§20) and this transfer is small next to it; flagged here as a
-simplification consistent with §12.4's "deferred, default 0" further-ionization terms rather than
-independently re-derived.
+budget check). Likewise `sigma_Ka1_from_2p1` is *not* subtracted from `sigma2_Ka1_2p1` — same reason
+as Eq. S3/S4 (§12.7): base 2p$_{1/2}$'s further-ionization cross section (`sigma2_Ka1_2p1`) is an
+independently-measured total-photoionization quantity (§20), `sigma_Ka1_from_2p1` a different-class
+"sudden approximation" quantity, and there is no verified relationship making one a sub-component of
+the other. This is the general rule (§12.7), not a simplification specific to this pathway.
 
 **Radiative decay / field coupling.** Eq. S5/S6 generalize verbatim with $L2_k$ in place of $L_k$,
 reusing the template's own $G_{ij}$ (which, per Eq. K3, already carries the $2/9,1/9$ branching from

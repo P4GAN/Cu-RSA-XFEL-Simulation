@@ -10,8 +10,6 @@ class XLO_sample:
     
     def __init__(self, X, seed_field=None):
         self.optics = XLO_optics.XLO_optics(X)
-        self.optics.Greens_function_numerical_3D(X)
-        X.Gxyz = self.optics.Gxyz
         
         if (seed_field is None):
             self.is_seeded = False  

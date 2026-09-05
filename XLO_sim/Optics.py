@@ -312,14 +312,3 @@ class XLO_optics:
         return wavefront_interior * kappa_exp[:, :, :, :, 1]
         
         
-    def Greens_function_numerical_3D(self, X):
-        
-        Omega_psxyz = np.zeros((2, 2, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
-        dS = X.dx * X.dy
-        Omega_psxyz[0, 0, int(X.xgrid/2), int(X.ygrid/2), 0] += 1.0 / dS
-
-        for iz in range(1, X.zgrid):
-            Omega_psxyz[:, :, :, :, iz] = self.Fresnel_propagator_no_absorption(X, Omega_psxyz[:, :, :, :, iz - 1], X.dz, iz * X.dz)
-
-        self.Gxyz = Omega_psxyz[0, 0, :, :, :]
-

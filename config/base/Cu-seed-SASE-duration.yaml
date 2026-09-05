@@ -71,35 +71,32 @@ hwKalpha2N: 8027.98
 
 
 #simulation domain and padding parameters
-tgrid: 12000
+tgrid: 2400
 zgrid: 15
-xgrid: 11
-ygrid: 11
+xgrid: 15
+ygrid: 15
 
-tmax: 45.0
+tmax: 25.0
 
 zmax: 20.0e+3
-xmax: 200.0
-ymax: 200.0
+xmax: 250.0
+ymax: 250.0
 
 xpad: 60
 ypad: 60
 tpad: 0
 
-
 auto_grid: False
 
 #seed parameters
-seed_pulse_format: 'Ocelot_SASE_seed_111_dcm_pstxy'
+seed_pulse_format: 'Ocelot_SASE_seed_pstxy'
 E_seed_uJ: 40
 seed_duration_FWHM_t: 6.0
 t_peak: 10
-seed_width_FWHM_x: 100
-seed_width_FWHM_y: 170
+seed_width_FWHM_x: 180
+seed_width_FWHM_y: 220
 seed_FEL_bandwidth: 1.5e-3
 seed_center_E: 8045
-monochromator_target_energy_eV: 8047.91
-seed_delay: 0
 
 #calculation regime
 is_spontaneous_only: False
@@ -117,9 +114,17 @@ is_Cartesian_pol: True
 use_2s_pathway: True
 use_L2_pathway: True
 
+#detuning_eV / detuning_eV_L2_split for the 4 satellite_channels and 3 double_satellite_channels
+#below were recomputed 2026-09-03 via GRASP Dirac-Fock (rcsfgenerate+rmcdhf+rci+rbiotransform+
+#rtransition, dominant-line-by-Einstein-A selection; see grasp_cu_run/ and the grasp-satellite-
+#transitions memory note) after literature (Nguyen et al., PRA 105, 022811 (2022); Mauron & Dousse,
+#PRA 82, 052505 (2010)) showed XATOM's values were substantially off -- sign-flipped for 3d-/3p-,
+#roughly 2x too small for 3d+/3p+. All other keys in these blocks (Gamma_*, sigma_*, feed_from)
+#are still XATOM-derived, not yet recomputed. detuning_eV_L2_split for the double_satellite_channels
+#is likewise still XATOM-derived (the L2-split wasn't extracted for the double-spectator case yet).
 satellite_channels:
 - name: 3d+
-  detuning_eV: -0.8
+  detuning_eV: 1.1305
   Gamma_A_2s_eV: 1.5733
   Gamma_A_K_eV: 0.00259
   Gamma_L_eV: 0.60698
@@ -128,13 +133,13 @@ satellite_channels:
   sigma_Ka1_from_1s: 8.0409e-10
   sigma_ion_from_2p: 5.01453e-07
   sigma_ion_from_1s: 5.715170000000001e-07
-  detuning_eV_L2_split: 21.27
+  detuning_eV_L2_split: 22.5428
   Gamma_A_2s_to_L2_eV: 0.7137
   Gamma_A_K_to_L2_eV: 0.002064
   Gamma_L2_eV: 0.6559
   sigma_Ka1_from_2p1: 7.41039e-10
 - name: 3d-
-  detuning_eV: -0.8
+  detuning_eV: 0.3432
   Gamma_A_2s_eV: 1.3121
   Gamma_A_K_eV: 0.003083
   Gamma_L_eV: 0.63478
@@ -143,13 +148,13 @@ satellite_channels:
   sigma_Ka1_from_1s: 6.434600000000001e-10
   sigma_ion_from_2p: 5.01453e-07
   sigma_ion_from_1s: 5.715170000000001e-07
-  detuning_eV_L2_split: 21.26
+  detuning_eV_L2_split: 22.4912
   Gamma_A_2s_to_L2_eV: 0.5309
   Gamma_A_K_to_L2_eV: 0.000637
   Gamma_L2_eV: 0.60921
   sigma_Ka1_from_2p1: 5.93e-10
 - name: 3p+
-  detuning_eV: 2.76
+  detuning_eV: 1.7865
   Gamma_A_2s_eV: 1.4535
   Gamma_A_K_eV: 0.034001
   Gamma_L_eV: 0.89272
@@ -158,13 +163,13 @@ satellite_channels:
   sigma_Ka1_from_1s: 2.02344e-08
   sigma_ion_from_2p: 4.97595e-07
   sigma_ion_from_1s: 5.67499e-07
-  detuning_eV_L2_split: 21.31
+  detuning_eV_L2_split: 25.0917
   Gamma_A_2s_to_L2_eV: 0.7902
   Gamma_A_K_to_L2_eV: 0.028999
   Gamma_L2_eV: 0.98385
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
-  detuning_eV: 2.93
+  detuning_eV: -1.5140
   Gamma_A_2s_eV: 0.6458
   Gamma_A_K_eV: 0.028913
   Gamma_L_eV: 0.98956
@@ -173,7 +178,7 @@ satellite_channels:
   sigma_Ka1_from_1s: 1.01334e-08
   sigma_ion_from_2p: 4.97588e-07
   sigma_ion_from_1s: 5.67491e-07
-  detuning_eV_L2_split: 21.31
+  detuning_eV_L2_split: 14.5234
   Gamma_A_2s_to_L2_eV: 0.5062
   Gamma_A_K_to_L2_eV: 0.002563
   Gamma_L2_eV: 0.86834
@@ -181,7 +186,7 @@ satellite_channels:
 
 double_satellite_channels:
 - name: 3d+3d+
-  detuning_eV: -1.7
+  detuning_eV: 1.5911
   Gamma_L_eV: 0.572227
   Gamma_K_eV: 1.55265
   detuning_eV_L2_split: 21.26
@@ -206,7 +211,7 @@ double_satellite_channels:
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07
 - name: 3d-3d+
-  detuning_eV: -1.69
+  detuning_eV: -0.9153
   Gamma_L_eV: 0.602927
   Gamma_K_eV: 1.55265
   detuning_eV_L2_split: 21.26
@@ -231,7 +236,7 @@ double_satellite_channels:
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07
 - name: 3d-3d-
-  detuning_eV: -1.68
+  detuning_eV: -2.4271
   Gamma_L_eV: 0.627541
   Gamma_K_eV: 1.55265
   detuning_eV_L2_split: 21.26

@@ -1,0 +1,293 @@
+#units: nm, fs
+
+#photoionization crosssections of Cu
+
+#Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
+#GRASP/RATIP variant (see grasp/NEXT_SESSION.md and grasp/cross_section_validation.py for the full
+#recompute campaign) -- the non-"-grasp" sibling config keeps the original XATOM-derived values.
+#sigma1_Ka1_2s/2p3 are the original-paper (GRASP/RATIP) values, kept as-is -- this session's own
+#independent GRASP2018+RATIP-2012 recompute landed within <1% for sigma1_Ka1_2p3 (1.521e-7) and
+#~16% for sigma1_Ka1_2s (2.837e-7); the paper's own number is kept here since it's already a
+#converged, more complete calculation, not an approximation to replace. sigma1_Ka1_other IS this
+#session's fresh GRASP recompute (was a hybrid XATOM/paper value in the original config): the
+#clean 5-channel sum (3s+3p+3d only -- no 2s/2p_1/2, which get their own keys below, and no 4s,
+#which this reduced atomic model's ground state doesn't have) via GRASP xphoto.
+sigma1_Ka1_2s: 2.45e-7
+sigma1_Ka1_2p3: 1.52e-7
+sigma1_Ka1_other: 6.840e-8 # GRASP/RATIP 5-channel sum (3s+3p+3d), see grasp/cross_section_validation.py SIGMA1_OTHER5_AU
+
+#Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
+# sigma2_Ka1_1s/2p3/2p1 are NOT carved out for the satellite_channels below (theory doc §12.7,
+# corrected 2026-09: this file previously subtracted sigma_Ka1_from_2p/1s/2p1 here, which was wrong).
+# sigma2_Ka1_* is a total further-photoionization cross section of the already-holed ion (a `-pcs`
+# XATOM calculation); sigma_Ka1_from_* (per satellite channel) is a different-class "sudden
+# approximation" spectator-photoabsorption quantity (xatom_tools.py's
+# spectator_ionization_cross_section_nm2) -- there's no verified relationship making one a
+# sub-component of the other's measured total, unlike a genuine branching-ratio split (contrast the
+# Gamma_A_2s_eV/GammaA_L1_to_L3M45eVN carve-out below, or the double-satellite Gamma_L_eV carve-out
+# in docs/double-spectator-satellite-implementation-plan.md, both of which ARE verified splits of one
+# measurement and DO need the subtraction). The base 2p-hole/1s-hole/2p1-hole population already
+# loses the full sigma2_Ka1_* amount regardless of whether this specific sub-process is separately
+# tracked as a satellite feed, so no subtraction is needed or applied in code (confirmed: neither
+# XLO_sim.py nor Model.py performs it anywhere) -- see §12.7 and grasp/NEXT_SESSION.md.
+sigma2_Ka1_1s: 5.6716e-7 # own GRASP/RATIP recompute (5/5 channels), 87% agreement with the original-paper total (6.53e-7) -- accepted as a believable spread for a 5-channel summed quantity, per grasp/NEXT_SESSION.md (unlike sigma1_Ka1_2s/2p3 above, the paper total is not preferred here)
+sigma2_Ka1_2s: 3.1423e-7 # GRASP/RATIP total further-ionization (no satellite-transfer carve-out exists for 2s), see grasp/cross_section_validation.py
+sigma2_Ka1_2p3: 4.1513e-7 # own GRASP/RATIP recompute (5/5 channels), matches original-paper total (4.15e-7) to 0.03%
+sigma2_Ka1_other: 4.374e-7 # GRASP/RATIP sigma1-weighted avg of 3s/3p1/2/3p3/2/3d3/2/3d5/2 own further-ionization, see grasp/cross_section_validation.py SIGMA2_OTHER5_AU (2 known gaps: missing 2p+3p for 3p1/2,3p3/2; missing 3s+3s_further)
+
+#2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III, section 20).
+#sigma1_Ka1_2p1/sigma2_Ka1_2p1 recomputed via GRASP/RATIP this session (were XATOM, via
+#xatom_tools.l2_pathway_parameters()) -- see grasp/cross_section_validation.py.
+sigma1_Ka1_2p1: 8.208e-8
+#Not carved (same no-subtraction reasoning as sigma2_Ka1_1s/2p3 above; see theory doc §12.7/§24).
+sigma2_Ka1_2p1: 5.1247e-7 # own GRASP/RATIP recompute, complete 5/5-channel sum (supersedes an earlier incomplete 4/5-channel figure)
+
+
+#Chemical composition of the sample
+#Cu
+compound:
+  O:
+    N_atoms: 0
+    sigma_compound_Ka1: 0
+
+    
+#sample concentration in atoms per cubic nm
+#solid copper:  84, nitrate 4M solution: 2.509
+n: 82.509
+
+#number of atomic levels in the calculation
+nlevel: 6
+
+#radiative rates
+GammaKeVN: 1.49
+GammaL1eVN: 8.13
+GammaL2eVN: 1.04
+GammaL3eVN: 0.61
+GammarKalpha1eVN: 0.39375
+GammarKalpha2eVN: 0.202668
+# Fully carved out (theory doc §12.7): the 4 satellite_channels below (3d+/3d-/3p+/3p-) now
+# explicitly track the entire 2s-hole Auger -> 2p_3/2+spectator (M45+M23) branching via their own
+# Gamma_A_2s_eV, replacing rather than adding to this generic feed -- was 5.07 (M45-only estimate,
+# pre-satellite-channels), briefly left at a stale 1.57 which double-counted against the satellite
+# feed instead of zeroing it out.
+GammaA_L1_to_L3M45eVN: 0.0
+
+additional_dephasing: 0
+
+#K alpha atomic transitions photon energy
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+
+#simulation domain and padding parameters
+tgrid: 2400
+zgrid: 15
+xgrid: 15
+ygrid: 15
+
+tmax: 25.0
+
+zmax: 20.0e+3
+xmax: 250.0
+ymax: 250.0
+
+xpad: 60
+ypad: 60
+tpad: 0
+
+auto_grid: False
+
+#seed parameters
+seed_pulse_format: 'Ocelot_SASE_seed_pstxy'
+E_seed_uJ: 40
+seed_duration_FWHM_t: 6.0
+t_peak: 10
+seed_width_FWHM_x: 180
+seed_width_FWHM_y: 220
+seed_FEL_bandwidth: 1.5e-3
+seed_center_E: 8045
+
+#calculation regime
+is_spontaneous_only: False
+is_use_stochastic: False
+random_seed: -1
+enable_noise_mask: True
+Esxy_noise_cutoff: 2.0e-3
+# run_mode: 'simultaneous', 'consecutive'
+run_mode: 'simultaneous'
+enable_self_diffraction: True
+enable_self_absorption: True
+turn_off_coherences: False
+enable_kfilter: False
+is_Cartesian_pol: True
+use_2s_pathway: True
+use_L2_pathway: True
+
+#detuning_eV / detuning_eV_L2_split for the 4 satellite_channels and 3 double_satellite_channels
+#below were recomputed via GRASP Dirac-Fock (rcsfgenerate+rmcdhf+rci+rbiotransform+rtransition,
+#dominant-line-by-Einstein-A selection; see grasp_cu_run/ and grasp/NEXT_SESSION.md) after
+#literature (Nguyen et al., PRA 105, 022811 (2022); Mauron & Dousse, PRA 82, 052505 (2010)) showed
+#XATOM's values were substantially off -- sign-flipped for 3d-/3p-, roughly 2x too small for
+#3d+/3p+. double_satellite_channels' detuning_eV_L2_split is also now GRASP (the L2-manifold
+#separation on the lower state turned out clean even though the spectator-pair sub-assignment
+#within each manifold isn't -- see satellite_detuning_analysis.py's double_3d_l2_splits()).
+#Gamma_A_2s_eV/Gamma_A_K_eV/their _to_L2_eV siblings are GRASP too (via xauger, |c|^2-weighted
+#branching -- see docs/auger-branching-and-ci-mixing.md before extending these, there's real CI
+#mixing to understand first). Gamma_L_eV/Gamma_K_eV/Gamma_L2_eV (below and in
+#double_satellite_channels) use this session's GRASP *base* (non-satellite) total widths as a
+#stand-in (the "spectator approximation" the theory doc's own original design used) -- computing
+#the satellite-shifted widths properly needs triple-hole final states, hit a reproducible xrelci
+#parser bug for that CSF complexity class, not chased down further; see grasp/NEXT_SESSION.md.
+#sigma_ion_from_2p/1s use the same GRASP base-value stand-in as Gamma_L_eV/Gamma_K_eV above
+#(= sigma2_Ka1_2p3/sigma2_Ka1_1s respectively, updated to match sigma2_Ka1_1s's corrected
+#un-subtracted value below) -- confirmed via xatom_tools.py's own
+#total_photoionization_cross_section_nm2 docstring that this is exactly the same triple-hole
+#total-further-ionization quantity as the deferred widths, just as a cross section instead of a
+#width, so the same approximation and the same reasoning for deferring the rigorous version apply.
+#sigma_Ka1_from_* is still XATOM: this is a different, subtler quantity than sigma_ion_from_*
+#(xatom_tools.py's spectator_ionization_cross_section_nm2 -- a specific per-subshell photoabsorption
+#cross section from a single-hole parent, not a further-ionization total) and my GRASP attempt at
+#it gave wildly inconsistent results (2 of 3 channels off by 2-3 orders of magnitude) -- not
+#confident enough to use; see grasp/NEXT_SESSION.md for the full account, including the suspicious
+#observation that XATOM's own sigma_Ka1_from_2p1 is numerically identical to sigma_Ka1_from_2p
+#(possibly a placeholder on XATOM's side too, not just an artifact of my attempt). feed_from
+#(double_satellite_channels only) is still XATOM -- no GRASP/RATIP recipe attempted yet, a
+#genuinely new physical process (spectator autoionization).
+satellite_channels:
+- name: 3d+
+  detuning_eV: 1.1305
+  Gamma_A_2s_eV: 1.85716
+  Gamma_A_K_eV: 0.00304
+  Gamma_L_eV: 0.6699
+  Gamma_K_eV: 1.3659
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 4.1513e-07
+  sigma_ion_from_1s: 5.6716e-07
+  detuning_eV_L2_split: 22.5428
+  Gamma_A_2s_to_L2_eV: 0.73321
+  Gamma_A_K_to_L2_eV: 0.00256
+  Gamma_L2_eV: 0.6457
+  sigma_Ka1_from_2p1: 7.41039e-10
+- name: 3d-
+  detuning_eV: 0.3432
+  Gamma_A_2s_eV: 0.81524
+  Gamma_A_K_eV: 0.00169
+  Gamma_L_eV: 0.6699
+  Gamma_K_eV: 1.3659
+  sigma_Ka1_from_2p: 5.93e-10
+  sigma_Ka1_from_1s: 6.434600000000001e-10
+  sigma_ion_from_2p: 4.1513e-07
+  sigma_ion_from_1s: 5.6716e-07
+  detuning_eV_L2_split: 22.4912
+  Gamma_A_2s_to_L2_eV: 0.48361
+  Gamma_A_K_to_L2_eV: 0.00058
+  Gamma_L2_eV: 0.6457
+  sigma_Ka1_from_2p1: 5.93e-10
+- name: 3p+
+  detuning_eV: 1.7865
+  Gamma_A_2s_eV: 0.97250
+  Gamma_A_K_eV: 0.02431
+  Gamma_L_eV: 0.6699
+  Gamma_K_eV: 1.3659
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 4.1513e-07
+  sigma_ion_from_1s: 5.6716e-07
+  detuning_eV_L2_split: 25.0917
+  Gamma_A_2s_to_L2_eV: 0.52613
+  Gamma_A_K_to_L2_eV: 0.04233
+  Gamma_L2_eV: 0.6457
+  sigma_Ka1_from_2p1: 1.88202e-08
+- name: 3p-
+  detuning_eV: -1.5140
+  Gamma_A_2s_eV: 0.54985
+  Gamma_A_K_eV: 0.02309
+  Gamma_L_eV: 0.6699
+  Gamma_K_eV: 1.3659
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 4.1513e-07
+  sigma_ion_from_1s: 5.6716e-07
+  detuning_eV_L2_split: 14.5234
+  Gamma_A_2s_to_L2_eV: 0.44463
+  Gamma_A_K_to_L2_eV: 0.00365
+  Gamma_L2_eV: 0.6457
+  sigma_Ka1_from_2p1: 9.4244e-09
+
+double_satellite_channels:
+- name: 3d+3d+
+  detuning_eV: 1.5911
+  Gamma_L_eV: 0.6699
+  Gamma_K_eV: 1.3659
+  detuning_eV_L2_split: 24.0566
+  Gamma_L2_eV: 0.6457
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.6349831403273791
+  - channel: 3p-
+    Gamma_feed_eV: 0.04626534312315371
+  - channel: 3p+
+    Gamma_feed_eV: 0.7303
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.0499
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.6350
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.0463
+    manifold: L2
+  sigma_ion_from_2p: 4.1513e-07
+  sigma_ion_from_1s: 5.6716e-07
+- name: 3d-3d+
+  detuning_eV: -0.9153
+  Gamma_L_eV: 0.6699
+  Gamma_K_eV: 1.3659
+  detuning_eV_L2_split: 22.2455
+  Gamma_L2_eV: 0.6457
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241386173085028
+  - channel: 3p-
+    Gamma_feed_eV: 1.6840555508530808
+  - channel: 3p+
+    Gamma_feed_eV: 1.2235
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 1.9699
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 1.6841
+    manifold: L2
+  sigma_ion_from_2p: 4.1513e-07
+  sigma_ion_from_1s: 5.6716e-07
+- name: 3d-3d-
+  detuning_eV: -2.4271
+  Gamma_L_eV: 0.6699
+  Gamma_K_eV: 1.3659
+  detuning_eV_L2_split: 17.0217
+  Gamma_L2_eV: 0.6457
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.08064992289744662
+  - channel: 3p-
+    Gamma_feed_eV: 0.45942343968413835
+  - channel: 3p+
+    Gamma_feed_eV: 0.0852
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.5104
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.0806
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.4594
+    manifold: L2
+  sigma_ion_from_2p: 4.1513e-07
+  sigma_ion_from_1s: 5.6716e-07

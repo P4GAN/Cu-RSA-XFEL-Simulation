@@ -1,11 +1,14 @@
 #!/bin/bash
-# Generate per-config E_seed (and, for mono, energy) sweep manifests for each of the 7
-# 2026-09-03-XATOM-recompute production configs, reusing the existing
-# generate_intensity_sweep_configs.py / generate_mono_sweep_configs.py generators unmodified
-# (both already accept --base-yaml/--out-dir) -- just pointed at each config with its own
-# --out-dir, so the 5 SASE-family and 2 mono-family sweeps' manifests/generated YAMLs never
-# collide with each other or with the pre-existing Cu-seed-SASE.yaml/Cu-seed-mono-SASE.yaml sweeps
-# (which still live at the top level of config/generated/transmittance_vs_intensity/ and
+# Generate per-config E_seed (and, for mono, energy) sweep manifests for each of the 9
+# 2026-09-03-XATOM-recompute production configs (now including the 2 GRASP2018+RATIP-2012
+# Dirac-Fock recompute variants of the double-satellite config, added 2026-09 -- see
+# grasp/NEXT_SESSION.md -- run alongside their XATOM-derived siblings for direct comparison, not
+# as a replacement), reusing the existing generate_intensity_sweep_configs.py /
+# generate_mono_sweep_configs.py generators unmodified (both already accept
+# --base-yaml/--out-dir) -- just pointed at each config with its own --out-dir, so the 6
+# SASE-family and 3 mono-family sweeps' manifests/generated YAMLs never collide with each other or
+# with the pre-existing Cu-seed-SASE.yaml/Cu-seed-mono-SASE.yaml sweeps (which still live at the
+# top level of config/generated/transmittance_vs_intensity/ and
 # config/generated/mono_transmittance_vs_intensity/ respectively -- these write into per-config
 # subdirectories instead).
 #
@@ -21,11 +24,13 @@ SASE_CONFIGS=(
     Cu-seed-SASE-satellite-no-L2
     Cu-seed-SASE-satellite
     Cu-seed-SASE-double-satellite
+    Cu-seed-SASE-double-satellite-grasp
 )
 
 MONO_CONFIGS=(
     Cu-seed-mono-SASE-original
     Cu-seed-mono-SASE-double-satellite
+    Cu-seed-mono-SASE-double-satellite-grasp
 )
 
 for name in "${SASE_CONFIGS[@]}"; do

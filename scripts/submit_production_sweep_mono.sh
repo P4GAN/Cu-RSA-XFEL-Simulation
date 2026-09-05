@@ -1,14 +1,16 @@
 #!/bin/bash
 # SLURM array job: full E_seed x energy monochromator sweep (5 E_seed x 52 energies, from
-# generate_mono_sweep_configs.py's defaults) for EACH of the 2 mono-family 2026-09-03-XATOM-recompute
-# production configs (Cu-seed-mono-SASE-original, Cu-seed-mono-SASE-double-satellite). Run
-# scripts/generate_production_sweeps.sh first.
+# generate_mono_sweep_configs.py's defaults) for EACH of the 3 mono-family 2026-09-03-XATOM-recompute
+# production configs (Cu-seed-mono-SASE-original, Cu-seed-mono-SASE-double-satellite, and
+# Cu-seed-mono-SASE-double-satellite-grasp -- the GRASP2018+RATIP-2012 Dirac-Fock recompute variant
+# of the double-satellite config, added 2026-09, run alongside its XATOM sibling for direct
+# comparison; see grasp/NEXT_SESSION.md). Run scripts/generate_production_sweeps.sh first.
 #
 # Same fan-out design as submit_mono_sweep.sh (CONFIGS_PER_TASK=8 concurrent background processes
-# per array task, since NREP=10 is too few reps to fill a 40-core node on its own), doubled with an
-# outer loop over the 2 base configs: TASKS_PER_CONFIG = ceil(260/8) = 33 array tasks per config,
-# so 66 tasks total (array=0-65). --mem=0 (whole node) per task, same reasoning as
-# submit_mono_sweep.sh -- can easily want 100s of GB across 8 concurrent tgrid=12000 configs.
+# per array task, since NREP=10 is too few reps to fill a 40-core node on its own), multiplied
+# across the 3 base configs: TASKS_PER_CONFIG = ceil(260/8) = 33 array tasks per config, so 99
+# tasks total (array=0-98). --mem=0 (whole node) per task, same reasoning as submit_mono_sweep.sh
+# -- can easily want 100s of GB across 8 concurrent tgrid=12000 configs.
 #
 # Isolation: DATA_PATH nests under the config name
 # (data/production_sweep_mono_<jobid>/<config>/), so run_mono_sweep.py's own
@@ -28,7 +30,7 @@
 #SBATCH --cpus-per-task=40
 #SBATCH --mem=0
 #SBATCH --time=16:00:00
-#SBATCH --array=0-65
+#SBATCH --array=0-98
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 
@@ -46,6 +48,7 @@ mkdir -p logs
 CONFIGS=(
     Cu-seed-mono-SASE-original
     Cu-seed-mono-SASE-double-satellite
+    Cu-seed-mono-SASE-double-satellite-grasp
 )
 
 # NREP * CONFIGS_PER_TASK must equal --cpus-per-task above (matches submit_mono_sweep.sh's

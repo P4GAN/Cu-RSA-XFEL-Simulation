@@ -1124,29 +1124,48 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
         for file_name in os.listdir(runs_path):
             if not file_name.endswith('.npz'):
                 continue
-            data = np.load(os.path.join(runs_path, file_name))
-            file_n_reps = int(data['n_reps'])
+            file_path = os.path.join(runs_path, file_name)
+            # A chunk file can be left truncated/unreadable if its SLURM task was killed
+            # (e.g. hit the wall-clock limit) mid-write of the final np.savez_compressed --
+            # np.load then raises (typically zipfile.BadZipFile). Read everything for this
+            # file into locals first and only fold it into the running sums/counts/axes on
+            # full success, so a corrupt file is skipped cleanly instead of half-applied or
+            # crashing the whole aggregation -- its still-intact '<stem>.partial.npz'
+            # checkpoint sibling (see run_sweep_chunk) is picked up on its own iteration.
+            try:
+                data = np.load(file_path)
+                file_n_reps = int(data['n_reps'])
+                file_sums, file_counts, file_sumsqs, file_axes = {}, {}, {}, {}
+
+                sum_keys = {n[:-len('_sum')] for n in data.files if n.endswith('_sum')}
+                for key in sum_keys:
+                    chunk_sum = data[f"{key}_sum"]
+                    chunk_count = (data[f"{key}_count"] if f"{key}_count" in data.files
+                                   else np.full(chunk_sum.shape, file_n_reps, dtype=float))
+                    bad = np.isnan(chunk_sum)
+                    if np.any(bad):
+                        chunk_sum = np.where(bad, 0, chunk_sum)
+                        chunk_count = np.where(bad, 0, chunk_count)
+                    file_sums[key] = chunk_sum
+                    file_counts[key] = chunk_count
+                    if f"{key}_sumsq" in data.files:
+                        file_sumsqs[key] = np.where(bad, 0, data[f"{key}_sumsq"])
+
+                for array_name in data.files:
+                    if array_name in ('n_reps',) or array_name.endswith(('_sum', '_sumsq', '_count')):
+                        continue
+                    file_axes[array_name] = data[array_name]
+            except Exception as e:
+                print(f"Warning: could not read chunk file {file_path} ({e}) -- skipping it")
+                continue
+
             n_reps += file_n_reps
-
-            sum_keys = {n[:-len('_sum')] for n in data.files if n.endswith('_sum')}
-            for key in sum_keys:
-                chunk_sum = data[f"{key}_sum"]
-                chunk_count = (data[f"{key}_count"] if f"{key}_count" in data.files
-                               else np.full(chunk_sum.shape, file_n_reps, dtype=float))
-                bad = np.isnan(chunk_sum)
-                if np.any(bad):
-                    chunk_sum = np.where(bad, 0, chunk_sum)
-                    chunk_count = np.where(bad, 0, chunk_count)
+            for key, chunk_sum in file_sums.items():
                 sums[key] = sums.get(key, 0) + chunk_sum
-                counts[key] = counts.get(key, 0) + chunk_count
-                if f"{key}_sumsq" in data.files:
-                    chunk_sumsq = np.where(bad, 0, data[f"{key}_sumsq"])
-                    sumsqs[key] = sumsqs.get(key, 0) + chunk_sumsq
-
-            for array_name in data.files:
-                if array_name in ('n_reps',) or array_name.endswith(('_sum', '_sumsq', '_count')):
-                    continue
-                axes[array_name] = data[array_name]
+                counts[key] = counts.get(key, 0) + file_counts[key]
+            for key, chunk_sumsq in file_sumsqs.items():
+                sumsqs[key] = sumsqs.get(key, 0) + chunk_sumsq
+            axes.update(file_axes)
 
         if n_reps == 0:
             print(f"No .npz chunk files found in {runs_path}")

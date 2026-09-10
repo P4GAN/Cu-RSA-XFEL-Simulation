@@ -25,6 +25,10 @@ class XLO_sim:
         if 'keep_z_history' not in self.config:
             self.keep_z_history = True
 
+        # Linear-response (perturbative) limit of the resonant Kalpha coupling, see
+        # Model._MB_nlevel_regular_core. Default False = full Maxwell-Bloch.
+        self.linear_resonant_response = bool(self.config.get('linear_resonant_response', False))
+
         if 'satellite_channels' not in self.config:
             self.satellite_channels = []
 

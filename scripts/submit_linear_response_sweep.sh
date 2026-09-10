@@ -50,6 +50,17 @@ if [[ -z "$LINE" ]]; then
 fi
 read -r NAME YAML <<< "$LINE"
 
+# Preflight: the XLO_sim that python actually imports must know linear_resonant_response. Older
+# code silently ignores the config key (XLO_sim setattrs every key) and runs the full model -- job
+# 24533426 did exactly that. Checks the imported file, so a stale non-editable install is caught too.
+# tail: importing XLO_sim pulls in ocelot, which prints "initializing ocelot..." to stdout first
+MODEL_PY=$(python -c "import XLO_sim.Model as M; print(M.__file__)" | tail -n 1)
+if ! grep -q "linear_response" "$MODEL_PY"; then
+    echo "$MODEL_PY has no linear_response support -- pull the latest code (and pip install -e .)" >&2
+    exit 1
+fi
+echo "using $MODEL_PY"
+
 NREP=200
 DATA_PATH=data/linear_response_sweep_sase_${SLURM_ARRAY_JOB_ID}/${NAME}
 

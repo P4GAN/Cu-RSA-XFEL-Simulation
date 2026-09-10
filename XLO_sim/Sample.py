@@ -124,14 +124,17 @@ class XLO_sample:
                 rho_ground_xy += d_rho_ground_it
                 rho_other_xy += d_rho_other_it
                 rho_2s_xy += d_rho_2s_it
+                # History (and hence the field source term below, which reads it) stores the
+                # physical density matrix; rho_ijxy/rho_sat_ijxy stay the integrator state, which
+                # differs from it only in rate-equation mode (Model.physical_rho).
                 for k in range(n_sat):
                     rho_sat_ijxy[k] = rho_sat_ijxy[k] + d_rho_sat_it[k]
-                    rho_sat_ijtxyz[k][:, :, it, :, :, iz] = rho_sat_ijxy[k]
+                    rho_sat_ijtxyz[k][:, :, it, :, :, iz] = Model.physical_rho(X, rho_sat_ijxy[k])
 
                 rho_ground_txyz[it, :, :, iz] = rho_ground_xy
                 rho_other_txyz[it, :, :, iz] = rho_other_xy
                 rho_2s_txyz[it, :, :, iz] = rho_2s_xy
-                rho_ijtxyz[:, :, it, :, :, iz] = rho_ijxy
+                rho_ijtxyz[:, :, it, :, :, iz] = Model.physical_rho(X, rho_ijxy)
 
                 rho_sat_ijxyz_list = [rho_sat_ijtxyz[k][:, :, it, :, :, iz-1:iz+1] for k in range(n_sat)]
 
@@ -270,18 +273,25 @@ class XLO_sample:
                 rho_other_xy += d_rho_other_it
                 rho_2s_xy += d_rho_2s_it
 
+                # Physical density matrix for everything downstream of the integrator (field source
+                # term, stored centre-pixel history); same array as the state except in
+                # rate-equation mode (Model.physical_rho). Diagonals are identical either way.
+                rho_phys_ijxy = Model.physical_rho(X, rho_ijxy)
+                rho_sat_phys_ijxy = [None for k in range(n_sat)]
+
                 for k in range(n_sat):
                     rho_sat_ijxy[k] = rho_sat_ijxy[k] + d_rho_sat_it[k]
+                    rho_sat_phys_ijxy[k] = Model.physical_rho(X, rho_sat_ijxy[k])
                     curr_rho_sat_diag_txy[k][:, it, :, :] = rho_sat_ijxy[k][sat_diag_idx, sat_diag_idx, :, :]
                     if is_final_iz:
-                        final_rho_sat_ijt_center[k][:, :, it] = rho_sat_ijxy[k][:, :, cx, cy]
+                        final_rho_sat_ijt_center[k][:, :, it] = rho_sat_phys_ijxy[k][:, :, cx, cy]
 
                 curr_rho_ground_txy[it, :, :] = np.real(rho_ground_xy)
                 curr_rho_other_txy[it, :, :] = np.real(rho_other_xy)
                 curr_rho_2s_txy[it, :, :] = np.real(rho_2s_xy)
                 curr_rho_diag_txy[:, it, :, :] = rho_ijxy[diag_idx, diag_idx, :, :]
                 if is_final_iz:
-                    final_rho_ijt_center[:, :, it] = rho_ijxy[:, :, cx, cy]
+                    final_rho_ijt_center[:, :, it] = rho_phys_ijxy[:, :, cx, cy]
 
                 if iz != 0:
                     # Same [iz-1, iz] window Model.absorption() reads in the full-history path.
@@ -307,10 +317,10 @@ class XLO_sample:
                                                          window_2s, window_ij, window_sat_ij)
                     Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
 
-                Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, rho_ijxy)
+                Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, rho_phys_ijxy)
                 for k in range(n_sat):
                     Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
-                        X, rho_sat_ijxy[k], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
+                        X, rho_sat_phys_ijxy[k], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
                 J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
                 J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)

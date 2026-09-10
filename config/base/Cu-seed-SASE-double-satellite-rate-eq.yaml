@@ -113,11 +113,11 @@ enable_kfilter: False
 is_Cartesian_pol: True
 use_2s_pathway: True
 use_L2_pathway: True
-# Linear-response (perturbative) limit of the resonant Kalpha coupling: the field drives the
-# coherences but never moves population (no Rabi saturation / power broadening / stimulated
-# emission); holes are created by photoionization/Auger only. Otherwise identical to
-# Cu-seed-SASE-double-satellite.yaml -- compare the two to isolate the Rabi nonlinearity.
-linear_resonant_response: True
+# Rate-equation limit of the resonant Kalpha coupling: coherences adiabatically eliminated, so the
+# field drives stimulated absorption/emission at the Lorentzian-filtered rate (saturation kept) but
+# there are no Rabi oscillations / coherent transients. Otherwise identical to
+# Cu-seed-SASE-double-satellite.yaml -- compare the two to isolate the coherent (Maxwell-Bloch) effects.
+use_rate_equations: True
 
 satellite_channels:
 - name: 3d+

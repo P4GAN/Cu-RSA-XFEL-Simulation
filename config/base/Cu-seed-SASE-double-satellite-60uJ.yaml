@@ -1,0 +1,195 @@
+E_seed_uJ: 60
+Esxy_noise_cutoff: 0.002
+GammaA_L1_to_L3M45eVN: 0.0
+GammaKeVN: 1.49
+GammaL1eVN: 8.13
+GammaL2eVN: 1.04
+GammaL3eVN: 0.61
+GammarKalpha1eVN: 0.39375
+GammarKalpha2eVN: 0.202668
+additional_dephasing: 0
+auto_grid: false
+compound:
+  O:
+    N_atoms: 0
+    sigma_compound_Ka1: 0
+double_satellite_channels:
+- Gamma_K_eV: 1.55265
+  Gamma_L2_eV: 0.651793
+  Gamma_L_eV: 0.572227
+  detuning_eV: -1.7
+  detuning_eV_L2_split: 21.26
+  feed_from:
+  - Gamma_feed_eV: 0.6349831403273791
+    channel: 3p+
+  - Gamma_feed_eV: 0.04626534312315371
+    channel: 3p-
+  - Gamma_feed_eV: 0.7303
+    channel: 3p+
+    manifold: upper
+  - Gamma_feed_eV: 0.0499
+    channel: 3p-
+    manifold: upper
+  - Gamma_feed_eV: 0.635
+    channel: 3p+
+    manifold: L2
+  - Gamma_feed_eV: 0.0463
+    channel: 3p-
+    manifold: L2
+  name: 3d+3d+
+  sigma_ion_from_1s: 5.74315e-07
+  sigma_ion_from_2p: 5.04253e-07
+- Gamma_K_eV: 1.55265
+  Gamma_L2_eV: 0.609449
+  Gamma_L_eV: 0.602927
+  detuning_eV: -1.69
+  detuning_eV_L2_split: 21.26
+  feed_from:
+  - Gamma_feed_eV: 1.0241386173085028
+    channel: 3p+
+  - Gamma_feed_eV: 1.6840555508530808
+    channel: 3p-
+  - Gamma_feed_eV: 1.2235
+    channel: 3p+
+    manifold: upper
+  - Gamma_feed_eV: 1.9699
+    channel: 3p-
+    manifold: upper
+  - Gamma_feed_eV: 1.0241
+    channel: 3p+
+    manifold: L2
+  - Gamma_feed_eV: 1.6841
+    channel: 3p-
+    manifold: L2
+  name: 3d-3d+
+  sigma_ion_from_1s: 5.74315e-07
+  sigma_ion_from_2p: 5.04253e-07
+- Gamma_K_eV: 1.55265
+  Gamma_L2_eV: 0.555031
+  Gamma_L_eV: 0.627541
+  detuning_eV: -1.68
+  detuning_eV_L2_split: 21.26
+  feed_from:
+  - Gamma_feed_eV: 0.08064992289744662
+    channel: 3p+
+  - Gamma_feed_eV: 0.45942343968413835
+    channel: 3p-
+  - Gamma_feed_eV: 0.0852
+    channel: 3p+
+    manifold: upper
+  - Gamma_feed_eV: 0.5104
+    channel: 3p-
+    manifold: upper
+  - Gamma_feed_eV: 0.0806
+    channel: 3p+
+    manifold: L2
+  - Gamma_feed_eV: 0.4594
+    channel: 3p-
+    manifold: L2
+  name: 3d-3d-
+  sigma_ion_from_1s: 5.74315e-07
+  sigma_ion_from_2p: 5.04253e-07
+enable_kfilter: false
+enable_noise_mask: true
+enable_self_absorption: true
+enable_self_diffraction: true
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+is_Cartesian_pol: true
+is_spontaneous_only: false
+is_use_stochastic: false
+n: 82.509
+nlevel: 6
+random_seed: -1
+run_mode: simultaneous
+satellite_channels:
+- Gamma_A_2s_eV: 1.5733
+  Gamma_A_2s_to_L2_eV: 0.7137
+  Gamma_A_K_eV: 0.00259
+  Gamma_A_K_to_L2_eV: 0.002064
+  Gamma_K_eV: 1.54468
+  Gamma_L2_eV: 0.6559
+  Gamma_L_eV: 0.60698
+  detuning_eV: -0.8
+  detuning_eV_L2_split: 21.27
+  name: 3d+
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_2p1: 7.41039e-10
+  sigma_ion_from_1s: 5.715170000000001e-07
+  sigma_ion_from_2p: 5.01453e-07
+- Gamma_A_2s_eV: 1.3121
+  Gamma_A_2s_to_L2_eV: 0.5309
+  Gamma_A_K_eV: 0.003083
+  Gamma_A_K_to_L2_eV: 0.000637
+  Gamma_K_eV: 1.54468
+  Gamma_L2_eV: 0.60921
+  Gamma_L_eV: 0.63478
+  detuning_eV: -0.8
+  detuning_eV_L2_split: 21.26
+  name: 3d-
+  sigma_Ka1_from_1s: 6.434600000000001e-10
+  sigma_Ka1_from_2p: 5.93e-10
+  sigma_Ka1_from_2p1: 5.93e-10
+  sigma_ion_from_1s: 5.715170000000001e-07
+  sigma_ion_from_2p: 5.01453e-07
+- Gamma_A_2s_eV: 1.4535
+  Gamma_A_2s_to_L2_eV: 0.7902
+  Gamma_A_K_eV: 0.034001
+  Gamma_A_K_to_L2_eV: 0.028999
+  Gamma_K_eV: 1.81341
+  Gamma_L2_eV: 0.98385
+  Gamma_L_eV: 0.89272
+  detuning_eV: 2.76
+  detuning_eV_L2_split: 21.31
+  name: 3p+
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_2p1: 1.88202e-08
+  sigma_ion_from_1s: 5.67499e-07
+  sigma_ion_from_2p: 4.97595e-07
+- Gamma_A_2s_eV: 0.6458
+  Gamma_A_2s_to_L2_eV: 0.5062
+  Gamma_A_K_eV: 0.028913
+  Gamma_A_K_to_L2_eV: 0.002563
+  Gamma_K_eV: 1.83468
+  Gamma_L2_eV: 0.86834
+  Gamma_L_eV: 0.98956
+  detuning_eV: 2.93
+  detuning_eV_L2_split: 21.31
+  name: 3p-
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_2p1: 9.4244e-09
+  sigma_ion_from_1s: 5.67491e-07
+  sigma_ion_from_2p: 4.97588e-07
+seed_FEL_bandwidth: 0.0015
+seed_center_E: 8045
+seed_duration_FWHM_t: 6.0
+seed_pulse_format: Ocelot_SASE_seed_pstxy
+seed_width_FWHM_x: 180
+seed_width_FWHM_y: 220
+sigma1_Ka1_2p1: 6.89383e-08
+sigma1_Ka1_2p3: 1.52e-07
+sigma1_Ka1_2s: 2.45e-07
+sigma1_Ka1_other: 1.2006e-07
+sigma2_Ka1_1s: 6.53e-07
+sigma2_Ka1_2p1: 4.98609e-07
+sigma2_Ka1_2p3: 4.15e-07
+sigma2_Ka1_2s: 4.05e-07
+sigma2_Ka1_other: 5.0613e-07
+t_peak: 10
+tgrid: 2400
+tmax: 25.0
+tpad: 0
+turn_off_coherences: false
+use_2s_pathway: true
+use_L2_pathway: true
+xgrid: 15
+xmax: 250.0
+xpad: 60
+ygrid: 15
+ymax: 250.0
+ypad: 60
+zgrid: 15
+zmax: 20000.0

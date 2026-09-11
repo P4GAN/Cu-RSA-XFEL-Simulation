@@ -111,8 +111,17 @@ def load_sweeps(dirs):
                 z = np.load(f)
                 n += int(z["n_reps"])
                 w = z["womega_ar"]
-                for k in ("I_int_thy_w_last_sum", "I_int_thy_w_0_sum"):
+                for k in ("I_int_thy_w_last_sum", "I_int_thy_w_0_sum",
+                          "I_int_thy_w_last_count", "I_int_thy_w_0_count"):
                     acc[k] = acc.get(k, 0) + z[k]
+            # accumulate_run_outputs drops non-finite repetitions per key (tracked in *_count), so a
+            # run with NaN reps averages the output over a different, biased subset of SASE shots
+            # (the strongest ones blow up first) than the input -- unusable, not just noisier.
+            n_finite = int(acc["I_int_thy_w_last_count"].min())
+            if n_finite < n:
+                print(f"warning: {os.path.relpath(run_dir, REPO)}: only {n_finite}/{n} repetitions "
+                      "finite (numerical blow-up) -- excluded")
+                continue
             T = acc["I_int_thy_w_last_sum"] / acc["I_int_thy_w_0_sum"]
             out[e_seed] = (ENERGY_OFFSET_EV + w, T, n)
     return dict(sorted(out.items()))
@@ -204,22 +213,28 @@ def main():
 
 
 def plot_spectra(mb, re, exp):
-    energies = [2.0, 9.0, 40.0]
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.3), sharey=True)
+    # the three measured energies, plus the highest energy where both models have valid runs
+    both = sorted(set(mb) & set(re))
+    energies = [2.0, 9.0, 40.0] + ([both[-1]] if both and both[-1] > 40.0 else [])
+    fig, axes = plt.subplots(1, len(energies), figsize=(5 * len(energies), 4.3), sharey=True)
+    y_top = 0.46
     for ax, e in zip(axes, energies):
-        E, T, _ = mb[e]
-        ax.plot(E, T, color=MB_COLOUR, lw=2.4, label=MB_LABEL)
-        E, T, _ = re[e]
-        ax.plot(E, T, color=RE_COLOUR, lw=2.0, ls="--", label=RE_LABEL)
-        Ee, Te, dTe = exp[e]
-        ax.errorbar(Ee, Te, yerr=dTe, fmt="o", ms=3.5, mfc="white", mec=EXP_COLOUR, ecolor=EXP_COLOUR,
-                    elinewidth=0.8, capsize=0, color=EXP_COLOUR, label="Experiment (centred ~8045 eV)",
-                    zorder=1, alpha=0.8)
-        ax.set_title(f"{e:g} µJ")
+        for src, colour, lw, ls, label in ((mb, MB_COLOUR, 2.4, "-", MB_LABEL), (re, RE_COLOUR, 2.0, "--", RE_LABEL)):
+            E, T, _ = src[e]
+            ax.plot(E, T, color=colour, lw=lw, ls=ls, label=label)
+            y_top = max(y_top, 1.05 * np.nanmax(T[in_window(E, (8000, 8070))]))
+        if e in exp:
+            Ee, Te, dTe = exp[e]
+            ax.errorbar(Ee, Te, yerr=dTe, fmt="o", ms=3.5, mfc="white", mec=EXP_COLOUR, ecolor=EXP_COLOUR,
+                        elinewidth=0.8, capsize=0, color=EXP_COLOUR, label="Experiment (centred ~8045 eV)",
+                        zorder=1, alpha=0.8)
+            ax.set_title(f"{e:g} µJ")
+        else:
+            ax.set_title(f"{e:g} µJ  (no measurement)")
         ax.set_xlim(8000, 8070)
         ax.set_xlabel("Photon energy (eV)")
     axes[0].set_ylabel("Transmittance")
-    axes[0].set_ylim(0.0, 0.46)
+    axes[0].set_ylim(0.0, y_top)
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(0.5, -0.06))
     fig.tight_layout(rect=(0, 0.05, 1, 1))
@@ -229,13 +244,15 @@ def plot_spectra(mb, re, exp):
 def plot_dip_scaling(table):
     fig, (ax, ax2) = plt.subplots(1, 2, figsize=(12.5, 4.5), gridspec_kw={"width_ratios": [1.35, 1]})
 
+    energies = list(table.dropna(subset=["MB", "RE", "exp"], how="all").index)
+    x_lo, x_hi = min(energies) / 1.5, max(energies) * 1.5
     for a in (ax, ax2):
-        a.axvspan(E_RABI_EQUALS_GAMMA_UJ, 200, color="#8c8f96", alpha=0.10, lw=0, zorder=0)
+        a.axvspan(E_RABI_EQUALS_GAMMA_UJ, x_hi, color="#8c8f96", alpha=0.10, lw=0, zorder=0)
         a.axvline(E_RABI_EQUALS_GAMMA_UJ, color=INK_MUTED, lw=1.0, ls=":", zorder=0)
         a.set_xscale("log")
-        a.set_xlim(0.08, 90)
-        a.set_xticks([0.12, 0.5, 2, 9, 40, 60])
-        a.set_xticklabels(["0.12", "0.5", "2", "9", "40", "60"])
+        a.set_xlim(x_lo, x_hi)
+        a.set_xticks(energies)
+        a.set_xticklabels([f"{e:g}" for e in energies])
         a.minorticks_off()
         a.set_xlabel("Pulse energy (µJ)")
 
@@ -250,7 +267,7 @@ def plot_dip_scaling(table):
     ax.errorbar(ex.index, ex["exp"], yerr=ex["exp_err"], fmt="D", ms=7, color=EXP_COLOUR, mfc=EXP_COLOUR,
                 mec="white", mew=1.2, elinewidth=1.2, capsize=0, label="Experiment", zorder=5)
     ax.set_yscale("log")
-    ax.set_ylabel(r"K$\alpha_1$ dip absorbance  $-\ln(T_\mathrm{min}/T_\mathrm{cold})$")
+    ax.set_ylabel(r"K$\alpha_1$ dip absorbance  $-\ln(T_\mathrm{min}/T_\mathrm{off})$")
     ax.set_title(r"K$\alpha_1$ dip vs pulse energy")
     ax.legend(loc="upper left", frameon=False)
     ax.text(E_RABI_EQUALS_GAMMA_UJ * 1.12, 0.975, r"$\Omega_\mathrm{eff} > \Gamma$  (Rabi regime)",

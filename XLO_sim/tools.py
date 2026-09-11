@@ -777,6 +777,20 @@ def compute_run_outputs(X, tpad, ypad):
     they are exactly rho_l3_t_last+rho_l2_t_last and
     rho_eg_l3_t_last+rho_eg_l2_t_last respectively (Tijs_plus_L3+Tijs_plus_L2
     == Tijs_plus by construction), so storing them would be pure redundancy.
+
+    IMPORTANT: rho_K_t_last/rho_l3_t_last/rho_l2_t_last (and their _sat
+    counterparts) are Tijs-weighted dipole contractions, NOT population
+    sums -- Tijs_minus*rho*Tijs_plus with population 1 in a single sublevel
+    returns that sublevel's own coupling-strength weight (e.g. 2/3 for a K
+    sublevel, 1/3 or 1/9 for different L3 sublevels in the double-satellite+L2
+    config -- verified numerically, not merely asserted), not 1. Don't sum
+    them to check population conservation. total_population_t_last below is
+    the actual (unweighted) trace for that: ground + other + 2s + the base
+    block's own raw diagonal trace + every satellite block's raw diagonal
+    trace, with no Tijs anywhere -- should equal 1 for a trace-preserving,
+    exactly-integrated system, so 1 - this is the right population-leak/
+    trace-conservation diagnostic (e.g. for the fixed-dt RK4 convergence
+    checks in scripts/generate_tgrid_sweep_configs.py).
     """
     womega_ar, I_int_thy_w_0, I_thy0_w_0 = SF_spectrum_w(X, 0, ypad, tpad)
     womega_ar, I_int_thy_w_last, I_thy0_w_last = SF_spectrum_w(X, -1, ypad, tpad)
@@ -794,6 +808,10 @@ def compute_run_outputs(X, tpad, ypad):
     rho_other_t_last = X.rho_other_txyz[:, cx, cy, -1]
     rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
     t_axis = X.t
+
+    # Unweighted (no Tijs) raw diagonal trace of the base block -- see IMPORTANT note above;
+    # this, not rho_K_t_last+rho_l3_t_last+rho_l2_t_last, is the base block's actual population.
+    base_pop_t_last = np.einsum('iit->t', rho_ijt_center, optimize=True)
 
     # 2p-hole population/coherence, split by manifold (L3=Kalpha1, L2=Kalpha2) via masking
     # Tijs_plus/Tijs_minus with ei_L3/ei_L2 (ei_L2 is zero, hence harmless, when L2 is off). Their sum
@@ -825,6 +843,7 @@ def compute_run_outputs(X, tpad, ypad):
     rho_l2_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
     rho_eg_l3_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
     rho_eg_l2_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    sat_pop_t_last = np.zeros(X.tgrid, dtype=complex)  # summed over channels as we go; unweighted, see below
 
     for k, rho_sat_ijtxyz in enumerate(X.rho_sat_ijtxyz):
         rho_sat_ijt_center = rho_sat_ijtxyz[:, :, :, cx, cy, -1]
@@ -838,6 +857,16 @@ def compute_run_outputs(X, tpad, ypad):
             'ijs,jit->st', Tijs_minus_L3_sat, rho_sat_ijt_center, optimize=True).sum(axis=0)
         rho_eg_l2_t_last_sat[k] = np.einsum(
             'ijs,jit->st', Tijs_minus_L2_sat, rho_sat_ijt_center, optimize=True).sum(axis=0)
+        # Unweighted (no Tijs) raw diagonal trace of this channel's own block -- same caveat as
+        # base_pop_t_last above, summed directly since only the all-channel total is needed.
+        sat_pop_t_last += np.einsum('iit->t', rho_sat_ijt_center, optimize=True)
+
+    # The actual (Tijs-free) population trace -- should be 1 for an exactly-integrated,
+    # trace-preserving system; 1 - this is the population-leak diagnostic (see IMPORTANT note
+    # above). rho_ground/other/2s_t_last are already plain populations (not Tijs contractions),
+    # so only the coherent blocks needed the unweighted base_pop_t_last/sat_pop_t_last above.
+    total_population_t_last = (rho_ground_t_last + rho_other_t_last + rho_2s_t_last
+                                + base_pop_t_last + sat_pop_t_last)
 
     return {
         "womega_ar": womega_ar,
@@ -855,6 +884,7 @@ def compute_run_outputs(X, tpad, ypad):
         "rho_ground_t_last": rho_ground_t_last,
         "rho_other_t_last": rho_other_t_last,
         "rho_2s_t_last": rho_2s_t_last,
+        "total_population_t_last": total_population_t_last,
         "rho_K_t_last_sat": rho_K_t_last_sat,
         "rho_l3_t_last_sat": rho_l3_t_last_sat,
         "rho_l2_t_last_sat": rho_l2_t_last_sat,

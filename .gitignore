@@ -1,4 +1,4 @@
-/.DS_Store
+**/.DS_Store
 
 *.egg-info/
 
@@ -17,3 +17,9 @@ profiling/
 config/generated/
 
 logs/
+
+xatom/results.dat
+
+Report/
+
+Presentation/

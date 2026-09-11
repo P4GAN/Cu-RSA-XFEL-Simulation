@@ -2,6 +2,7 @@ import os
 import resource
 import sys
 import time
+import traceback
 import multiprocessing as mp
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -272,7 +273,7 @@ def Ocelot_SASE_seed_111_dcm_pstxy(X):
     # The transverse domain is considered to be space [m], since I hace input
     # parameters in time [fs], the correct conversion is needed
     
-    kwargs={'xlamds':1e-9*X.lambdaKalpha1N,                     # [m] - central wavelength
+    kwargs={'xlamds':1e-9*X.lambdaCenter,                     # [m] - central wavelength
             'seed': X.random_seed,
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
             'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value) 
@@ -331,7 +332,7 @@ def Ocelot_SASE_seed_pstxy(X):
     # The transverse domain is considered to be space [m], since I hace input
     # parameters in time [fs], the correct conversion is needed
     
-    kwargs={'xlamds':1e-9*X.lambdaKalpha1N,                     # [m] - central wavelength
+    kwargs={'xlamds':1e-9*X.lambdaCenter,                     # [m] - central wavelength
             'seed': X.random_seed,
             'shape':(X.xgrid, X.ygrid, X.tgrid),            # size of field matrix (x,y,z=ct) (number of points)
             'dgrid':(2e-9*X.xmax, 2e-9*X.ymax, 1e-15*X.tmax*sp_const.c),                # size of field grid (max value)
@@ -757,27 +758,115 @@ def compute_run_outputs(X, tpad, ypad):
     run_duration_sweep.py and run_convergence_sweep.py, which differ only in
     how they seed/configure X before calling X.run_3D().
 
-    rho_eg_t_last is contracted directly from a single (x, y, z) point of
-    X.rho_ijtxyz rather than via the full-grid P_pstxyz = einsum(...) used
-    historically -- same result (P_pstxyz's only consumer was that one
-    point), but avoids materializing a (p, s, t, x, y, z) array per worker
-    just to throw away everything but one (s, t) slice.
+    rho_eg_l3_t_last/rho_eg_l2_t_last are contracted directly from a single
+    (x, y, z) point of X.rho_ijtxyz rather than via the full-grid
+    P_pstxyz = einsum(...) used historically -- same result (P_pstxyz's only
+    consumer was that one point), but avoids materializing a
+    (p, s, t, x, y, z) array per worker just to throw away everything but
+    one (s, t) slice.
+
+    rho_K_t_last is the 1s-hole (K) population -- the upper/excited state of
+    the Kalpha coherent block (Tijs_minus*rho*Tijs_plus restricts to the
+    K-manifold on both sides; see XLO_sim.py's Tijs_plus/Tijs_minus role-mask
+    comment and the decay-direction diagram in
+    docs/theory-and-2s-satellite-pathways.md). It has no L3/L2 split the way
+    the 2p-hole (lower/ground) side does, since the K manifold isn't
+    L3/L2-resolved. The 2p-hole population/coherence counterparts (what used
+    to be called rho_gg_t_last/rho_eg_t_last, i.e. Tijs_plus*rho*Tijs_minus
+    restricted to the L3+L2 manifold) are intentionally NOT saved here --
+    they are exactly rho_l3_t_last+rho_l2_t_last and
+    rho_eg_l3_t_last+rho_eg_l2_t_last respectively (Tijs_plus_L3+Tijs_plus_L2
+    == Tijs_plus by construction), so storing them would be pure redundancy.
+
+    IMPORTANT: rho_K_t_last/rho_l3_t_last/rho_l2_t_last (and their _sat
+    counterparts) are Tijs-weighted dipole contractions, NOT population
+    sums -- Tijs_minus*rho*Tijs_plus with population 1 in a single sublevel
+    returns that sublevel's own coupling-strength weight (e.g. 2/3 for a K
+    sublevel, 1/3 or 1/9 for different L3 sublevels in the double-satellite+L2
+    config -- verified numerically, not merely asserted), not 1. Don't sum
+    them to check population conservation. total_population_t_last below is
+    the actual (unweighted) trace for that: ground + other + 2s + the base
+    block's own raw diagonal trace + every satellite block's raw diagonal
+    trace, with no Tijs anywhere -- should equal 1 for a trace-preserving,
+    exactly-integrated system, so 1 - this is the right population-leak/
+    trace-conservation diagnostic (e.g. for the fixed-dt RK4 convergence
+    checks in scripts/generate_tgrid_sweep_configs.py).
     """
     womega_ar, I_int_thy_w_0, I_thy0_w_0 = SF_spectrum_w(X, 0, ypad, tpad)
     womega_ar, I_int_thy_w_last, I_thy0_w_last = SF_spectrum_w(X, -1, ypad, tpad)
 
-    cx, cy = int(X.xgrid / 2), int(X.ygrid / 2)
+    # Lean (keep_z_history=False) runs only store a length-1 (x,y) footprint at the center pixel;
+    # clamping resolves to the true center in full mode and to 0 (where lean mode wrote it) otherwise.
+    cx = min(int(X.xgrid / 2), X.rho_ijtxyz.shape[3] - 1)
+    cy = min(int(X.ygrid / 2), X.rho_ijtxyz.shape[4] - 1)
     rho_ijt_center = X.rho_ijtxyz[:, :, :, cx, cy, -1]
 
     I_t_0 = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, 0], X.Omega_pstxyz[1, :, :, :, :, 0])
     I_t_last = np.einsum('stxy,stxy->t', X.Omega_pstxyz[0, :, :, :, :, -1], X.Omega_pstxyz[1, :, :, :, :, -1])
-    rho_ee_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, rho_ijt_center, X.Tijs_plus, optimize=True)
-    rho_gg_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_plus, rho_ijt_center, X.Tijs_minus, optimize=True)
-    rho_eg_t_last = np.einsum('ijs,jit->st', X.Tijs_minus, rho_ijt_center, optimize=True)[0]
+    rho_K_t_last = np.einsum('ijs, jkt, kis-> t', X.Tijs_minus, rho_ijt_center, X.Tijs_plus, optimize=True)
     rho_ground_t_last = X.rho_ground_txyz[:, cx, cy, -1]
     rho_other_t_last = X.rho_other_txyz[:, cx, cy, -1]
     rho_2s_t_last = X.rho_2s_txyz[:, cx, cy, -1]
     t_axis = X.t
+
+    # Unweighted (no Tijs) raw diagonal trace of the base block -- see IMPORTANT note above;
+    # this, not rho_K_t_last+rho_l3_t_last+rho_l2_t_last, is the base block's actual population.
+    base_pop_t_last = np.einsum('iit->t', rho_ijt_center, optimize=True)
+
+    # 2p-hole population/coherence, split by manifold (L3=Kalpha1, L2=Kalpha2) via masking
+    # Tijs_plus/Tijs_minus with ei_L3/ei_L2 (ei_L2 is zero, hence harmless, when L2 is off). Their sum
+    # would reproduce the combined 2p-hole quantity (formerly saved as rho_gg_t_last/rho_eg_t_last)
+    # exactly, since Tijs_plus_L3+Tijs_plus_L2 == Tijs_plus by construction -- not stored separately.
+    Tijs_plus_L3 = X.Tijs_plus * X.ei_L3[None, :, None]
+    Tijs_minus_L3 = X.Tijs_minus * X.ei_L3[:, None, None]
+    Tijs_plus_L2 = X.Tijs_plus * X.ei_L2[None, :, None]
+    Tijs_minus_L2 = X.Tijs_minus * X.ei_L2[:, None, None]
+    rho_l3_t_last = np.einsum('ijs, jkt, kis-> t', Tijs_plus_L3, rho_ijt_center, Tijs_minus_L3, optimize=True)
+    rho_l2_t_last = np.einsum('ijs, jkt, kis-> t', Tijs_plus_L2, rho_ijt_center, Tijs_minus_L2, optimize=True)
+    rho_eg_l3_t_last = np.einsum('ijs,jit->st', Tijs_minus_L3, rho_ijt_center, optimize=True).sum(axis=0)
+    rho_eg_l2_t_last = np.einsum('ijs,jit->st', Tijs_minus_L2, rho_ijt_center, optimize=True).sum(axis=0)
+
+    # Stacked into (n_sat, t) arrays, rather than a name-keyed dict, so accumulate_run_outputs'
+    # np.stack/np.isnan reduction applies to these like any other per-repetition key;
+    # satellite_channel_names carries the per-row labels as a run-level (non-accumulated) axis.
+    n_sat = len(X.satellite_channel_params)
+    satellite_channel_names = tuple(chan.name for chan in X.satellite_channel_params)
+    rho_K_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+
+    # Per-channel L3-only/L2-only counterparts of rho_l3_t_last/rho_l2_t_last above, built once
+    # since every channel shares the same local template.
+    Tijs_plus_L3_sat = X.Tijs_plus_satellite * X.ei_L3_satellite[None, :, None]
+    Tijs_minus_L3_sat = X.Tijs_minus_satellite * X.ei_L3_satellite[:, None, None]
+    Tijs_plus_L2_sat = X.Tijs_plus_satellite * X.ei_L2_satellite[None, :, None]
+    Tijs_minus_L2_sat = X.Tijs_minus_satellite * X.ei_L2_satellite[:, None, None]
+    rho_l3_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_l2_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_eg_l3_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    rho_eg_l2_t_last_sat = np.zeros((n_sat, X.tgrid), dtype=complex)
+    sat_pop_t_last = np.zeros(X.tgrid, dtype=complex)  # summed over channels as we go; unweighted, see below
+
+    for k, rho_sat_ijtxyz in enumerate(X.rho_sat_ijtxyz):
+        rho_sat_ijt_center = rho_sat_ijtxyz[:, :, :, cx, cy, -1]
+        rho_K_t_last_sat[k] = np.einsum(
+            'ijs, jkt, kis-> t', X.Tijs_minus_satellite, rho_sat_ijt_center, X.Tijs_plus_satellite, optimize=True)
+        rho_l3_t_last_sat[k] = np.einsum(
+            'ijs, jkt, kis-> t', Tijs_plus_L3_sat, rho_sat_ijt_center, Tijs_minus_L3_sat, optimize=True)
+        rho_l2_t_last_sat[k] = np.einsum(
+            'ijs, jkt, kis-> t', Tijs_plus_L2_sat, rho_sat_ijt_center, Tijs_minus_L2_sat, optimize=True)
+        rho_eg_l3_t_last_sat[k] = np.einsum(
+            'ijs,jit->st', Tijs_minus_L3_sat, rho_sat_ijt_center, optimize=True).sum(axis=0)
+        rho_eg_l2_t_last_sat[k] = np.einsum(
+            'ijs,jit->st', Tijs_minus_L2_sat, rho_sat_ijt_center, optimize=True).sum(axis=0)
+        # Unweighted (no Tijs) raw diagonal trace of this channel's own block -- same caveat as
+        # base_pop_t_last above, summed directly since only the all-channel total is needed.
+        sat_pop_t_last += np.einsum('iit->t', rho_sat_ijt_center, optimize=True)
+
+    # The actual (Tijs-free) population trace -- should be 1 for an exactly-integrated,
+    # trace-preserving system; 1 - this is the population-leak diagnostic (see IMPORTANT note
+    # above). rho_ground/other/2s_t_last are already plain populations (not Tijs contractions),
+    # so only the coherent blocks needed the unweighted base_pop_t_last/sat_pop_t_last above.
+    total_population_t_last = (rho_ground_t_last + rho_other_t_last + rho_2s_t_last
+                                + base_pop_t_last + sat_pop_t_last)
 
     return {
         "womega_ar": womega_ar,
@@ -787,12 +876,21 @@ def compute_run_outputs(X, tpad, ypad):
         "I_thy0_w_last": I_thy0_w_last,
         "I_t_0": I_t_0,
         "I_t_last": I_t_last,
-        "rho_ee_t_last": rho_ee_t_last,
-        "rho_gg_t_last": rho_gg_t_last,
-        "rho_eg_t_last": rho_eg_t_last,
+        "rho_K_t_last": rho_K_t_last,
+        "rho_l3_t_last": rho_l3_t_last,
+        "rho_l2_t_last": rho_l2_t_last,
+        "rho_eg_l3_t_last": rho_eg_l3_t_last,
+        "rho_eg_l2_t_last": rho_eg_l2_t_last,
         "rho_ground_t_last": rho_ground_t_last,
         "rho_other_t_last": rho_other_t_last,
         "rho_2s_t_last": rho_2s_t_last,
+        "total_population_t_last": total_population_t_last,
+        "rho_K_t_last_sat": rho_K_t_last_sat,
+        "rho_l3_t_last_sat": rho_l3_t_last_sat,
+        "rho_l2_t_last_sat": rho_l2_t_last_sat,
+        "rho_eg_l3_t_last_sat": rho_eg_l3_t_last_sat,
+        "rho_eg_l2_t_last_sat": rho_eg_l2_t_last_sat,
+        "satellite_channel_names": satellite_channel_names,
         "t_axis": t_axis,
     }
 
@@ -800,7 +898,7 @@ def compute_run_outputs(X, tpad, ypad):
 # Arrays that are deterministic functions of the grid config, not the random
 # SASE draw -- identical across every repetition of a config, so they are
 # saved as-is rather than accumulated into a sum/sumsq pair.
-RUN_OUTPUT_AXIS_KEYS = ("womega_ar", "t_axis")
+RUN_OUTPUT_AXIS_KEYS = ("womega_ar", "t_axis", "satellite_channel_names")
 
 
 def accumulate_run_outputs(results):
@@ -821,11 +919,21 @@ def accumulate_run_outputs(results):
     chunks' saved accumulators (e.g. from different array tasks writing
     into the same runs_.../ folder) can be combined losslessly later by
     summing again and dividing sum by count -- see data_from_folder().
+
+    Every saved array is downcast to single precision here (complex64/
+    float32, count to int32) -- these are statistical outputs averaged over
+    a handful to a few dozen stochastic SASE repetitions, so float32's ~7
+    significant digits is far below that averaging's own ~1/sqrt(n_reps)
+    noise floor. Roughly halves on-disk size for every run_*_sweep.py
+    script with no meaningful precision loss.
     """
     acc = {"n_reps": len(results)}
     for key in results[0]:
         if key in RUN_OUTPUT_AXIS_KEYS:
-            acc[key] = results[0][key]
+            value = results[0][key]
+            if isinstance(value, np.ndarray) and np.issubdtype(value.dtype, np.floating):
+                value = value.astype(np.float32)
+            acc[key] = value
             continue
         stacked = np.stack([r[key] for r in results])
         valid = ~np.isnan(stacked)
@@ -834,9 +942,10 @@ def accumulate_run_outputs(results):
             print(f"Warning: {key} has {n_bad} NaN value(s) across {len(results)} repetitions "
                   f"-- excluded from the accumulated sum", flush=True)
         finite = np.where(valid, stacked, 0)
-        acc[f"{key}_sum"] = finite.sum(axis=0)
-        acc[f"{key}_sumsq"] = (np.abs(finite) ** 2).sum(axis=0)
-        acc[f"{key}_count"] = valid.sum(axis=0)
+        key_sum = finite.sum(axis=0)
+        acc[f"{key}_sum"] = key_sum.astype(np.complex64 if np.iscomplexobj(key_sum) else np.float32)
+        acc[f"{key}_sumsq"] = (np.abs(finite) ** 2).sum(axis=0).astype(np.float32)
+        acc[f"{key}_count"] = valid.sum(axis=0).astype(np.int32)
     return acc
 
 
@@ -942,7 +1051,9 @@ def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, npro
         elapsed = time.perf_counter() - chunk_t0
         print(f"{type(e).__name__} after {len(results)}/{len(reps)} completed repetitions "
               f"({format_duration(elapsed)} elapsed) -- a worker likely died (e.g. OOM-killed) or raised; "
-              f"see traceback below", flush=True)
+              f"traceback follows:", flush=True)
+        traceback.print_exc(file=sys.stdout)
+        sys.stdout.flush()
         if results:
             np.savez_compressed(partial_path, **accumulate_run_outputs(results))
             print(f"Saved {len(results)} completed repetitions to {partial_path} before re-raising", flush=True)
@@ -1043,29 +1154,48 @@ def data_from_folder(folder_path, group_keys, aux_keys=(), reverse=True):
         for file_name in os.listdir(runs_path):
             if not file_name.endswith('.npz'):
                 continue
-            data = np.load(os.path.join(runs_path, file_name))
-            file_n_reps = int(data['n_reps'])
+            file_path = os.path.join(runs_path, file_name)
+            # A chunk file can be left truncated/unreadable if its SLURM task was killed
+            # (e.g. hit the wall-clock limit) mid-write of the final np.savez_compressed --
+            # np.load then raises (typically zipfile.BadZipFile). Read everything for this
+            # file into locals first and only fold it into the running sums/counts/axes on
+            # full success, so a corrupt file is skipped cleanly instead of half-applied or
+            # crashing the whole aggregation -- its still-intact '<stem>.partial.npz'
+            # checkpoint sibling (see run_sweep_chunk) is picked up on its own iteration.
+            try:
+                data = np.load(file_path)
+                file_n_reps = int(data['n_reps'])
+                file_sums, file_counts, file_sumsqs, file_axes = {}, {}, {}, {}
+
+                sum_keys = {n[:-len('_sum')] for n in data.files if n.endswith('_sum')}
+                for key in sum_keys:
+                    chunk_sum = data[f"{key}_sum"]
+                    chunk_count = (data[f"{key}_count"] if f"{key}_count" in data.files
+                                   else np.full(chunk_sum.shape, file_n_reps, dtype=float))
+                    bad = np.isnan(chunk_sum)
+                    if np.any(bad):
+                        chunk_sum = np.where(bad, 0, chunk_sum)
+                        chunk_count = np.where(bad, 0, chunk_count)
+                    file_sums[key] = chunk_sum
+                    file_counts[key] = chunk_count
+                    if f"{key}_sumsq" in data.files:
+                        file_sumsqs[key] = np.where(bad, 0, data[f"{key}_sumsq"])
+
+                for array_name in data.files:
+                    if array_name in ('n_reps',) or array_name.endswith(('_sum', '_sumsq', '_count')):
+                        continue
+                    file_axes[array_name] = data[array_name]
+            except Exception as e:
+                print(f"Warning: could not read chunk file {file_path} ({e}) -- skipping it")
+                continue
+
             n_reps += file_n_reps
-
-            sum_keys = {n[:-len('_sum')] for n in data.files if n.endswith('_sum')}
-            for key in sum_keys:
-                chunk_sum = data[f"{key}_sum"]
-                chunk_count = (data[f"{key}_count"] if f"{key}_count" in data.files
-                               else np.full(chunk_sum.shape, file_n_reps, dtype=float))
-                bad = np.isnan(chunk_sum)
-                if np.any(bad):
-                    chunk_sum = np.where(bad, 0, chunk_sum)
-                    chunk_count = np.where(bad, 0, chunk_count)
+            for key, chunk_sum in file_sums.items():
                 sums[key] = sums.get(key, 0) + chunk_sum
-                counts[key] = counts.get(key, 0) + chunk_count
-                if f"{key}_sumsq" in data.files:
-                    chunk_sumsq = np.where(bad, 0, data[f"{key}_sumsq"])
-                    sumsqs[key] = sumsqs.get(key, 0) + chunk_sumsq
-
-            for array_name in data.files:
-                if array_name in ('n_reps',) or array_name.endswith(('_sum', '_sumsq', '_count')):
-                    continue
-                axes[array_name] = data[array_name]
+                counts[key] = counts.get(key, 0) + file_counts[key]
+            for key, chunk_sumsq in file_sumsqs.items():
+                sumsqs[key] = sumsqs.get(key, 0) + chunk_sumsq
+            axes.update(file_axes)
 
         if n_reps == 0:
             print(f"No .npz chunk files found in {runs_path}")

@@ -1,0 +1,262 @@
+{
+  "Ka1_energy_eV": 8047.91,
+  "base": {
+    "sigma1": {
+      "2s": 2.45189e-07,
+      "2p3": 1.36345e-07,
+      "2p1": 6.893830000000001e-08
+    },
+    "sigma2": {
+      "1s": 5.69102e-07,
+      "2s": 4.05292e-07,
+      "2p3": 4.99019e-07,
+      "2p1": 4.98609e-07
+    },
+    "other6": {
+      "sigma1_Ka1_other": 6.443393000000002e-08,
+      "sigma2_Ka1_other": 5.061296293909124e-07,
+      "per_subshell_sigma1": {
+        "3s0": 3.5265100000000004e-08,
+        "3p-": 8.70494e-09,
+        "3p+": 1.73855e-08,
+        "4s0": 2.08547e-09,
+        "3d-": 4.41352e-10,
+        "3d+": 5.51568e-10
+      },
+      "per_subshell_sigma2": {
+        "3s0": 4.99913e-07,
+        "3p-": 5.13488e-07,
+        "3p+": 5.13495e-07,
+        "4s0": 5.14058e-07,
+        "3d-": 5.167960000000001e-07,
+        "3d+": 5.167960000000001e-07
+      }
+    }
+  },
+  "satellite_channels": {
+    "3d+": {
+      "name": "3d+",
+      "detuning_eV": -0.8000000000029104,
+      "Gamma_A_2s_eV": 1.5732779974456634,
+      "Gamma_L_eV": 0.606981,
+      "Gamma_K_eV": 1.54468,
+      "sigma_Ka1_from_2p": 7.41039e-10,
+      "sigma_Ka1_from_1s": 8.0409e-10,
+      "sigma_ion_from_2p": 5.01453e-07,
+      "sigma_ion_from_1s": 5.715170000000001e-07
+    },
+    "3d-": {
+      "name": "3d-",
+      "detuning_eV": -0.7999999999956344,
+      "Gamma_A_2s_eV": 1.3121330447815414,
+      "Gamma_L_eV": 0.63478,
+      "Gamma_K_eV": 1.54468,
+      "sigma_Ka1_from_2p": 5.93e-10,
+      "sigma_Ka1_from_1s": 6.434600000000001e-10,
+      "sigma_ion_from_2p": 5.01453e-07,
+      "sigma_ion_from_1s": 5.715170000000001e-07
+    },
+    "3p+": {
+      "name": "3p+",
+      "detuning_eV": 2.7600000000020373,
+      "Gamma_A_2s_eV": 1.4535152442998212,
+      "Gamma_L_eV": 2.63249,
+      "Gamma_K_eV": 3.85244,
+      "sigma_Ka1_from_2p": 1.88202e-08,
+      "sigma_Ka1_from_1s": 2.02344e-08,
+      "sigma_ion_from_2p": 4.97595e-07,
+      "sigma_ion_from_1s": 5.67499e-07
+    },
+    "3p-": {
+      "name": "3p-",
+      "detuning_eV": 2.930000000000291,
+      "Gamma_A_2s_eV": 0.6457670126966641,
+      "Gamma_L_eV": 3.1793,
+      "Gamma_K_eV": 4.36494,
+      "sigma_Ka1_from_2p": 9.4244e-09,
+      "sigma_Ka1_from_1s": 1.01334e-08,
+      "sigma_ion_from_2p": 4.97588e-07,
+      "sigma_ion_from_1s": 5.67491e-07
+    }
+  },
+  "klm_feed": {
+    "3d+": {
+      "Gamma_A_K_eV": 0.0025902355299238502,
+      "Gamma_A_K_to_L2_eV": 0.002064035348392057
+    },
+    "3d-": {
+      "Gamma_A_K_eV": 0.0030828051591942265,
+      "Gamma_A_K_to_L2_eV": 0.0006367763706809897
+    },
+    "3p+": {
+      "Gamma_A_K_eV": 0.03400089922822446,
+      "Gamma_A_K_to_L2_eV": 0.028998630094624493
+    },
+    "3p-": {
+      "Gamma_A_K_eV": 0.02891264211408717,
+      "Gamma_A_K_to_L2_eV": 0.0025627057704587838
+    }
+  },
+  "l2_satellite": {
+    "3d+": {
+      "detuning_eV_L2_split": 21.2699999999968,
+      "Gamma_A_2s_to_L2_eV": 0.7136594213804043,
+      "Gamma_L2_eV": 0.655904,
+      "sigma_Ka1_from_2p1": 7.41039e-10
+    },
+    "3d-": {
+      "detuning_eV_L2_split": 21.260000000002037,
+      "Gamma_A_2s_to_L2_eV": 0.5308669342729798,
+      "Gamma_L2_eV": 0.60921,
+      "sigma_Ka1_from_2p1": 5.93e-10
+    },
+    "3p+": {
+      "detuning_eV_L2_split": 21.310000000004948,
+      "Gamma_A_2s_to_L2_eV": 0.7901723972268733,
+      "Gamma_L2_eV": 2.72362,
+      "sigma_Ka1_from_2p1": 1.88202e-08
+    },
+    "3p-": {
+      "detuning_eV_L2_split": 21.30999999999767,
+      "Gamma_A_2s_to_L2_eV": 0.5062406297203607,
+      "Gamma_L2_eV": 3.05808,
+      "sigma_Ka1_from_2p1": 9.4244e-09
+    }
+  },
+  "l2_pathway": {
+    "sigma1_Ka1_2p1": 6.893830000000001e-08,
+    "sigma2_Ka1_2p1": 4.98609e-07
+  },
+  "double_satellite": {
+    "channels": [
+      {
+        "name": "3d+3d+",
+        "detuning_eV": -1.6999999999970896,
+        "Gamma_L_eV": 0.572227,
+        "Gamma_K_eV": 1.55265,
+        "sigma_ion_from_2p": 5.042530000000001e-07,
+        "sigma_ion_from_1s": 5.74315e-07,
+        "detuning_eV_L2_split": 21.260000000002037,
+        "Gamma_L2_eV": 0.651793,
+        "feed_from": [
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 0.6349831403273791
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 0.04626534312315371
+          },
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 0.7303073474856997,
+            "manifold": "upper"
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 0.049874661394821565,
+            "manifold": "upper"
+          },
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 0.6349831403273791,
+            "manifold": "L2"
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 0.04626534312315371,
+            "manifold": "L2"
+          }
+        ]
+      },
+      {
+        "name": "3d-3d+",
+        "detuning_eV": -1.6899999999950523,
+        "Gamma_L_eV": 0.602927,
+        "Gamma_K_eV": 1.55265,
+        "sigma_ion_from_2p": 5.042530000000001e-07,
+        "sigma_ion_from_1s": 5.74315e-07,
+        "detuning_eV_L2_split": 21.260000000002037,
+        "Gamma_L2_eV": 0.609449,
+        "feed_from": [
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 1.0241386173085028
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 1.6840555508530808
+          },
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 1.2234919540852354,
+            "manifold": "upper"
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 1.9699492593079289,
+            "manifold": "upper"
+          },
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 1.0241386173085028,
+            "manifold": "L2"
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 1.6840555508530808,
+            "manifold": "L2"
+          }
+        ]
+      },
+      {
+        "name": "3d-3d-",
+        "detuning_eV": -1.680000000000291,
+        "Gamma_L_eV": 0.627541,
+        "Gamma_K_eV": 1.55265,
+        "sigma_ion_from_2p": 5.042530000000001e-07,
+        "sigma_ion_from_1s": 5.74315e-07,
+        "detuning_eV_L2_split": 21.260000000002037,
+        "Gamma_L2_eV": 0.555031,
+        "feed_from": [
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 0.08064992289744662
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 0.45942343968413835
+          },
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 0.08523123188582114,
+            "manifold": "upper"
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 0.5104393466181166,
+            "manifold": "upper"
+          },
+          {
+            "channel": "3p+",
+            "Gamma_feed_eV": 0.08064992289744662,
+            "manifold": "L2"
+          },
+          {
+            "channel": "3p-",
+            "Gamma_feed_eV": 0.45942343968413835,
+            "manifold": "L2"
+          }
+        ]
+      }
+    ],
+    "carved_out": {
+      "3p+|lower": 1.7397716805333285,
+      "3p+|upper": 2.039030533456756,
+      "3p+|L2": 1.7397716805333285,
+      "3p-|lower": 2.189744333660373,
+      "3p-|upper": 2.5302632673208674,
+      "3p-|L2": 2.189744333660373
+    }
+  }
+}

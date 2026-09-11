@@ -33,8 +33,8 @@ nlevel: 2
 #radiative rates
 GammaKeVN: 1.49
 GammaL1eVN: 8.13
+GammaL2eVN: 1.04
 GammaL3eVN: 0.61
-# GammaL3M45eVN: 0.61
 GammarKalpha1eVN: 0.39375
 GammarKalpha2eVN: 0.202668
 GammaA_L1_to_L3M45eVN: 5.07 # 1.57

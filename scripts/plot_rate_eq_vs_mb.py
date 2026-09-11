@@ -74,6 +74,19 @@ def newest_rate_eq_dir():
     return candidates[-1]
 
 
+def check_rate_eq_provenance(re_dir):
+    """Every RE output must have been written by a run whose kernel check passed
+    (run_intensity_sweep.verify_code). The outputs themselves can't tell RE from MB apart, and
+    jobs 24533426/24535882/24541257 silently ran the full model."""
+    for npz in glob.glob(os.path.join(re_dir, "runs_seed_*_uJ", "*.npz")):
+        # <output_stem>.provenance.txt sits next to <output_stem>[_<timestamp>|.partial].npz
+        prov = [p for p in glob.glob(os.path.join(os.path.dirname(npz), "*.provenance.txt"))
+                if os.path.basename(npz).startswith(os.path.basename(p)[:-len(".provenance.txt")])]
+        if not prov or "use_rate_equations: True (kernel check passed)" not in open(prov[0]).read():
+            raise RuntimeError(f"{npz}: no provenance confirming the rate-equation kernel ran -- "
+                               "treat as full Maxwell-Bloch output, not rate equations")
+
+
 def load_sweeps(dirs):
     """{E_seed_uJ: (energy_eV, T, n_reps)} over every runs_seed_* folder in dirs."""
     out = {}
@@ -133,9 +146,16 @@ def main():
                              f"data/rate_eq_sweep_sase_*/{RE_CONFIG_NAME})")
     args = parser.parse_args()
     re_dir = args.rate_eq_dir or newest_rate_eq_dir()
+    check_rate_eq_provenance(re_dir)
     print(f"rate-equation data: {os.path.relpath(re_dir, REPO)}")
 
-    mb = load_sweeps(MB_DIRS)
+    # Prefer the full-MB runs submitted alongside the RE runs (same seeds and rep count, so the
+    # ratio compares identical SASE shots); fall back to the older production/low-fluence runs.
+    same_job_mb = os.path.join(os.path.dirname(re_dir), "Cu-seed-SASE-double-satellite")
+    mb_dirs = [same_job_mb] if glob.glob(os.path.join(same_job_mb, "runs_seed_*_uJ")) else MB_DIRS
+    print(f"Maxwell-Bloch data: {', '.join(os.path.relpath(d, REPO) for d in mb_dirs)}")
+
+    mb = load_sweeps(mb_dirs)
     re = load_sweeps([re_dir])
     exp, (E_cold, T_cold_curve) = load_experiment()
 

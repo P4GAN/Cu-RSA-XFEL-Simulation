@@ -2,10 +2,12 @@
 # Generate the E_seed sweep manifest for the rate-equation vs full Maxwell-Bloch comparison
 # (use_rate_equations in Model._MB_nlevel_regular_core -- coherences adiabatically eliminated):
 #
-#   Cu-seed-SASE-double-satellite-rate-eq : 60, 40, 9, 2, 0.5, 0.12 uJ
+#   Cu-seed-SASE-double-satellite-rate-eq : 60, 40, 9, 2, 0.5, 0.12 uJ   (tasks 0-5)
+#   Cu-seed-SASE-double-satellite         : 60, 40, 9, 2, 0.5, 0.12 uJ   (tasks 6-11, full MB)
 #
-# The full-MB counterparts already exist: 60/40/9/2 uJ in data/production_sweep_sase_24437070 and
-# 0.5/0.12 uJ in data/linear_response_sweep_sase_24533426/Cu-seed-SASE-double-satellite.
+# The full-MB runs duplicate data/production_sweep_sase_24437070 (120 reps) on purpose: same seeds
+# and rep count as the RE runs, so the RE/MB ratio isn't polluted by SASE sampling noise. Submit
+# only tasks 0-5 to skip them.
 #
 # Also writes config/generated/rate_eq/tasks.txt, one "<config name> <yaml path>" line per SLURM
 # array task, which submit_rate_eq_sweep.sh indexes directly. Prints the matching sbatch command
@@ -36,6 +38,8 @@ gen() {
 }
 
 gen Cu-seed-SASE-double-satellite-rate-eq 60 40 9 2 0.5 0.12
+# Full-MB counterpart on the same seeds/rep count, so RE/MB compares identical SASE shots.
+gen Cu-seed-SASE-double-satellite 60 40 9 2 0.5 0.12
 
 N=$(wc -l < "$TASKS" | tr -d ' ')
 echo

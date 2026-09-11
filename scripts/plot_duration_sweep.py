@@ -5,7 +5,8 @@ figs/<sweep name>/:
 
   1. duration_summary       energy transmission, resonantly created 1s holes, Kalpha1 dip
                             depth and width, each vs seed duration
-  2. duration_spectra       spectrally resolved T(omega) plus the mean input spectra
+  2. duration_spectra       transmittance vs absolute photon energy (E_Kalpha1 + womega), one
+                            line per duration
   3. duration_time_domain   time-resolved T(t) through the pulse, and the resonant
                             free-induction-decay tail left behind by the shortest pulses
   4. duration_populations   exit-face 2p3/2- and 1s-hole populations (main line vs
@@ -98,6 +99,7 @@ def sim_constants(yaml_path):
         "Gamma_K_sat": np.array([c["Gamma_K_eV"] for c in chans]),
         "feed_upper": feed_upper,
         "Ka2": -(X.hwKalpha1N - X.hwKalpha2N),
+        "E_Ka1": X.hwKalpha1N,
         "sat_lines": [(c["name"], c["detuning_eV"]) for c in chans],
         "E_seed_uJ": X.E_seed_uJ,
     }
@@ -210,30 +212,19 @@ def fig_summary(S, C, out_dir):
 
 
 def fig_spectra(S, C, out_dir):
-    fig, (ax, axb) = plt.subplots(2, 1, figsize=(9, 7.2), sharex=True, gridspec_kw={"height_ratios": [2.2, 1]})
-    for col, (dur, e) in zip(RAMP, S.items()):
+    """Clean single-panel T(omega) vs absolute photon energy, one viridis line per duration."""
+    colours = plt.get_cmap("viridis")(np.linspace(0.0, 0.85, len(S)))   # stop short of low-contrast yellow
+    fig, ax = plt.subplots(figsize=(7.5, 4.6))
+    for col, (dur, e) in zip(colours, S.items()):
         a = e["mean"]
         w, I0, IL = a["womega_ar"], a["I_int_thy_w_0"], a["I_int_thy_w_last"]
-        ok = I0 > 0.03 * I0.max()
-        ax.plot(w[ok], IL[ok] / I0[ok], color=col, label=f"{dur:g} fs")
-        axb.plot(w, I0 / I0.max(), color=col)
-    ax.axhline(C["T_cold"], color=INK_2, lw=0.9)
-    ax.text(-17, C["T_cold"] + 0.002, "cold sample (no core holes)", color=INK_2, fontsize=8.5)
-    for x, name in ((0.0, "Kα1"), (C["Ka2"], "Kα2")):
-        for a_ in (ax, axb):
-            a_.axvline(x, color=MUTED, lw=0.8, zorder=0)
-        ax.text(x, 1.01, name, transform=ax.get_xaxis_transform(), ha="center", va="bottom", color=INK_2, fontsize=9)
-    # Spectator-satellite Kalpha1 lines as ticks under the top axis.
-    for name, det in C["sat_lines"]:
-        ax.plot([det, det], [0.955, 0.99], transform=ax.get_xaxis_transform(), color=SAT, lw=1.1, clip_on=False)
-    ax.text(3.2, 0.93, "satellite Kα1 lines", transform=ax.get_xaxis_transform(), color=INK_2, fontsize=8, va="top")
-    ax.set_ylabel("$T(\\omega)$  (θ$_y$-integrated)")
-    ax.set_title("Spectrally resolved transmission", pad=16)
-    ax.legend(title="seed FWHM", ncol=3, loc="lower left", bbox_to_anchor=(0.36, 0.0))
-    axb.set_ylabel("mean input\nspectrum (norm.)")
-    axb.set_xlabel("photon energy − E(Kα1)  (eV)")
-    axb.set_ylim(0, 1.05)
-    ax.set_xlim(-30, 13)
+        ok = I0 > 0.03 * I0.max()          # don't plot a ratio where there is ~no input light
+        ax.plot(C["E_Ka1"] + w[ok], IL[ok] / I0[ok], color=col, lw=1.7, label=f"{dur:g} fs")
+    ax.set_xlim(C["E_Ka1"] - 30, C["E_Ka1"] + 13)
+    ax.set_xlabel("Photon energy (eV)")
+    ax.set_ylabel("Transmittance")
+    ax.legend(title="Pulse duration (FWHM)", ncol=2, loc="lower center", bbox_to_anchor=(0.45, 0.0))
+    ax.ticklabel_format(axis="x", useOffset=False)
     fig.tight_layout()
     save(fig, out_dir, "duration_spectra")
 
@@ -290,7 +281,9 @@ def fig_time_domain(S, C, out_dir):
 
 
 def fig_populations(S, C, out_dir):
-    fig, axs = plt.subplots(2, 3, figsize=(12, 6.6), sharey=True)
+    """Exit-face core-hole populations: colour = hole type (2p vs 1s), line style = main vs satellites."""
+    HOLE_2P, HOLE_1S = MAIN, SAT
+    fig, axs = plt.subplots(2, 3, figsize=(12, 6.4), sharey=True)
     ymax = 0
     for ax, (dur, e) in zip(axs.flat, S.items()):
         a = e["mean"]
@@ -300,28 +293,28 @@ def fig_populations(S, C, out_dir):
         L3, K = np.real(a["rho_l3_t_last"]), np.real(a["rho_ee_t_last"])
         L3s, Ks = np.real(a["rho_l3_t_last_sat"]).sum(0), np.real(a["rho_ee_t_last_sat"]).sum(0)
         ymax = max(ymax, L3.max(), L3s.max(), K.max(), Ks.max())
-        ax.plot(x, L3, color=MAIN, label="2p$_{3/2}$ hole, main")
-        ax.plot(x, K, color=MAIN, lw=1.1, ls=(0, (4, 2)), label="1s hole, main")
-        ax.plot(x, L3s, color=SAT, label="2p$_{3/2}$ hole, satellites Σ")
-        ax.plot(x, Ks, color=SAT, lw=1.1, ls=(0, (4, 2)), label="1s hole, satellites Σ")
-        ax.set_title(f"{dur:g} fs")
+        ax.plot(x, L3, color=HOLE_2P, lw=1.8, label="2p$_{3/2}$ hole, main line")
+        ax.plot(x, L3s, color=HOLE_2P, lw=1.8, ls=(0, (5, 2.5)), label="2p$_{3/2}$ hole, spectator satellites")
+        ax.plot(x, K, color=HOLE_1S, lw=1.8, label="1s hole, main line")
+        ax.plot(x, Ks, color=HOLE_1S, lw=1.8, ls=(0, (5, 2.5)), label="1s hole, spectator satellites")
+        ax.text(0.97, 0.94, f"{dur:g} fs", transform=ax.transAxes, ha="right", va="top", fontsize=11,
+                fontweight="bold", color=INK)
         half = max(1.6 * dur, 0.5)
         ax.set_xlim(-half, half + 2.5)
         e["_pulse"] = (x, I0 / I0.max())
     for ax, e in zip(axs.flat, S.values()):
         x, p = e.pop("_pulse")
-        ax.fill_between(x, 0, 0.95 * ymax * p, color=GRID, zorder=0, lw=0, label="input pulse (arb.)")
+        ax.fill_between(x, 0, 0.9 * ymax * p, color=GRID, zorder=0, lw=0, label="input pulse (arb. units)")
     axs[0, 0].set_ylim(0, 1.05 * ymax)
     for ax in axs.flat:
         ax.xaxis.set_major_locator(MaxNLocator(5))
     for ax in axs[:, 0]:
-        ax.set_ylabel("population (exit face, centre)")
+        ax.set_ylabel("Population")
     for ax in axs[1]:
-        ax.set_xlabel("t − t$_c$  (fs)")
+        ax.set_xlabel("Time relative to pulse centre (fs)")
     handles, labels = axs[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper right", ncol=5, fontsize=8.5, bbox_to_anchor=(1.0, 1.0))
-    fig.suptitle("Core-hole populations through the pulse", x=0.01, ha="left", fontweight="bold", fontsize=11)
-    fig.tight_layout(rect=(0, 0, 1, 0.97), w_pad=1.5)
+    fig.legend(handles, labels, loc="upper center", ncol=5, fontsize=9, bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(rect=(0, 0, 1, 0.95), w_pad=1.5)
     save(fig, out_dir, "duration_populations")
 
 

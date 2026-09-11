@@ -1,12 +1,23 @@
-"""Three-panel saturation slide figure for the full (double-satellite + L2) SASE model.
+"""Slide figures for the saturation of the RSA dip, full (double-satellite + L2) SASE model, 0.12-60 uJ.
 
-  left   transmittance spectra at every pulse energy, overlaid
-  middle resonant dip absorbance vs pulse energy (Kalpha1/Kalpha2 simulation, Kalpha1 experiment)
-  right  fluence scaling of every tracked manifold (as plot_double_satellite_diagnostics.py, now
-         including the 0.12 and 0.5 uJ runs)
+  figs/saturation_slide_dip.png          transmittance spectra (all pulse energies) + Kalpha dip absorbance
+                                         vs pulse energy with the saturable-absorber fit
+  figs/saturation_slide_populations.png  fluence scaling of every tracked manifold (the figure from
+                                         plot_double_satellite_diagnostics.py, plus the 0.12 / 0.5 uJ runs)
+  figs/saturation_absorbance_scales.png  the dip-absorbance panel on log-log, linear and log-x axes, for
+                                         choosing ABSORBANCE_SCALE (not meant for the slides)
 
-Data, metric definitions and fits are shared with plot_saturation.py. Sized to sit beside a text
-sidebar on a 16:9 slide (~10 in wide). Writes figs/saturation_slide.png.
+The two slide figures are drawn at their true size on the slide (Beamer 16:9, PaloAlto sidebar:
+\\textwidth = 381.8 pt = 5.28 in), so the fonts below are the fonts the audience sees.
+
+Saturable-absorber fit  A(E) = a E / (1 + E / E_sat): the resonant absorbance is (number of absorbers) x
+(absorption per absorber). The 2p3/2 holes are made by photoionization, so their number is ~ E; the
+absorption per hole follows two-level saturation, 1 / (1 + s) with saturation parameter s = I / I_sat ~ E.
+a is the low-fluence slope, E_sat the pulse energy at which s = 1. It is a single-intensity (steady-state,
+flat-top) model -- it ignores the Gaussian beam, SASE spikes, ground-state depletion and power broadening --
+so it is used as a two-number summary of the curve, not a first-principles prediction.
+
+Data, metric definitions and fits are shared with plot_saturation.py.
 Run from the repo root:  python scripts/plot_saturation_slide.py
 """
 
@@ -15,157 +26,214 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedFormatter, FixedLocator, NullFormatter, NullLocator
 
 from plot_saturation import (FIGS, SIM_DIRS, ENERGY_OFFSET_EV, KA1_WINDOW, KA2_WINDOW, EXP_NOISE_FLOOR_UJ,
-                             E_RAMP, KA1_COLOUR, KA2_COLOUR, EXP_COLOUR, INK, INK_MUTED,
-                             load_sweeps, load_experiment, resonant_absorbance, dip_absorbance,
+                             KA1_COLOUR, KA2_COLOUR, EXP_COLOUR,
+                             load_sweeps, load_experiment, sim_spectrum, smooth_ev, dip_absorbance,
                              exp_absorbance, fit_saturable, saturable)
 
-# Manifold colours, in the order plot_double_satellite_diagnostics.py assigns them, so this panel
-# matches the existing slide figure.
+SLIDE_WIDTH_IN = 381.79 / 72.27
+
+# Axes for the dip-absorbance panel on the slide: "semilogx" (log E, linear A), "loglog" or "linear".
+ABSORBANCE_SCALE = "linear"
+
+# Manifold colours/markers exactly as plot_double_satellite_diagnostics.py assigns them.
 PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
 E_TICKS = [0.12, 0.5, 2, 9, 40, 60]
-LEGEND_BELOW = dict(loc="upper center", bbox_to_anchor=(0.5, -0.2), frameon=False)
+FIT_LABEL = r"fit  $aE\,/\,(1+E/E_\mathrm{sat})$"
 
-plt.rcParams.update({
-    "font.size": 10.5, "axes.labelsize": 10.5, "xtick.labelsize": 9.5, "ytick.labelsize": 9.5,
-    "legend.fontsize": 8.8, "lines.linewidth": 1.8, "savefig.bbox": "tight",
-    "axes.grid": True, "grid.alpha": 0.25, "axes.edgecolor": "#b9bbc0",
-    "axes.spines.top": False, "axes.spines.right": False,
-})
-
-
-def log_energy_axis(ax, lim=(0.09, 80)):
-    ax.set_xscale("log")
-    ax.set_xlim(*lim)
-    ax.set_xticks(E_TICKS)
-    ax.set_xticklabels([f"{v:g}" for v in E_TICKS])
-    # 40 and 60 sit ~0.18 decades apart: push their labels away from each other
-    labels = ax.get_xticklabels()
-    labels[-2].set_horizontalalignment("right")
-    labels[-1].set_horizontalalignment("left")
-    ax.minorticks_off()
-    ax.set_xlabel("Pulse energy (µJ)")
+SLIDE_RC = {
+    "font.size": 7.5, "axes.labelsize": 7.5, "axes.titlesize": 7.5, "xtick.labelsize": 6.8,
+    "ytick.labelsize": 6.8, "legend.fontsize": 6.6, "lines.linewidth": 1.3, "lines.markersize": 4,
+    "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+    "xtick.major.size": 2.5, "ytick.major.size": 2.5, "savefig.bbox": "tight", "savefig.pad_inches": 0.02,
+    "axes.grid": True, "grid.alpha": 0.3, "grid.linewidth": 0.5,
+}
 
 
-def panel_spectra(ax, sim, E_sim):
-    for e, colour in zip(E_sim, E_RAMP):
-        run = sim[e]
-        E = ENERGY_OFFSET_EV + run["womega_ar"]
-        ax.plot(E, run["I_int_thy_w_last"] / run["I_int_thy_w_0"], color=colour, lw=1.5, label=f"{e:g} µJ")
-    for centre, name in ((8045.4, r"K$\alpha_1$"), (8023.5, r"K$\alpha_2$")):
-        ax.text(centre, 0.438, name, ha="center", va="top", fontsize=10, color=INK)
-    ax.set_xlim(8010, 8062)
-    ax.set_ylim(0.18, 0.445)
-    ax.set_xlabel("Photon energy (eV)")
-    ax.set_ylabel(r"Transmittance $T(\omega)$")
-    ax.legend(title="Pulse energy", title_fontsize=8.8, **LEGEND_BELOW, ncol=3, columnspacing=1.0,
-              handlelength=1.4)
+def energy_colours(n):
+    """viridis, dark (high energy, deepest dip) to light (low energy); the top 8% is dropped for contrast."""
+    return plt.cm.viridis(np.linspace(0.92, 0.0, n))
 
 
-def panel_absorbance(ax, sim, E_sim):
+def fixed_log_ticks(axis, values):
+    axis.set_major_locator(FixedLocator(values))
+    axis.set_major_formatter(FixedFormatter([f"{v:g}" for v in values]))
+    axis.set_minor_locator(NullLocator())
+    axis.set_minor_formatter(NullFormatter())
+
+
+# =============================================================================
+# data
+# =============================================================================
+def dip_data(sim, E_sim):
+    # T_cold = off-resonant (8005-8015 eV) transmittance of the weakest pulse, i.e. the cold foil -- the same
+    # reference the experiment uses and plot_rate_eq_vs_mb.py uses for the simulation.
+    T_cold = sim_spectrum(sim[E_sim[0]])[2]
     A1, A2 = [], []
     for e in E_sim:
-        E, A = resonant_absorbance(sim[e])
+        E, T, _ = sim_spectrum(sim[e])
+        A = -np.log(smooth_ev(E, T) / T_cold)
         A1.append(dip_absorbance(E, A, KA1_WINDOW)[0])
         A2.append(dip_absorbance(E, A, KA2_WINDOW)[0])
     A1, A2 = np.array(A1), np.array(A2)
-    fit1, _ = fit_saturable(E_sim, A1)
-    fit2, _ = fit_saturable(E_sim, A2)
 
     exp, T_cold = load_experiment()
     table = pd.DataFrame({e: exp_absorbance(E, T, dT, T_cold) for e, (E, T, dT) in exp.items()},
                          index=["A", "dA"]).T.sort_index()
-    fitted = table[table.index > EXP_NOISE_FLOOR_UJ]
-    floor = table[table.index <= EXP_NOISE_FLOOR_UJ]
-    fit_exp, _ = fit_saturable(fitted.index.values, fitted["A"].values)
+    # 0.12 uJ: the expected dip (dT ~ 0.005) is below the measurement noise, so the minimum of the
+    # smoothed curve is a noise dip -- dropped from the plot and the fit.
+    table = table[table.index > EXP_NOISE_FLOOR_UJ]
+    return {"A1": A1, "A2": A2, "exp": table,
+            "fit1": fit_saturable(E_sim, A1)[0], "fit2": fit_saturable(E_sim, A2)[0],
+            "fit_exp": fit_saturable(table.index.values, table["A"].values)[0]}
 
-    E_fine = np.geomspace(0.09, 80, 300)
-    ax.plot(E_fine, fit1[0] * E_fine, color=INK_MUTED, lw=1.0, ls=(0, (2, 2)), zorder=1,
-            label=r"$\propto E$ (no saturation)")
-    for fit, colour in ((fit1, KA1_COLOUR), (fit2, KA2_COLOUR), (fit_exp, EXP_COLOUR)):
-        ax.plot(E_fine, saturable(E_fine, *fit), color=colour, lw=1.2, alpha=0.6, zorder=2)
 
-    ax.plot(E_sim, A1, ls="none", marker="o", ms=7, color=KA1_COLOUR, mec="white", mew=1.2, zorder=4,
+# =============================================================================
+# panels
+# =============================================================================
+def panel_spectra(ax, sim, E_sim):
+    for e, colour in zip(E_sim, energy_colours(len(E_sim))):
+        run = sim[e]
+        E = ENERGY_OFFSET_EV + run["womega_ar"]
+        ax.plot(E, run["I_int_thy_w_last"] / run["I_int_thy_w_0"], color=colour, lw=1.0, alpha=0.85,
+                label=f"{e:g} µJ")
+    ax.set_xlim(8010, 8062)
+    ax.set_ylim(0.15, 0.425)
+    ax.set_xlabel("Photon energy (eV)")
+    ax.set_ylabel("Transmittance")
+    # between the two dips, where every curve is at T > 0.37
+    ax.legend(loc="lower center", ncol=1, frameon=False, handlelength=1.2, handletextpad=0.4,
+              labelspacing=0.2, bbox_to_anchor=(0.515, -0.01))
+
+
+def panel_absorbance(ax, E_sim, d, scale, legend=True, ms=4.5):
+    E_fine = np.geomspace(0.1, 70, 300) if scale != "linear" else np.linspace(0, 65, 300)
+    for fit, colour in ((d["fit1"], KA1_COLOUR), (d["fit2"], KA2_COLOUR), (d["fit_exp"], EXP_COLOUR)):
+        ax.plot(E_fine, saturable(E_fine, *fit), color=colour, lw=1.0, alpha=0.55, zorder=2)
+    ax.plot(E_sim, d["A1"], ls="none", marker="o", ms=ms, color=KA1_COLOUR, mec="white", mew=0.7, zorder=4,
             label=r"K$\alpha_1$, simulation")
-    ax.plot(E_sim, A2, ls="none", marker="s", ms=6.5, color=KA2_COLOUR, mec="white", mew=1.2, zorder=4,
-            label=r"K$\alpha_2$, simulation")
-    ax.errorbar(fitted.index, fitted["A"], yerr=fitted["dA"], fmt="D", ms=6, color=EXP_COLOUR, mec="white",
-                mew=1.0, elinewidth=1.0, capsize=0, zorder=5, label=r"K$\alpha_1$, experiment")
-    ax.errorbar(floor.index, floor["A"], yerr=floor["dA"], fmt="D", ms=6, mfc="white", mec=EXP_COLOUR,
-                color=EXP_COLOUR, elinewidth=1.0, capsize=0, zorder=5)
-    ax.annotate("noise\nfloor", (floor.index[0], floor["A"].iloc[0]), xytext=(0, 13), textcoords="offset points",
-                ha="center", va="bottom", fontsize=8, color=INK_MUTED, linespacing=0.95)
+    ax.plot(E_sim, d["A2"], ls="none", marker="s", ms=ms * 0.93, color=KA2_COLOUR, mec="white", mew=0.7,
+            zorder=4, label=r"K$\alpha_2$, simulation")
+    ax.errorbar(d["exp"].index, d["exp"]["A"], yerr=d["exp"]["dA"], fmt="D", ms=ms * 0.85, color=EXP_COLOUR,
+                mec="white", mew=0.6, elinewidth=0.8, capsize=0, zorder=5, label=r"K$\alpha_1$, experiment")
+    ax.plot([], [], color="0.45", lw=1.0, label=FIT_LABEL)
 
-    ax.set_yscale("log")
-    ax.set_ylim(0.004, 2.5)
-    ax.set_ylabel(r"Dip absorbance  $-\ln(T_\mathrm{dip}/T_\mathrm{wing})$")
-    log_energy_axis(ax)
-    ax.plot([], [], color=INK_MUTED, lw=1.2, alpha=0.8, label="saturable fit")
-    handles, labels = ax.get_legend_handles_labels()
-    order = [labels.index(k) for k in (r"K$\alpha_1$, simulation", r"K$\alpha_2$, simulation",
-                                       r"K$\alpha_1$, experiment", "saturable fit",
-                                       r"$\propto E$ (no saturation)")]
-    ax.legend([handles[i] for i in order], [labels[i] for i in order], **LEGEND_BELOW, handlelength=1.8)
-    return fit1, fit2, fit_exp
+    if scale == "loglog":
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlim(0.09, 80)
+        ax.set_ylim(0.005, 1.5)
+    elif scale == "semilogx":
+        ax.set_xscale("log")
+        ax.set_xlim(0.09, 80)
+        ax.set_ylim(0, 0.9)
+    else:
+        ax.set_xlim(0, 64)
+        ax.set_ylim(0, 0.9)
+    if scale != "linear":
+        fixed_log_ticks(ax.xaxis, E_TICKS)
+        labels = ax.get_xticklabels()   # 40 and 60 are close on a log axis: push the labels apart
+        labels[-2].set_horizontalalignment("right")
+        labels[-1].set_horizontalalignment("left")
+    ax.set_xlabel("Pulse energy (µJ)")
+    ax.set_ylabel(r"$-\ln(T_\mathrm{dip}/T_\mathrm{cold})$")
+    if legend:
+        handles, labels = ax.get_legend_handles_labels()
+        order = [labels.index(k) for k in (r"K$\alpha_1$, simulation", r"K$\alpha_2$, simulation",
+                                           r"K$\alpha_1$, experiment", FIT_LABEL)]
+        # lower right is empty on linear axes (every curve is above A = 0.45 beyond 25 uJ); upper left on log x
+        ax.legend([handles[i] for i in order], [labels[i] for i in order],
+                  loc="lower right" if scale == "linear" else "upper left", frameon=False,
+                  handlelength=1.5, labelspacing=0.3)
 
 
-def panel_manifolds(ax, sim, E_sim):
+def manifold_series(sim, E_sim):
+    """The series of plot_double_satellite_diagnostics.py figure 3, same labels, colours and styles."""
     names = [str(n) for n in sim[E_sim[-1]]["satellite_channel_names"]]
     dt = sim[E_sim[-1]]["t_axis"][1] - sim[E_sim[-1]]["t_axis"][0]
 
     def integrated(key, row=None):
-        return np.array([(sim[e][key] if row is None else sim[e][key][row]).sum() * dt for e in E_sim])
+        return [(sim[e][key] if row is None else sim[e][key][row]).sum() * dt for e in E_sim]
 
-    series = [(r"$1s^{-1}$ (K)", integrated("rho_ee_t_last"), "#e34948", "-", "D", 2.4),
-              (r"$2p_{3/2}^{-1}$ (L3)", integrated("rho_l3_t_last"), "#111111", "-", "o", 2.4),
-              (r"$2p_{1/2}^{-1}$ (L2)", integrated("rho_l2_t_last"), "#111111", "--", "o", 1.6)]
+    series = [("base $1s^{-1}$ (K)", integrated("rho_ee_t_last"), "#e34948", "-", "D", 2.6),
+              ("base $2p_{3/2}^{-1}$ (L3)", integrated("rho_l3_t_last"), "#111111", "-", "o", 2.6),
+              ("base $2p_{1/2}^{-1}$ (L2)", integrated("rho_l2_t_last"), "#111111", "--", "o", 1.8)]
     for i, name in enumerate(names):
         series.append((f"${name}$", integrated("rho_l3_t_last_sat", i), PALETTE[i % len(PALETTE)],
-                       "-" if len(name) <= 3 else "--", "s" if len(name) <= 3 else "^", 1.2))
+                       "-" if len(name) <= 3 else "--", "s" if len(name) <= 3 else "^", 1.4))
+    return series
 
-    exponents = {}
+
+def plot_populations(sim, E_sim):
+    series = manifold_series(sim, E_sim)
+    fig, ax = plt.subplots(figsize=(SLIDE_WIDTH_IN, 2.32))
+    slopes = {}
     for label, values, colour, ls, marker, lw in series:
-        local = np.diff(np.log(values)) / np.diff(np.log(E_sim))
-        exponents[label] = (np.polyfit(np.log(E_sim), np.log(values), 1)[0], local)
-        # K is sequential (hole creation, then resonant pumping), so its exponent runs from ~2 at low
-        # fluence down as the Kalpha1 transition saturates; a single fitted p would hide that.
-        p_text = (rf"$p$: {local[0]:.1f}$\to${local[-1]:.1f}" if local[0] - local[-1] > 0.3
-                  else rf"$p$ = {exponents[label][0]:.2f}")
-        ax.plot(E_sim, values, color=colour, ls=ls, marker=marker, lw=lw, ms=4.2, label=f"{label}  {p_text}")
-
-    guide = np.array([0.12, 9.0])
-    ax.plot(guide, 1.5e-4 * guide / 0.12, color=INK_MUTED, lw=1.0, ls=(0, (2, 2)), zorder=0)
-    ax.text(0.5, 1.5e-4 * 0.5 / 0.12 * 1.6, r"$\propto E$", color=INK_MUTED, fontsize=9.5,
-            ha="right", va="bottom")
-
+        slope = np.polyfit(np.log(E_sim), np.log(values), 1)[0]
+        slopes[label] = slope
+        # line widths scaled from the original 8.2 in figure to this 5.3 in one
+        ax.plot(E_sim, values, color=colour, ls=ls, marker=marker, lw=0.62 * lw, ms=3.2,
+                label=f"{label}  ($p={slope:.2f}$)")
+    ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_ylabel("Time-integrated population (arb.)")
-    log_energy_axis(ax)
-    ax.legend(**LEGEND_BELOW, ncol=2, fontsize=8.2,
-              columnspacing=0.8, handlelength=2.0, handletextpad=0.5, labelspacing=0.35)
-    return exponents
+    fixed_log_ticks(ax.xaxis, E_TICKS)
+    labels = ax.get_xticklabels()
+    labels[-2].set_horizontalalignment("right")
+    labels[-1].set_horizontalalignment("left")
+    ax.set_xlabel("Pulse energy (µJ)")
+    ax.set_ylabel("Time-integrated dipole-weighted\npopulation (arb.)")
+    ax.set_title(r"Fluence scaling of each hole-state population, fitted as $\propto E^{\,p}$")
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False, fontsize=6.6, labelspacing=0.45)
+    fig.tight_layout()
+    save(fig, "saturation_slide_populations")
+    return slopes
+
+
+def plot_dip(sim, E_sim, d):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(SLIDE_WIDTH_IN, 2.2), gridspec_kw={"width_ratios": [1, 1.2]})
+    panel_spectra(ax1, sim, E_sim)
+    panel_absorbance(ax2, E_sim, d, ABSORBANCE_SCALE)
+    fig.tight_layout(w_pad=1.2)
+    save(fig, "saturation_slide_dip")
+
+
+def plot_scale_comparison(E_sim, d):
+    with plt.rc_context({"font.size": 10, "axes.labelsize": 10, "axes.titlesize": 11, "xtick.labelsize": 9,
+                         "ytick.labelsize": 9, "legend.fontsize": 8.5, "savefig.bbox": "tight",
+                         "axes.grid": True, "grid.alpha": 0.3}):
+        fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.0))
+        for ax, scale, title in zip(axes, ("loglog", "linear", "semilogx"),
+                                    ("log–log (previous slide)", "linear–linear", "log E, linear A")):
+            panel_absorbance(ax, E_sim, d, scale, legend=(scale == "linear"), ms=6.5)
+            ax.set_title(title)
+        fig.tight_layout()
+        save(fig, "saturation_absorbance_scales")
+
+
+def save(fig, stem):
+    path = os.path.join(FIGS, f"{stem}.png")
+    fig.savefig(path, dpi=400)
+    plt.close(fig)
+    print(f"wrote {os.path.relpath(path)}")
 
 
 def main():
     sim = load_sweeps(SIM_DIRS)
     E_sim = np.array(list(sim))
+    d = dip_data(sim, E_sim)
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10.2, 3.9))
-    panel_spectra(ax1, sim, E_sim)
-    fit1, fit2, fit_exp = panel_absorbance(ax2, sim, E_sim)
-    exponents = panel_manifolds(ax3, sim, E_sim)
-    fig.tight_layout(w_pad=1.6)
+    with plt.rc_context(SLIDE_RC):
+        plot_dip(sim, E_sim, d)
+        slopes = plot_populations(sim, E_sim)
+    plot_scale_comparison(E_sim, d)
 
-    path = os.path.join(FIGS, "saturation_slide.png")
-    fig.savefig(path, dpi=250)
-    plt.close(fig)
-    print(f"wrote {os.path.relpath(path)}")
-
-    print(f"\nsaturable fit E_sat: sim Ka1 {fit1[1]:.1f} uJ, sim Ka2 {fit2[1]:.1f} uJ, exp Ka1 {fit_exp[1]:.1f} uJ")
-    print("fluence exponents (fit over all energies; local slopes between neighbouring energies):")
-    for label, (p, local) in exponents.items():
-        print(f"  {label:24s} p = {p:.2f}   local {np.round(local, 2)}")
+    for name, (a, E_sat) in (("sim Ka1", d["fit1"]), ("sim Ka2", d["fit2"]), ("exp Ka1", d["fit_exp"])):
+        print(f"{name}: a = {a:.4f} /uJ, E_sat = {E_sat:.1f} uJ, plateau a*E_sat = {a * E_sat:.2f}")
+    print("fluence exponents p (fit over all pulse energies):")
+    for label, p in slopes.items():
+        print(f"  {label:28s} {p:.2f}")
 
 
 if __name__ == "__main__":

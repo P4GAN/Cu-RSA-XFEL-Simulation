@@ -2,12 +2,18 @@
 # Generate the E_seed sweep manifest for the rate-equation vs full Maxwell-Bloch comparison
 # (use_rate_equations in Model._MB_nlevel_regular_core -- coherences adiabatically eliminated):
 #
-#   Cu-seed-SASE-double-satellite-rate-eq : 60, 40, 9, 2, 0.5, 0.12 uJ   (tasks 0-5)
-#   Cu-seed-SASE-double-satellite         : 60, 40, 9, 2, 0.5, 0.12 uJ   (tasks 6-11, full MB)
+#   Cu-seed-SASE-double-satellite-rate-eq : $RE_ENERGIES  (first tasks)
+#   Cu-seed-SASE-double-satellite         : $MB_ENERGIES  (remaining tasks, full MB)
 #
-# The full-MB runs duplicate data/production_sweep_sase_24437070 (120 reps) on purpose: same seeds
-# and rep count as the RE runs, so the RE/MB ratio isn't polluted by SASE sampling noise. Submit
-# only tasks 0-5 to skip them.
+# Defaults (60 40 9 2 0.5 0.12 for both) reproduce job 24549384. The full-MB runs duplicate
+# data/production_sweep_sase_24437070 (120 reps) on purpose: same seeds and rep count as the RE
+# runs, so the RE/MB ratio isn't polluted by SASE sampling noise.
+#
+# High-fluence extension (100-400 uJ both models, plus the RE 60 uJ point missing from 24549384):
+#   RE_ENERGIES="400 200 100 60" MB_ENERGIES="400 200 100" bash scripts/generate_rate_eq_sweep.sh
+# plot_rate_eq_vs_mb.py merges every data/rate_eq_sweep_sase_* job, so the jobs combine.
+# Numerics checked at 400 uJ: peak |Omega| dt = 0.76 in the strongest SASE spikes (RK4 stable
+# to ~2.8); keep E <= 400 uJ unless tgrid is raised.
 #
 # Also writes config/generated/rate_eq/tasks.txt, one "<config name> <yaml path>" line per SLURM
 # array task, which submit_rate_eq_sweep.sh indexes directly. Prints the matching sbatch command
@@ -37,9 +43,13 @@ gen() {
     done < "$out_dir/manifest.txt"
 }
 
-gen Cu-seed-SASE-double-satellite-rate-eq 60 40 9 2 0.5 0.12
+RE_ENERGIES=${RE_ENERGIES:-60 40 9 2 0.5 0.12}
+MB_ENERGIES=${MB_ENERGIES:-60 40 9 2 0.5 0.12}
+
+# shellcheck disable=SC2086  # word-splitting the energy lists is intended
+gen Cu-seed-SASE-double-satellite-rate-eq $RE_ENERGIES
 # Full-MB counterpart on the same seeds/rep count, so RE/MB compares identical SASE shots.
-gen Cu-seed-SASE-double-satellite 60 40 9 2 0.5 0.12
+[[ -n "$MB_ENERGIES" ]] && gen Cu-seed-SASE-double-satellite $MB_ENERGIES
 
 N=$(wc -l < "$TASKS" | tr -d ' ')
 echo

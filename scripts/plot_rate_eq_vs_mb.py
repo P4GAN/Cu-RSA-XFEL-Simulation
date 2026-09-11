@@ -67,11 +67,13 @@ plt.rcParams.update({
 })
 
 
-def newest_rate_eq_dir():
-    candidates = sorted(glob.glob(os.path.join(DATA, "rate_eq_sweep_sase_*", RE_CONFIG_NAME)))
+def rate_eq_dirs():
+    """Every data/rate_eq_sweep_sase_<jobid>/<RE config> folder, newest job first -- jobs are
+    merged (e.g. 24549384's 0.12-60 uJ plus a later high-fluence extension)."""
+    candidates = sorted(glob.glob(os.path.join(DATA, "rate_eq_sweep_sase_*", RE_CONFIG_NAME)), reverse=True)
     if not candidates:
         raise FileNotFoundError(f"no data/rate_eq_sweep_sase_*/{RE_CONFIG_NAME} -- pass --rate-eq-dir")
-    return candidates[-1]
+    return candidates
 
 
 def check_rate_eq_provenance(re_dir):
@@ -88,15 +90,24 @@ def check_rate_eq_provenance(re_dir):
 
 
 def load_sweeps(dirs):
-    """{E_seed_uJ: (energy_eV, T, n_reps)} over every runs_seed_* folder in dirs."""
+    """{E_seed_uJ: (energy_eV, T, n_reps)} over every runs_seed_* folder in dirs. Every job runs
+    seeds 0..n-1, so the same E_seed in two jobs repeats the same SASE shots rather than adding
+    new ones: the first dir listed (newest job) wins instead of being summed."""
     out = {}
     for d in dirs:
         for run_dir in glob.glob(os.path.join(d, "runs_seed_*_uJ")):
             yaml_files = glob.glob(os.path.join(run_dir, "*.yaml"))
             # folder names round E_seed to 1 decimal (0.12 -> runs_seed_0.1_uJ); the YAML is exact
             e_seed = float(yaml.safe_load(open(yaml_files[0]))["E_seed_uJ"])
+            npz_files = glob.glob(os.path.join(run_dir, "*.npz"))
+            if not npz_files:
+                print(f"warning: {os.path.relpath(run_dir, REPO)} has no output yet -- skipped")
+                continue
+            if e_seed in out:
+                print(f"warning: {e_seed:g} uJ also in {os.path.relpath(run_dir, REPO)} -- using the newer job's")
+                continue
             acc, n = {}, 0
-            for f in glob.glob(os.path.join(run_dir, "*.npz")):
+            for f in npz_files:
                 z = np.load(f)
                 n += int(z["n_reps"])
                 w = z["womega_ar"]
@@ -142,27 +153,28 @@ def in_window(E, window):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--rate-eq-dir", default=None,
-                        help=f"folder holding the rate-equation runs_seed_*_uJ/ (default: newest "
-                             f"data/rate_eq_sweep_sase_*/{RE_CONFIG_NAME})")
+                        help=f"one folder holding rate-equation runs_seed_*_uJ/ (default: every "
+                             f"data/rate_eq_sweep_sase_*/{RE_CONFIG_NAME}, merged)")
     args = parser.parse_args()
-    re_dir = args.rate_eq_dir or newest_rate_eq_dir()
-    check_rate_eq_provenance(re_dir)
-    print(f"rate-equation data: {os.path.relpath(re_dir, REPO)}")
+    re_dirs = [args.rate_eq_dir] if args.rate_eq_dir else rate_eq_dirs()
+    for d in re_dirs:
+        check_rate_eq_provenance(d)
+    print(f"rate-equation data: {', '.join(os.path.relpath(d, REPO) for d in re_dirs)}")
 
     # Prefer the full-MB runs submitted alongside the RE runs (same seeds and rep count, so the
     # ratio compares identical SASE shots); fall back to the older production/low-fluence runs.
-    same_job_mb = os.path.join(os.path.dirname(re_dir), "Cu-seed-SASE-double-satellite")
-    mb_dirs = [same_job_mb] if glob.glob(os.path.join(same_job_mb, "runs_seed_*_uJ")) else MB_DIRS
+    same_job_mb = [os.path.join(os.path.dirname(d), "Cu-seed-SASE-double-satellite") for d in re_dirs]
+    mb_dirs = [d for d in same_job_mb if glob.glob(os.path.join(d, "runs_seed_*_uJ"))] or MB_DIRS
     print(f"Maxwell-Bloch data: {', '.join(os.path.relpath(d, REPO) for d in mb_dirs)}")
 
     mb = load_sweeps(mb_dirs)
-    re = load_sweeps([re_dir])
+    re = load_sweeps(re_dirs)
     exp, (E_cold, T_cold_curve) = load_experiment()
 
-    # Cold-foil references: sim = off-resonant wing of the lowest-fluence MB run (flat
-    # photoionization only); experiment = median of the measured cold-foil curve.
-    E0, T0, _ = mb[min(mb)]
-    T_cold_sim = np.median(T0[in_window(E0, SIM_COLD_WINDOW)])
+    # References: each simulated run's own off-resonant wing (flat photoionization continuum), since
+    # at >~100 uJ ground-state depletion lifts the continuum itself and a fixed cold reference would
+    # fold that into the dip; experiment = median of the measured cold-foil curve (its own wing is
+    # inside the broad Kalpha1 dip at 40 uJ, and its continuum shift is small).
     T_cold_exp = np.median(T_cold_curve[in_window(E_cold, EXP_COLD_WINDOW)])
 
     rows = []
@@ -171,7 +183,9 @@ def main():
         for name, src in (("MB", mb), ("RE", re)):
             if e in src:
                 E, T, n = src[e]
-                row[name], _ = ka1_absorbance(E, T, T_cold_sim)
+                wing = np.median(T[in_window(E, SIM_COLD_WINDOW)])
+                row[name], _ = ka1_absorbance(E, T, wing)
+                row[f"{name}_wing"] = wing
                 row[f"{name}_n"] = n
         if e in exp:
             E, T, T_err = exp[e]
@@ -180,8 +194,9 @@ def main():
     table = pd.DataFrame(rows).set_index("E_uJ")
     table["MB/RE"] = table["MB"] / table["RE"]
     pd.set_option("display.float_format", "{:.3f}".format)
-    print(f"cold-foil reference: sim T = {T_cold_sim:.3f}, experiment T = {T_cold_exp:.3f}\n")
-    print("Kalpha1 dip absorbance A = -ln(T_min / T_cold):")
+    print(f"experiment cold-foil reference T = {T_cold_exp:.3f}; sim uses each run's own wing "
+          f"({SIM_COLD_WINDOW[0]:g}-{SIM_COLD_WINDOW[1]:g} eV, *_wing columns)\n")
+    print("Kalpha1 dip absorbance A = -ln(T_min / T_ref):")
     print(table.to_string())
 
     plot_spectra(mb, re, exp)

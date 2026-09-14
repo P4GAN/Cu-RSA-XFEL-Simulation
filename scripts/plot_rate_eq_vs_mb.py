@@ -210,6 +210,7 @@ def main():
 
     plot_spectra(mb, re, exp)
     plot_dip_scaling(table)
+    plot_dip_slide(table)
 
 
 def plot_spectra(mb, re, exp):
@@ -293,6 +294,62 @@ def plot_dip_scaling(table):
 
     fig.tight_layout()
     save(fig, "rate_eq_vs_mb_dip_scaling")
+
+
+# Slide version of the left panel of plot_dip_scaling, drawn at its true size on the slide (Beamer 16:9,
+# PaloAlto sidebar: \textwidth = 381.8 pt) with the fonts of plot_saturation_slide.py -- include at
+# width=\linewidth, do not rescale. Stops at SLIDE_MAX_E_UJ (only MB exists above it; RE blew up
+# numerically at 200/400 uJ) and drops the experimental points at/below EXP_NOISE_FLOOR_UJ, as the
+# "Saturation of the RSA dip" slide does (the 0.12 uJ dip is below the measurement noise).
+SLIDE_WIDTH_IN = 381.79 / 72.27
+SLIDE_MAX_E_UJ = 100.0
+EXP_NOISE_FLOOR_UJ = 0.12   # same as plot_saturation.py
+SLIDE_RC = {
+    "font.size": 7.5, "axes.labelsize": 7.5, "axes.titlesize": 7.5, "xtick.labelsize": 6.8,
+    "ytick.labelsize": 6.8, "legend.fontsize": 6.8, "lines.linewidth": 1.3, "lines.markersize": 4,
+    "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+    "xtick.major.size": 2.5, "ytick.major.size": 2.5, "savefig.bbox": "tight", "savefig.pad_inches": 0.02,
+    "axes.grid": True, "grid.alpha": 0.3, "grid.linewidth": 0.5,
+}
+
+
+def plot_dip_slide(table):
+    t = table[table.index <= SLIDE_MAX_E_UJ]
+    re, mb = t.dropna(subset=["RE"]), t.dropna(subset=["MB"])
+    ex = t.dropna(subset=["exp"])
+    ex = ex[ex.index > EXP_NOISE_FLOOR_UJ]
+    energies = list(t.dropna(subset=["MB", "RE"], how="all").index)
+
+    with plt.rc_context(SLIDE_RC):
+        fig, ax = plt.subplots(figsize=(SLIDE_WIDTH_IN, 2.35))
+        x_lo, x_hi = min(energies) / 1.4, max(energies) * 1.4
+        ax.axvspan(E_RABI_EQUALS_GAMMA_UJ, x_hi, color="#8c8f96", alpha=0.10, lw=0, zorder=0)
+        ax.axvline(E_RABI_EQUALS_GAMMA_UJ, color=INK_MUTED, lw=0.7, ls=":", zorder=0)
+        ax.text(E_RABI_EQUALS_GAMMA_UJ * 1.1, 0.04, r"$\Omega_\mathrm{eff} > \Gamma$  (Rabi regime)",
+                transform=ax.get_xaxis_transform(), va="bottom", ha="left", fontsize=6.8, color=INK_MUTED)
+
+        ax.plot(re.index, re["RE"], ls="--", marker="s", ms=4, color=RE_COLOUR, mec="white", mew=0.7,
+                label=RE_LABEL, zorder=3)
+        ax.plot(mb.index, mb["MB"], ls="-", marker="o", ms=4.3, color=MB_COLOUR, mec="white", mew=0.7,
+                lw=1.6, label=MB_LABEL, zorder=4)
+        ax.errorbar(ex.index, ex["exp"], yerr=ex["exp_err"], fmt="D", ms=3.8, color=EXP_COLOUR, mfc=EXP_COLOUR,
+                    mec="white", mew=0.6, elinewidth=0.8, capsize=0, label="Experiment", zorder=5)
+
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlim(x_lo, x_hi)
+        ax.set_xticks(energies)
+        ax.set_xticklabels([f"{e:g}" for e in energies])
+        ax.minorticks_off()
+        ax.set_xlabel("Pulse energy (µJ)")
+        ax.set_ylabel(r"$-\ln(T_\mathrm{min}/T_\mathrm{off})$")
+        ax.set_title(r"K$\alpha_1$ dip absorbance vs pulse energy")
+        ax.legend(loc="upper left", frameon=False, handlelength=1.8, labelspacing=0.3)
+        fig.tight_layout()
+        path = os.path.join(FIGS, "rate_eq_vs_mb_dip_slide.png")
+        fig.savefig(path, dpi=400)
+        plt.close(fig)
+        print(f"wrote {os.path.relpath(path, REPO)}")
 
 
 def save(fig, stem):

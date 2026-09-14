@@ -195,6 +195,7 @@ def plot_dip(sim, E_sim, d):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(SLIDE_WIDTH_IN, 2.2), gridspec_kw={"width_ratios": [1, 1.2]})
     panel_spectra(ax1, sim, E_sim)
     panel_absorbance(ax2, E_sim, d, ABSORBANCE_SCALE)
+    ax2.set_title(r"K$\alpha_1$ dip absorbance vs pulse energy")
     fig.tight_layout(w_pad=1.2)
     save(fig, "saturation_slide_dip")
 

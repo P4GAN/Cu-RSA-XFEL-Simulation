@@ -62,10 +62,10 @@ hwKalpha2N: 8027.98
 
 
 #simulation domain and padding parameters
-tgrid: 2400
+tgrid: 1200  # reduced from 2400 2026-09-14: convergence-swept flat vs tgrid down to 600 at E_seed=2,60uJ (data/convergence_tgrid_*uJ_246713*)
 zgrid: 15
-xgrid: 15
-ygrid: 15
+xgrid: 7  # reduced from 15 2026-09-14: convergence-swept flat vs xgrid=ygrid down to 7 (data/convergence_xygrid_*uJ_246713*)
+ygrid: 7  # reduced from 15 2026-09-14, see xgrid comment
 
 tmax: 25.0
 

@@ -885,6 +885,12 @@ def compute_run_outputs(X, tpad, ypad):
         "rho_other_t_last": rho_other_t_last,
         "rho_2s_t_last": rho_2s_t_last,
         "total_population_t_last": total_population_t_last,
+        # Split of the coherent-block piece of total_population_t_last (base block vs. every
+        # satellite channel, summed) -- needed to tell "population sitting in tracked satellite
+        # channels" apart from "population that left the ground state and isn't in ANY tracked
+        # state" (1 - total_population_t_last), since both were previously folded into one number.
+        "base_pop_t_last": base_pop_t_last,
+        "sat_pop_t_last": sat_pop_t_last,
         "rho_K_t_last_sat": rho_K_t_last_sat,
         "rho_l3_t_last_sat": rho_l3_t_last_sat,
         "rho_l2_t_last_sat": rho_l2_t_last_sat,

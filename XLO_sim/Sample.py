@@ -347,7 +347,13 @@ class XLO_sample:
             self.rho_sat_ijtxyz.append(final_rho_sat_ijt_center[k][:, :, :, np.newaxis, np.newaxis, np.newaxis])
         self.Omega_pstxyz = np.stack([Omega_pstxyz_z0, Omega_pstxyz_zlast], axis=-1)
 
-        self.rho_ground_txyz = curr_rho_ground_txy[:, :, :, np.newaxis]
+        # curr_rho_ground/other/2s_txy must stay full-(xgrid,ygrid) through the t-loop above (the
+        # window_ground/other/2s absorption calc needs every pixel), unlike final_rho_ijt_center,
+        # which was already reduced to the centre pixel per-timestep via `if is_final_iz`. Only
+        # NOW, after the loop, is it safe to take just the centre pixel -- do that here rather
+        # than keeping the full grid, which used to leave X.rho_ground/other/2s_txyz's stored
+        # pixel at (0, 0) (the grid corner) instead of matching rho_ijtxyz's true centre.
+        self.rho_ground_txyz = curr_rho_ground_txy[:, cx, cy][:, np.newaxis, np.newaxis, np.newaxis]
 
-        self.rho_2s_txyz = curr_rho_2s_txy[:, :, :, np.newaxis]
-        self.rho_other_txyz = curr_rho_other_txy[:, :, :, np.newaxis]
+        self.rho_2s_txyz = curr_rho_2s_txy[:, cx, cy][:, np.newaxis, np.newaxis, np.newaxis]
+        self.rho_other_txyz = curr_rho_other_txy[:, cx, cy][:, np.newaxis, np.newaxis, np.newaxis]

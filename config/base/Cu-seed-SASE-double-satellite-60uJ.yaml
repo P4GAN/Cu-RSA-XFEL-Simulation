@@ -179,17 +179,17 @@ sigma2_Ka1_2p3: 4.15e-07
 sigma2_Ka1_2s: 4.05e-07
 sigma2_Ka1_other: 5.0613e-07
 t_peak: 10
-tgrid: 2400
+tgrid: 600  # reduced from 1200 2026-09-15: convergence round 2 clean down to 600 (300/150 NaN'd); xgrid=ygrid=8,zgrid=15 fixed baseline (data/convergence_tgrid_*uJ_v2_246752*)
 tmax: 25.0
 tpad: 0
 turn_off_coherences: false
 use_2s_pathway: true
 use_L2_pathway: true
-xgrid: 15
+xgrid: 3  # reduced from 7 2026-09-15: round 2 flat down to xgrid=ygrid=3, no floor found yet (data/convergence_xygrid_*uJ_v2_246752*)
 xmax: 250.0
 xpad: 60
-ygrid: 15
+ygrid: 3  # reduced from 7 2026-09-15, see xgrid comment
 ymax: 250.0
 ypad: 60
-zgrid: 15
+zgrid: 30  # increased from 15 2026-09-15: round 2 showed 15 still decreasing out to zgrid=100; 30 is a judgement call, not a converged value (data/convergence_zgrid_*uJ_v2_246752*)
 zmax: 20000.0

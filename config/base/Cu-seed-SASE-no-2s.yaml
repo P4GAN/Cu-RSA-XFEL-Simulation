@@ -49,10 +49,10 @@ hwKalpha2N: 8027.98
 
 
 #simulation domain and padding parameters
-tgrid: 2400
-zgrid: 15
-xgrid: 15
-ygrid: 15
+tgrid: 600  # reduced from 1200 2026-09-15: convergence round 2 clean down to 600 (300/150 NaN'd); xgrid=ygrid=8,zgrid=15 fixed baseline (data/convergence_tgrid_*uJ_v2_246752*)
+zgrid: 30  # increased from 15 2026-09-15: round 2 showed 15 still decreasing out to zgrid=100; 30 is a judgement call, not a converged value (data/convergence_zgrid_*uJ_v2_246752*)
+xgrid: 3  # reduced from 7 2026-09-15: round 2 flat down to xgrid=ygrid=3, no floor found yet (data/convergence_xygrid_*uJ_v2_246752*)
+ygrid: 3  # reduced from 7 2026-09-15, see xgrid comment
 
 tmax: 25.0
 

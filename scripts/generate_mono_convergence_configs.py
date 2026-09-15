@@ -4,10 +4,11 @@ numerical-convergence check -- the mono counterpart of generate_tgrid_sweep_conf
 generate_xygrid_sweep_configs.py, since those vary only tgrid/xygrid and inherit the
 base config's single E_seed_uJ and don't touch monochromator_target_energy_eV at all.
 
-Only tgrid and xygrid are supported (--grid-axis): the z-grid convergence question is
-not specific to the mono pulse shape (z-marching/Fresnel propagation don't care how the
-seed's t/x/y profile was generated), so it doesn't need a separate mono check -- reuse
-generate_zgrid_sweep_configs.py's conclusion.
+tgrid, xygrid and zgrid are all supported (--grid-axis). z-grid convergence isn't
+specific to the mono pulse shape in principle (z-marching/Fresnel propagation don't care
+how the seed's t/x/y profile was generated, so the SASE zgrid sweep's conclusion should
+carry over) -- but a direct mono check costs little extra on top of the other two axes
+and settles it rather than assuming.
 
 Unlike generate_mono_sweep_configs.py's full transmittance-vs-intensity scan, this is
 meant for a small, targeted set of energies (e.g. on-resonance + one wing point) and
@@ -53,7 +54,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-yaml", default="config/base/Cu-seed-mono-SASE-double-satellite.yaml")
     parser.add_argument("--out-dir", required=True)
-    parser.add_argument("--grid-axis", required=True, choices=["tgrid", "xygrid"])
+    parser.add_argument("--grid-axis", required=True, choices=["tgrid", "xygrid", "zgrid"])
     parser.add_argument("--grid-values", type=int, nargs="+", required=True)
     parser.add_argument("--e-seed", type=float, nargs="+", required=True, help="E_seed_uJ values to sweep over")
     parser.add_argument("--energy", type=float, nargs="+", required=True,

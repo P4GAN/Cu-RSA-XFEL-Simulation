@@ -53,7 +53,7 @@ CONFIGS_PER_TASK=4
 NPROC_PER_CONFIG=$(( SLURM_CPUS_PER_TASK / CONFIGS_PER_TASK ))
 
 CONFIG_START=$(( SLURM_ARRAY_TASK_ID * CONFIGS_PER_TASK ))
-DATA_PATH=data/$(basename "$OUT_DIR")_${SLURM_ARRAY_JOB_ID}
+DATA_PATH_ROOT=data/$(basename "$OUT_DIR")_${SLURM_ARRAY_JOB_ID}
 
 pids=()
 n_launched=0
@@ -63,7 +63,15 @@ for (( i = 0; i < CONFIGS_PER_TASK; i++ )); do
     if [[ -z "$YAML" ]]; then
         break  # last task: fewer than CONFIGS_PER_TASK configs remain in the manifest
     fi
-    echo "task $SLURM_ARRAY_TASK_ID slot $i -> config $CONFIG_IDX ($YAML), reps [0, $NREP), $NPROC_PER_CONFIG workers"
+    # run_mono_sweep.py's own output folder is keyed only by (E_seed, target energy) --
+    # right for its original fixed-grid use, but two different grid values at the same
+    # (E_seed, energy) would collide and get summed together as if they were repetitions
+    # of the same config. generate_mono_convergence_configs.py's filenames already encode
+    # (grid-axis, grid-value, E_seed, energy) uniquely, so give each config its own
+    # DATA_PATH subdir keyed off that basename to keep them apart.
+    CONFIG_TAG=$(basename "$YAML" .yaml)
+    DATA_PATH="$DATA_PATH_ROOT/$CONFIG_TAG"
+    echo "task $SLURM_ARRAY_TASK_ID slot $i -> config $CONFIG_IDX ($YAML), reps [0, $NREP), $NPROC_PER_CONFIG workers -> $DATA_PATH"
     python scripts/run_mono_sweep.py \
         --yaml "$YAML" \
         --rep-start 0 --rep-end "$NREP" \

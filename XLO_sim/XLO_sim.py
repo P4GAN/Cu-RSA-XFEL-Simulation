@@ -29,6 +29,12 @@ class XLO_sim:
         # see Model._MB_nlevel_regular_core / Model.physical_rho. Default False = full Maxwell-Bloch.
         self.use_rate_equations = bool(self.config.get('use_rate_equations', False))
 
+        # Part VI/VII extensions (docs/middlemen-implementation-plan.md,
+        # docs/eii-free-electrons-implementation-plan.md), all default off. With every one of them
+        # off the model is the one described in docs/theory-and-2s-satellite-pathways.md.
+        self.use_middlemen = bool(self.config.get('use_middlemen', False))
+        self.use_eii = bool(self.config.get('use_eii', False))
+
         if 'satellite_channels' not in self.config:
             self.satellite_channels = []
 
@@ -272,6 +278,15 @@ class XLO_sim:
         # Incoherent 2s -> 2p_3/2 3d_5/2 Auger feeding
         if self.use_2s_pathway == True:
             self.auger_feeding_matrix = np.diag(self.ei_L3 / np.sum(self.ei_L3)) * self.GammaA_L1_to_L3M45fs1N
+            # Optional 2s -> bare 2p1/2 feed (e.g. the L1-L2N1 Coster-Kronig, whose 4s spectator is
+            # refilled in the metal): same even-spread form as the L3 feed above, onto the base L2
+            # levels. docs/middlemen-implementation-plan.md step 4; default 0 changes nothing.
+            GammaA_L1_to_L2_fs = self.config.get('GammaA_L1_to_L2eVN', 0.0) / self.hbar
+            if GammaA_L1_to_L2_fs:
+                if not self.use_L2_pathway:
+                    raise ValueError('GammaA_L1_to_L2eVN needs use_L2_pathway: True (it feeds the base L2 levels)')
+                self.auger_feeding_matrix = (self.auger_feeding_matrix
+                                             + np.diag(self.ei_L2 / np.sum(self.ei_L2)) * GammaA_L1_to_L2_fs)
             self.S_2s_F = S_2s_F
         else:
             self.auger_feeding_matrix = np.zeros((self.nlevel, self.nlevel))
@@ -435,6 +450,204 @@ class XLO_sim:
                 f"recheck the underlying XATOM branching."
             )
 
+        self._build_pathway_extensions()
+
+    def _build_pathway_extensions(self):
+        """
+        Population bookkeeping and the optional Part VI/VII pathways
+        (docs/theory-middlemen-and-pathway-audit.md, docs/theory-eii-and-free-electrons.md and
+        their implementation plans). Every option defaults off; with all of them off nothing built
+        here enters the dynamics.
+
+        - double-satellite feed conservation check (plan step 0)
+        - L3 sublevel mixing rates (plan step 5, `L3_sublevel_mixing_fs_inv`,
+          `L3_sublevel_mixing_satellite_fs_inv`)
+        - base L2 -> 3d-satellite Coster-Kronig feed (plan step 4, `L2_CK_feed`)
+        - untracked outflow of every tracked population: the part of each level's decay and further
+          photoionisation that currently has no destination ("vanishes"). The middleman pool
+          (`use_middlemen`) collects exactly this; the EII electron production reads it too.
+        - middleman pool parameters (plan steps 1-2, `middlemen:` block)
+        - EII slowing-down ladder (Part VII, `use_eii`, `eii:` block)
+        """
+        n_base = 6
+        params = self.satellite_channel_params
+        names = [chan.name for chan in params]
+        manifold_mask = {'lower': self.ei_L3_satellite, 'upper': self.ei_K_satellite, 'L2': self.ei_L2_satellite}
+
+        def channel_index(name, what):
+            matches = [k for k, nm in enumerate(names) if nm == name]
+            if len(matches) != 1:
+                raise ValueError(f"{what} references channel {name!r}, which matches {len(matches)} "
+                                 f"satellite channels (must match exactly 1; available: {names})")
+            return matches[0]
+
+        def check_keys(cfg, block, allowed):
+            # the top-level config tolerates unknown keys; these sub-blocks don't, so a typo can't
+            # silently fall back to a default
+            unknown = sorted(set(cfg) - allowed)
+            if unknown:
+                raise ValueError(f"{block}: unknown key(s) {unknown} (allowed: {sorted(allowed)})")
+
+        # ---- double-satellite feed must be a branch of the parent's own decay (plan step 0) ----
+        # feed_diag_satellite_block adds Gamma_feed*rho_parent to the daughter and never subtracts it
+        # from the parent, so the parent's own width (Mij diagonal) must be the TOTAL width, with the
+        # feeds as branches of it. A width reduced by the feeds creates population
+        # (docs/theory-middlemen-and-pathway-audit.md sec 2.3).
+        feed_out = {}
+        for chan in params:
+            for parent_index, Gamma_feed_fs, manifold in chan.feed_from:
+                feed_out[(parent_index, manifold)] = feed_out.get((parent_index, manifold), 0.0) + Gamma_feed_fs
+        for (parent_index, manifold), total_fs in feed_out.items():
+            parent = params[parent_index]
+            level = int(np.argmax(manifold_mask[manifold]))
+            width_fs = float(np.real(parent.Mij[level, level]))
+            if total_fs > width_fs * (1.0 + 1e-9):
+                raise ValueError(
+                    f"double_satellite_channels feed {total_fs * self.hbar:.4f} eV out of "
+                    f"{parent.name!r}'s {manifold!r} manifold, but that manifold only decays at "
+                    f"{width_fs * self.hbar:.4f} eV -- population would be created from nothing. Its "
+                    f"width must be the total (feed included), not the width minus the feed "
+                    f"(docs/theory-middlemen-and-pathway-audit.md sec 2.3)."
+                )
+
+        # ---- L3 sublevel mixing (plan step 5): depolarising Lindblad term on each L3 manifold ----
+        self.L3_mixing_base_fs = float(self.config.get('L3_sublevel_mixing_fs_inv', 0.0))
+        self.L3_mixing_sat_fs = float(self.config.get('L3_sublevel_mixing_satellite_fs_inv', 0.0))
+        self.mix_mask_base = np.asarray(self.ei_L3, dtype=float)
+        self.mix_mask_sat = np.asarray(self.ei_L3_satellite, dtype=float)
+
+        # ---- base L2 -> 2p3/2 + 3d hole Coster-Kronig feed (plan step 4) ----
+        # L2-L3M45 CK is closed in the free atom (XATOM Gamma_L2 = 0.67 eV) but open in the metal;
+        # the literature GammaL2eVN = 1.04 eV includes it, so the feed is a branch of the existing
+        # base L2 width (no carve-out). Even spread over each target's L3k manifold.
+        for chan in params:
+            chan.Gamma_CK_L2_fs = 0.0
+        self.Gamma_CK_L2_total_fs = 0.0
+        l2_ck = self.config.get('L2_CK_feed')
+        if l2_ck:
+            check_keys(l2_ck, 'L2_CK_feed', {'rate_eV', 'targets'})
+            if not self.use_L2_pathway:
+                raise ValueError('L2_CK_feed needs use_L2_pathway: True (it drains the base L2 levels)')
+            rate_fs = l2_ck['rate_eV'] / self.hbar
+            weights = l2_ck['targets']
+            if rate_fs * sum(weights.values()) > self.GammaL2fsm1N * (1.0 + 1e-9):
+                raise ValueError(f"L2_CK_feed rate {l2_ck['rate_eV']} eV exceeds GammaL2eVN")
+            for name, weight in weights.items():
+                params[channel_index(name, 'L2_CK_feed')].Gamma_CK_L2_fs += rate_fs * weight
+            self.Gamma_CK_L2_total_fs = rate_fs * sum(weights.values())
+
+        # ---- untracked outflow of every tracked population (per level, fs^-1 or nm^2) ----
+        # decay: level width minus radiative return inside its own block minus every tracked feed out
+        # of it; PI: further-photoionisation cross section minus tracked spectator-PI feeds out of it.
+        radiative_return = np.real(np.sum(self.Gamma_sp_Gij, axis=0))
+        decay_base = np.real(np.diag(self.Mij)) - radiative_return
+        klm_fs = sum(chan.Gamma_A_K_fs + (chan.Gamma_A_K_to_L2_fs or 0.0) for chan in params)
+        self.decay_untracked_base = decay_base - klm_fs * self.ei_K - self.Gamma_CK_L2_total_fs * self.ei_L2
+        self.S_untracked_base = np.array(np.real(self.S_ion_Fi[:, :self.nlevel]), dtype=float)
+        for chan in params:
+            self.S_untracked_base[:, :n_base] -= (np.outer(chan.S_feed_2p, self.ei_L3[:n_base])
+                                                  + np.outer(chan.S_feed_1s, self.ei_K[:n_base]))
+            if chan.S_feed_2p1 is not None and self.nlevel > n_base:
+                self.S_untracked_base[:, n_base:] -= chan.S_feed_2p1[:, None]
+        # electrons emitted per unit level population (fs^-1), by birth energy: every non-radiative K
+        # decay (KLL/KLM, ~7-8 keV), untracked L-type Auger (~0.9 keV), tracked Coster-Kronig (<0.1 keV)
+        # (K-type: total width minus BOTH Kalpha radiative rates -- without use_L2_pathway the Kalpha2
+        # photon has no tracked destination but still isn't an electron.)
+        self.e_emit_base = {
+            'KLL': (np.real(np.diag(self.Mij)) - self.Gamma_sp_fsm1N) * self.ei_K,
+            'LMM': self.decay_untracked_base * (self.ei_L3 + self.ei_L2),
+            'CK': self.Gamma_CK_L2_total_fs * self.ei_L2,
+        }
+        for k, chan in enumerate(params):
+            decay_sat = np.real(np.diag(chan.Mij)) - np.real(np.sum(chan.Gamma_sp_Gij, axis=0))
+            fed = sum(feed_out.get((k, m), 0.0) * manifold_mask[m] for m in manifold_mask)
+            chan.decay_untracked = decay_sat - fed
+            chan.S_untracked = np.array(np.real(chan.S_ion_Fi), dtype=float)
+            chan.e_emit = {
+                'KLL': (np.real(np.diag(chan.Mij)) - self.Gamma_sp_fsm1N - fed) * self.ei_K_satellite,
+                'LMM': chan.decay_untracked * (self.ei_L3_satellite + self.ei_L2_satellite),
+                'CK': fed,
+            }
+        twos_tracked_fs = (float(np.sum(np.real(np.diag(self.auger_feeding_matrix))))
+                           + sum(chan.Gamma_A_fs + (chan.Gamma_A_L2_fs or 0.0) for chan in params))
+        self.twos_decay_tracked_fs = twos_tracked_fs
+        self.twos_decay_untracked_fs = self.GammaL1fsm1N - twos_tracked_fs
+        for label, arr in [('base block', self.decay_untracked_base), ('base block PI', self.S_untracked_base),
+                           ('2s', np.array([self.twos_decay_untracked_fs]))] + \
+                          [(f'satellite {chan.name!r}', chan.decay_untracked) for chan in params]:
+            if np.min(arr) < -1e-9 * max(1.0, float(np.max(np.abs(arr)))):
+                raise ValueError(f"tracked feeds out of the {label} exceed its own decay/ionisation "
+                                 f"(untracked outflow {np.min(arr):.4g} < 0): population would be created")
+
+        # ---- middleman pool (plan steps 1-2) ----
+        mid_cfg = self.config.get('middlemen') or {}
+        check_keys(mid_cfg, 'middlemen', {'targets', 'twos_ck', 'sigma_Ka1_total'})
+        S_ground_total = np.real(np.sum(self.S_ground_Fi, axis=1))
+        self.sigma_mid_F = np.asarray(mid_cfg.get('sigma_Ka1_total', S_ground_total), dtype=float) * np.ones(2)
+        for chan in params:
+            chan.mid_share = 0.0
+        self.mid_ck_L3 = self.mid_ck_L2 = 0.0
+        self.mid_S_out = np.zeros(2)
+        self.mid_L2k_available = bool(self.use_L2_satellite_pathway)
+        if self.use_middlemen:
+            targets = mid_cfg.get('targets')
+            if targets is None:
+                raise ValueError(
+                    "use_middlemen needs middlemen: {targets: ...}: either 'none' (middlemen absorb but "
+                    "their 2p holes are non-resonant, the lower bound) or {channel_name: weight} mapping "
+                    "their 2p holes onto existing satellite blocks, e.g. the double-satellite channels by "
+                    "statistical weight {3d+3d+: 0.333, 3d-3d+: 0.533, 3d-3d-: 0.133} "
+                    "(docs/middlemen-implementation-plan.md step 2)")
+            if targets != 'none':
+                for name, weight in targets.items():
+                    params[channel_index(name, 'middlemen.targets')].mid_share += float(weight)
+                # 2s holes on a middleman: CK within 0.08 fs into 2p + spectator, same fractions as the
+                # tracked 2s -> single-satellite CK (the channels fed by Gamma_A_2s*).
+                ck = mid_cfg.get('twos_ck', 'auto')
+                if ck == 'auto':
+                    self.mid_ck_L3 = sum(chan.Gamma_A_fs for chan in params) / self.GammaL1fsm1N
+                    self.mid_ck_L2 = sum(chan.Gamma_A_L2_fs or 0.0 for chan in params) / self.GammaL1fsm1N
+                else:
+                    self.mid_ck_L3, self.mid_ck_L2 = float(ck['L3']), float(ck['L2'])
+                share = sum(chan.mid_share for chan in params)
+                sigma_2p3 = np.real(self.S_ground_Fi[:, :4]).sum(axis=1)
+                sigma_2s = np.real(self.S_ground_Fi[:, self.nlevel])
+                routed = sigma_2p3 + sigma_2s * self.mid_ck_L3
+                if self.mid_L2k_available:
+                    routed = routed + np.real(self.S_ground_Fi[:, n_base:self.nlevel]).sum(axis=1) + sigma_2s * self.mid_ck_L2
+                self.mid_S_out = routed * share
+
+        # ---- EII slowing-down ladder (Part VII) ----
+        if self.use_eii:
+            from . import eii
+            e_cfg = self.config.get('eii') or {}
+            # tau_th_fs / birth_energy_eV are the superseded Phase-A schema
+            # (config/base/Cu-seed-satellite-eii.yaml): refuse rather than run the ladder on defaults.
+            check_keys(e_cfg, 'eii', {'n_groups', 'E_top_eV', 'E_bottom_eV', 'subshells', 'birth_energies_eV',
+                                      'stopping', 'spatial_factor', 'M_shell_scale'})
+            n_groups = int(e_cfg.get('n_groups', 6))
+            subshells = e_cfg.get('subshells')
+            if subshells is not None:
+                subshells = {k: tuple(v) for k, v in subshells.items()}
+            self.eii_ladder = eii.build_ladder(
+                self.n, n_groups=n_groups, E_top_eV=float(e_cfg.get('E_top_eV', 7100.0)),
+                E_bottom_eV=float(e_cfg.get('E_bottom_eV', 30.0)), subshells=subshells,
+                birth_energies_eV=e_cfg.get('birth_energies_eV'), stopping=e_cfg.get('stopping'))
+            self.eii_G = n_groups + 1  # + one thermalised bin that no longer ionises or moves
+            self.eii_k_down = np.append(self.eii_ladder['k_down_fs'], 0.0)
+            spatial = float(e_cfg.get('spatial_factor', 0.5))
+            M_scale = float(e_cfg.get('M_shell_scale', 0.0))
+            R = self.eii_ladder['rates_fs']
+            # rows: EII into 2p3/2, 2p1/2, 2s, and the M shell (3s+3p+3d); a row whose destination
+            # isn't modelled by this config is zero. Last column (thermal bin) is zero.
+            table = np.zeros((4, self.eii_G))
+            table[0, :-1] = spatial * R['2p3/2']
+            table[1, :-1] = spatial * R['2p1/2'] * float(self.use_L2_pathway)
+            table[2, :-1] = spatial * R['2s'] * float(self.use_2s_pathway)
+            table[3, :-1] = spatial * M_scale * (R['3s'] + R['3p'] + R['3d'])
+            self.eii_rate_table = table
+            self.eii_birth = self.eii_ladder['birth_group']
+
     def configure(self, seed_field=None):
         """
         Check if the seeding field is present, and pass it to the Sample object. Pre-compute the pump field dynamics with or without diffracion.
@@ -471,6 +684,10 @@ class XLO_sim:
         self.rho_ijtxyz = self.sample.rho_ijtxyz
         self.rho_sat_ijtxyz = self.sample.rho_sat_ijtxyz
         self.Omega_pstxyz = self.sample.Omega_pstxyz
+        # None unless use_middlemen / use_eii; same (t, x, y, z) layout as rho_ground_txyz, and a
+        # leading energy-group axis for the electron ladder (last group = thermalised bin).
+        self.rho_mid_txyz = self.sample.rho_mid_txyz
+        self.rho_e_gtxyz = self.sample.rho_e_gtxyz
 
         if self.is_Cartesian_pol:
             Omega_pqtxy = tools.circular_to_linear(self, self.Omega_pstxyz[:, :, :, :, :, -1])

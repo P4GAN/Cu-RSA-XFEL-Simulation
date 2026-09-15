@@ -865,10 +865,27 @@ def compute_run_outputs(X, tpad, ypad):
     # trace-preserving system; 1 - this is the population-leak diagnostic (see IMPORTANT note
     # above). rho_ground/other/2s_t_last are already plain populations (not Tijs contractions),
     # so only the coherent blocks needed the unweighted base_pop_t_last/sat_pop_t_last above.
+    # Middleman pool (use_middlemen; docs/middlemen-implementation-plan.md): with it on, every
+    # decay/ionisation has a destination, so total_population_t_last should be 1 to RK4 accuracy.
+    rho_mid_txyz = getattr(X, 'rho_mid_txyz', None)
+    rho_mid_t_last = (rho_mid_txyz[:, cx, cy, -1] if rho_mid_txyz is not None else np.zeros(X.tgrid))
     total_population_t_last = (rho_ground_t_last + rho_other_t_last + rho_2s_t_last
-                                + base_pop_t_last + sat_pop_t_last)
+                                + base_pop_t_last + sat_pop_t_last + rho_mid_t_last)
+
+    # Free-electron ladder (use_eii; docs/eii-free-electrons-implementation-plan.md), electrons per
+    # atom at the centre pixel/exit face: still-hot electrons (every energy group) and all electrons
+    # ever produced (hot + thermalised bin, the electron-number bookkeeping total).
+    rho_e_gtxyz = getattr(X, 'rho_e_gtxyz', None)
+    if rho_e_gtxyz is not None:
+        n_e_hot_t_last = rho_e_gtxyz[:-1, :, cx, cy, -1].sum(axis=0)
+        n_e_total_t_last = rho_e_gtxyz[:, :, cx, cy, -1].sum(axis=0)
+    else:
+        n_e_hot_t_last = n_e_total_t_last = np.zeros(X.tgrid)
 
     return {
+        "rho_mid_t_last": rho_mid_t_last,
+        "n_e_hot_t_last": n_e_hot_t_last,
+        "n_e_total_t_last": n_e_total_t_last,
         "womega_ar": womega_ar,
         "I_int_thy_w_0": I_int_thy_w_0,
         "I_int_thy_w_last": I_int_thy_w_last,
@@ -975,6 +992,67 @@ def peak_memory_gb(who=resource.RUSAGE_SELF):
     ru_maxrss = resource.getrusage(who).ru_maxrss
     kb = ru_maxrss / 1024 if sys.platform == "darwin" else ru_maxrss
     return kb / (1024 ** 2)
+
+
+# Config keys whose physics only exists in code that has XLO_sim._build_pathway_extensions
+# (docs/middlemen-implementation-plan.md, docs/eii-free-electrons-implementation-plan.md).
+PATHWAY_EXTENSION_KEYS = ('use_middlemen', 'use_eii', 'L2_CK_feed', 'L3_sublevel_mixing_fs_inv',
+                          'L3_sublevel_mixing_satellite_fs_inv', 'GammaA_L1_to_L2eVN')
+
+
+def verify_code(X, repo_root):
+    """Fail fast (before any repetition) unless the imported XLO_sim is the checkout at repo_root and
+    every model flag the config sets is implemented by that code. XLO_sim setattrs every YAML key
+    without complaint, so a flag in the config proves nothing by itself: three cluster sweeps in
+    Sept 2026 silently ran the full Maxwell-Bloch model from a stale import while their configs
+    asked for use_rate_equations. Returns a provenance string to log and save next to the outputs.
+    Shared by the scripts/run_*_sweep.py runners."""
+    import subprocess
+    from . import Model
+
+    pkg_dir = os.path.dirname(os.path.realpath(__file__))
+    if pkg_dir != os.path.join(os.path.realpath(repo_root), "XLO_sim"):
+        sys.exit(f"imported XLO_sim from {pkg_dir}, not {repo_root}/XLO_sim -- refusing to run")
+
+    use_re = bool(X.config.get("use_rate_equations", False))
+    if use_re:
+        if not hasattr(Model, "physical_rho"):
+            sys.exit(f"{Model.__file__} has no rate-equation support but the config sets use_rate_equations")
+        # Functional check through the real call path: evaluate the base block's RHS on a test state
+        # with an L3-K coherence (pair (0,4) is Kalpha-coupled) with the flag on and off; the two must
+        # differ, or the kernel that will run is not the rate-equation one.
+        n = X.nlevel
+        rho = np.zeros((n, n, 1, 1), dtype=complex)
+        rho[0, 0] = 0.5
+        rho[0, 4] = rho[4, 0] = 0.1
+        Omega = np.ones((2, 2, 1, 1), dtype=complex)
+        params = [X, Omega, np.zeros((1, 1), dtype=complex), np.zeros((1, 1), dtype=complex),
+                  np.zeros((1, 1)), np.zeros((1, 1)), None]
+        d_re = Model.MB_nlevel_regular(0.0, rho, params)
+        X.use_rate_equations = False
+        try:
+            d_mb = Model.MB_nlevel_regular(0.0, rho, params)
+        finally:
+            X.use_rate_equations = True
+        if np.allclose(d_re, d_mb):
+            sys.exit("use_rate_equations is set but the kernel gives the Maxwell-Bloch RHS -- refusing to run")
+
+    extensions = [k for k in PATHWAY_EXTENSION_KEYS if X.config.get(k)]
+    if extensions and not (hasattr(type(X), "_build_pathway_extensions") and hasattr(Model, "middleman_gain_loss")):
+        sys.exit(f"config sets {extensions} but the imported XLO_sim predates them -- refusing to run")
+
+    def git(*cmd):
+        try:
+            return subprocess.run(["git", "-C", repo_root, *cmd], capture_output=True, text=True,
+                                  timeout=30).stdout.strip()
+        except Exception as e:
+            return f"unavailable ({e})"
+
+    dirty = git("status", "--porcelain", "--", "XLO_sim")
+    return (f"XLO_sim: {pkg_dir}\n"
+            f"git commit: {git('rev-parse', 'HEAD')}{' (XLO_sim has uncommitted changes)' if dirty else ''}\n"
+            f"use_rate_equations: {use_re} (kernel check {'passed' if use_re else 'n/a'})\n"
+            f"pathway extensions: {', '.join(extensions) if extensions else 'none'}\n")
 
 
 def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, nproc,

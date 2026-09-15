@@ -61,7 +61,7 @@ GammarKalpha2eVN: 0.202668
 # Gamma_A_2s_eV, replacing rather than adding to this generic feed -- was 5.07 (M45-only estimate,
 # pre-satellite-channels), briefly left at a stale 1.57 which double-counted against the satellite
 # feed instead of zeroing it out.
-GammaA_L1_to_L3M45eVN: 0.0
+# GammaA_L1_to_L3M45eVN: set in the Part VI block at the end of this file
 
 additional_dephasing: 0
 
@@ -71,32 +71,35 @@ hwKalpha2N: 8027.98
 
 
 #simulation domain and padding parameters
-tgrid: 600  # reduced from 1200 2026-09-15: convergence round 2 clean down to 600 (300/150 NaN'd); xgrid=ygrid=8,zgrid=15 fixed baseline (data/convergence_tgrid_*uJ_v2_246752*)
-zgrid: 30  # increased from 15 2026-09-15: round 2 showed 15 still decreasing out to zgrid=100; 30 is a judgement call, not a converged value (data/convergence_zgrid_*uJ_v2_246752*)
-xgrid: 3  # reduced from 7 2026-09-15: round 2 flat down to xgrid=ygrid=3, no floor found yet (data/convergence_xygrid_*uJ_v2_246752*)
-ygrid: 3  # reduced from 7 2026-09-15, see xgrid comment
+tgrid: 12000
+zgrid: 15
+xgrid: 11
+ygrid: 11
 
-tmax: 25.0
+tmax: 45.0
 
 zmax: 20.0e+3
-xmax: 250.0
-ymax: 250.0
+xmax: 200.0
+ymax: 200.0
 
 xpad: 60
 ypad: 60
 tpad: 0
 
+
 auto_grid: False
 
 #seed parameters
-seed_pulse_format: 'Ocelot_SASE_seed_pstxy'
+seed_pulse_format: 'Ocelot_SASE_seed_111_dcm_pstxy'
 E_seed_uJ: 40
 seed_duration_FWHM_t: 6.0
 t_peak: 10
-seed_width_FWHM_x: 180
-seed_width_FWHM_y: 220
+seed_width_FWHM_x: 100
+seed_width_FWHM_y: 170
 seed_FEL_bandwidth: 1.5e-3
 seed_center_E: 8045
+monochromator_target_energy_eV: 8047.91
+seed_delay: 0
 
 #calculation regime
 is_spontaneous_only: False
@@ -114,17 +117,9 @@ is_Cartesian_pol: True
 use_2s_pathway: True
 use_L2_pathway: True
 
-#detuning_eV / detuning_eV_L2_split for the 4 satellite_channels and 3 double_satellite_channels
-#below were recomputed 2026-09-03 via GRASP Dirac-Fock (rcsfgenerate+rmcdhf+rci+rbiotransform+
-#rtransition, dominant-line-by-Einstein-A selection; see grasp_cu_run/ and the grasp-satellite-
-#transitions memory note) after literature (Nguyen et al., PRA 105, 022811 (2022); Mauron & Dousse,
-#PRA 82, 052505 (2010)) showed XATOM's values were substantially off -- sign-flipped for 3d-/3p-,
-#roughly 2x too small for 3d+/3p+. All other keys in these blocks (Gamma_*, sigma_*, feed_from)
-#are still XATOM-derived, not yet recomputed. detuning_eV_L2_split for the double_satellite_channels
-#is likewise still XATOM-derived (the L2-split wasn't extracted for the double-spectator case yet).
 satellite_channels:
 - name: 3d+
-  detuning_eV: 1.1305
+  detuning_eV: -0.8
   Gamma_A_2s_eV: 1.5733
   Gamma_A_K_eV: 0.00259
   Gamma_L_eV: 0.60698
@@ -133,13 +128,13 @@ satellite_channels:
   sigma_Ka1_from_1s: 8.0409e-10
   sigma_ion_from_2p: 5.01453e-07
   sigma_ion_from_1s: 5.715170000000001e-07
-  detuning_eV_L2_split: 22.5428
+  detuning_eV_L2_split: 21.27
   Gamma_A_2s_to_L2_eV: 0.7137
   Gamma_A_K_to_L2_eV: 0.002064
   Gamma_L2_eV: 0.6559
   sigma_Ka1_from_2p1: 7.41039e-10
 - name: 3d-
-  detuning_eV: 0.3432
+  detuning_eV: -0.8
   Gamma_A_2s_eV: 1.3121
   Gamma_A_K_eV: 0.003083
   Gamma_L_eV: 0.63478
@@ -148,13 +143,13 @@ satellite_channels:
   sigma_Ka1_from_1s: 6.434600000000001e-10
   sigma_ion_from_2p: 5.01453e-07
   sigma_ion_from_1s: 5.715170000000001e-07
-  detuning_eV_L2_split: 22.4912
+  detuning_eV_L2_split: 21.26
   Gamma_A_2s_to_L2_eV: 0.5309
   Gamma_A_K_to_L2_eV: 0.000637
   Gamma_L2_eV: 0.60921
   sigma_Ka1_from_2p1: 5.93e-10
 - name: 3p+
-  detuning_eV: 1.7865
+  detuning_eV: 2.76
   Gamma_A_2s_eV: 1.4535
   Gamma_A_K_eV: 0.034001
   Gamma_L_eV: 2.63249  # total incl. 1.7398 eV fed to double_satellite_channels (was 0.89272, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
@@ -163,13 +158,13 @@ satellite_channels:
   sigma_Ka1_from_1s: 2.02344e-08
   sigma_ion_from_2p: 4.97595e-07
   sigma_ion_from_1s: 5.67499e-07
-  detuning_eV_L2_split: 25.0917
+  detuning_eV_L2_split: 21.31
   Gamma_A_2s_to_L2_eV: 0.7902
   Gamma_A_K_to_L2_eV: 0.028999
   Gamma_L2_eV: 2.72355  # total incl. 1.7397 eV fed to double_satellite_channels (was 0.98385, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
-  detuning_eV: -1.5140
+  detuning_eV: 2.93
   Gamma_A_2s_eV: 0.6458
   Gamma_A_K_eV: 0.028913
   Gamma_L_eV: 3.17930  # total incl. 2.1897 eV fed to double_satellite_channels (was 0.98956, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
@@ -178,7 +173,7 @@ satellite_channels:
   sigma_Ka1_from_1s: 1.01334e-08
   sigma_ion_from_2p: 4.97588e-07
   sigma_ion_from_1s: 5.67491e-07
-  detuning_eV_L2_split: 14.5234
+  detuning_eV_L2_split: 21.31
   Gamma_A_2s_to_L2_eV: 0.5062
   Gamma_A_K_to_L2_eV: 0.002563
   Gamma_L2_eV: 3.05814  # total incl. 2.1898 eV fed to double_satellite_channels (was 0.86834, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
@@ -186,7 +181,7 @@ satellite_channels:
 
 double_satellite_channels:
 - name: 3d+3d+
-  detuning_eV: 1.5911
+  detuning_eV: -1.7
   Gamma_L_eV: 0.572227
   Gamma_K_eV: 1.55265
   detuning_eV_L2_split: 21.26
@@ -211,7 +206,7 @@ double_satellite_channels:
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07
 - name: 3d-3d+
-  detuning_eV: -0.9153
+  detuning_eV: -1.69
   Gamma_L_eV: 0.602927
   Gamma_K_eV: 1.55265
   detuning_eV_L2_split: 21.26
@@ -236,7 +231,7 @@ double_satellite_channels:
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07
 - name: 3d-3d-
-  detuning_eV: -2.4271
+  detuning_eV: -1.68
   Gamma_L_eV: 0.627541
   Gamma_K_eV: 1.55265
   detuning_eV_L2_split: 21.26
@@ -260,3 +255,41 @@ double_satellite_channels:
     manifold: L2
   sigma_ion_from_2p: 5.042530e-07
   sigma_ion_from_1s: 5.743150e-07
+
+# ============================================================================================
+# Part VI pathway extensions (docs/theory-middlemen-and-pathway-audit.md,
+# docs/middlemen-implementation-plan.md). Everything above is Cu-seed-mono-SASE-double-satellite.yaml.
+# ============================================================================================
+
+# Middleman pool: every decay/ionisation that previously had no destination (L3/L2/K Auger,
+# satellite core Auger, 2s L1-MM remainder, further photoionisation of every ion, and the old
+# ground -> "other" M-shell pump) lands in one scalar population of 3d^-n ions. It keeps absorbing
+# like a neutral atom (XATOM: 1.00-1.03x) and its 2p/2s photoionisation feeds satellite blocks.
+use_middlemen: true
+middlemen:
+  # Where middleman 2p holes resonate. Middlemen carry ~3 3d holes (Part VI sec 3.2); the closest
+  # existing blocks are the double-3d channels, split by statistical weight 15:24:6 (option A, upper
+  # bound on line-centre depth). 'none' makes them non-resonant (option B, lower bound); the two
+  # differ by < 0.006 in T(8048) in the estimator (Part VI sec 6.2).
+  targets: {3d+3d+: 0.3333, 3d-3d+: 0.5333, 3d-3d-: 0.1334}
+  # 2s holes on a middleman Coster-Kronig in 0.08 fs; 'auto' uses the same L3/L2 fractions as the
+  # tracked 2s -> single-satellite CK (sum of Gamma_A_2s_eV / GammaL1eVN).
+  twos_ck: auto
+  # sigma_Ka1_total defaults to the ground-state total (sum of sigma1_Ka1_*).
+
+# Base L2 -> 2p3/2 + 3d-hole Coster-Kronig (L2-L3M45), open in the metal, closed in the free atom:
+# rate = GammaL2eVN (1.04, literature, metal) - XATOM atomic Gamma_L2 (0.666 eV). A branch of the
+# existing Gamma_L2 (no carve-out), split over 3d5/2 : 3d3/2 by statistical weight.
+L2_CK_feed:
+  rate_eV: 0.374
+  targets: {3d+: 0.6, 3d-: 0.4}
+
+# 2s -> 2p + 4s-hole Coster-Kronig (XATOM '2s0 - 2p+/2p- 4s0' rows): the 4s spectator is refilled
+# from the conduction band, so these land on the bare base L3/L2 holes.
+GammaA_L1_to_L3M45eVN: 0.0903
+GammaA_L1_to_L2eVN: 0.0508
+
+# Dark-state test (Part VI sec 1.5, plan step 5): depolarising mixing of the 2p3/2 sublevels, fs^-1.
+# 0 = off. Physically motivated for satellites (2p-3d exchange ~1-2 eV); base block kept separate.
+L3_sublevel_mixing_fs_inv: 0.0
+L3_sublevel_mixing_satellite_fs_inv: 0.0

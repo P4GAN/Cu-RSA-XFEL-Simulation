@@ -6,7 +6,7 @@ from . import tools
 @njit(cache=True, fastmath=True)
 def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus, Tijs_minus,
                              Mij, Gamma_sp_Gij, S_ion_Fif, feed_diag_ixy, Delta_ij,
-                             J_Omega_minus_xy, J_Omega_plus_xy, rate_equations):
+                             J_Omega_minus_xy, J_Omega_plus_xy, rate_equations, mix_mask, gamma_mix):
     nlevel = rho_ijxy.shape[0]
     s_dim = Tijs_plus.shape[2]
     nx = rho_ijxy.shape[2]
@@ -38,6 +38,24 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                 gamma_ion[i, x, y] = S_ion_Fif[0, i] * J_Omega_minus_xy[x, y] + \
                                      S_ion_Fif[1, i] * J_Omega_plus_xy[x, y]
 
+    # Optional depolarising mixing inside the levels flagged by mix_mask (an L3 manifold), rate
+    # gamma_mix: Lindblad jumps sqrt(gamma/n)|a><b| over the n flagged levels give
+    #   d rho_ab = -gamma rho_ab + delta_ab (gamma/n) Tr_mask rho   (both flagged),
+    #   d rho_ak = -(gamma/2) rho_ak                                 (one flagged),
+    # trace-preserving. Tests the dark-state ceiling (docs/theory-middlemen-and-pathway-audit.md
+    # sec 1.5, docs/middlemen-implementation-plan.md step 5). gamma_mix = 0 skips it entirely.
+    mixing = gamma_mix != 0.0
+    n_mix = 0.0
+    for i in range(nlevel):
+        n_mix += mix_mask[i]
+    trace_mix = np.zeros((nx, ny), dtype=np.complex128)
+    if mixing:
+        for i in range(nlevel):
+            if mix_mask[i] != 0.0:
+                for x in range(nx):
+                    for y in range(ny):
+                        trace_mix[x, y] += rho_ijxy[i, i, x, y]
+
     drho = np.zeros((nlevel, nlevel, nx, ny), dtype=np.complex128)
     for i in range(nlevel):
         for j in range(nlevel):
@@ -63,8 +81,10 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                             for s in range(nlevel):
                                 if s != i:
                                     K_is = rho_ijxy[i, s, x, y]
-                                    W_is = 2.0 * (Mij[i, s] + 0.5 * (gamma_ion[i, x, y].real + gamma_ion[s, x, y].real)) * \
-                                           (K_is.real * K_is.real + K_is.imag * K_is.imag)
+                                    g_is = Mij[i, s] + 0.5 * (gamma_ion[i, x, y].real + gamma_ion[s, x, y].real)
+                                    if mixing:
+                                        g_is += 0.5 * gamma_mix * (mix_mask[i] + mix_mask[s])
+                                    W_is = 2.0 * g_is * (K_is.real * K_is.real + K_is.imag * K_is.imag)
                                     comm += W_is * (rho_ijxy[s, s, x, y] - rho_ijxy[i, i, x, y])
                         else:
                             comm = Hint[i, j, x, y]
@@ -78,6 +98,10 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                     else:
                         val += -1j * Delta_ij[i, j] * rho_ijxy[i, j, x, y]
                     val += -0.5 * (gamma_ion[i, x, y] + gamma_ion[j, x, y]) * rho_ijxy[i, j, x, y]
+                    if mixing:
+                        val += -0.5 * gamma_mix * (mix_mask[i] + mix_mask[j]) * rho_ijxy[i, j, x, y]
+                        if i == j and mix_mask[i] != 0.0:
+                            val += (gamma_mix / n_mix) * trace_mix[x, y]
                     drho[i, j, x, y] = val
 
     return drho
@@ -131,24 +155,27 @@ def MB_nlevel_regular(t, rho_ijxy, params):
 
     """    
     
-    X, Omega_psxy, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy  = params
+    X, Omega_psxy, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy = params
 
     Omega_plus_sxy = Omega_psxy[0, :, :, :]
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
-    feed_diag_ixy = feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy)
+    feed_diag_ixy = feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy)
 
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
         X.Mij, X.Gamma_sp_Gij, X.S_ion_Fi[:, :], feed_diag_ixy, X.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy, X.use_rate_equations,
+        X.mix_mask_base, X.L3_mixing_base_fs,
     )
 
 
-def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy):
+def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy=None):
     """
     External population feed into the base 6-level block's diagonal: ground-state photoionization
-    (pump + seed fields, Eq. 14) plus 2s-hole Auger feeding (Eq. M2).
+    (pump + seed fields, Eq. 14) plus 2s-hole Auger feeding (Eq. M2), plus, with `use_eii`,
+    electron-impact ionisation of ground atoms into the bare 2p3/2 / 2p1/2 holes (Part VII; a fast
+    projectile doesn't select a sublevel, so even spread).
 
     Parameters
     ----------
@@ -160,6 +187,8 @@ def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_
         2s hole level population at given t,z
     J_Omega_minus_xy, J_Omega_plus_xy: np.ndarray
         Seed field photon fluxes at given t,z
+    eii_R_xy: np.ndarray or None
+        EII rates per target atom (eii_rates_xy), rows 2p3/2, 2p1/2, 2s, M shell. None skips EII.
 
     Returns
     -------
@@ -175,10 +204,16 @@ def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_
     feed += np.einsum('i,xy->ixy', S_ground_Fip, J_Omega_plus_xy * rho_ground_xy)
     feed += np.einsum('i,xy->ixy', auger_diag, rho_2s_xy)
 
+    if eii_R_xy is not None:
+        feed += np.einsum('i,xy->ixy', X.ei_L3 / np.sum(X.ei_L3), eii_R_xy[0] * rho_ground_xy)
+        if X.use_L2_pathway:
+            feed += np.einsum('i,xy->ixy', X.ei_L2 / np.sum(X.ei_L2), eii_R_xy[1] * rho_ground_xy)
+
     return feed
 
 
-def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy):
+def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy,
+                              rho_mid_xy=None, eii_R_xy=None):
     """
     External population feed into one 2s-hole satellite channel's local block diagonal
     (docs/theory-and-2s-satellite-pathways.md, Part II): 2s-hole Auger decay (Eq. S2) plus
@@ -267,6 +302,35 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
             i_base = n_base + offset
             feed[n_base + offset] += rate_2p1_xy * rho_base_ijxy[i_base, i_base]
 
+    # Base L2 -> 2p3/2 + 3d hole Coster-Kronig (L2_CK_feed, metal only), even spread over this
+    # channel's L3k manifold (docs/middlemen-implementation-plan.md step 4). A branch of the base L2
+    # width, drained from it in the middleman/untracked bookkeeping (XLO_sim._build_pathway_extensions).
+    if chan.Gamma_CK_L2_fs:
+        rho_L2_base_xy = sum(np.real(rho_base_ijxy[i, i]) for i in range(rho_base_ijxy.shape[0]) if X.ei_L2[i] > 0)
+        feed[:n_base] += np.einsum('i,xy->ixy', auger_weight * chan.Gamma_CK_L2_fs, rho_L2_base_xy)
+
+    # Middleman pool -> this channel (docs/middlemen-implementation-plan.md step 2): photoionisation
+    # of a 3d^-n ion's 2p3/2 / 2p1/2 shell with the ground state's own sublevel pattern, and of its 2s
+    # shell followed by instantaneous CK (even spread), scaled by this channel's share of the pool.
+    # With use_eii, L-shell EII of middlemen follows the same routing. middleman_gain_loss drains
+    # the pool by exactly the sum of these terms over channels.
+    if chan.mid_share and rho_mid_xy is not None:
+        w = chan.mid_share
+        feed[:4] += w * np.einsum('i,xy->ixy', X.S_ground_Fi[0, :4], J_Omega_minus_xy * rho_mid_xy)
+        feed[:4] += w * np.einsum('i,xy->ixy', X.S_ground_Fi[1, :4], J_Omega_plus_xy * rho_mid_xy)
+        rate_2s_xy = (X.S_ground_Fi[0, X.nlevel] * J_Omega_minus_xy + X.S_ground_Fi[1, X.nlevel] * J_Omega_plus_xy) * rho_mid_xy
+        if eii_R_xy is not None:
+            rate_2s_xy = rate_2s_xy + eii_R_xy[2] * rho_mid_xy
+            feed[:n_base] += np.einsum('i,xy->ixy', auger_weight * w, eii_R_xy[0] * rho_mid_xy)
+        feed[:n_base] += np.einsum('i,xy->ixy', auger_weight * w * X.mid_ck_L3, rate_2s_xy)
+        if nlevel_sat > n_base and X.mid_L2k_available:
+            n_L2 = nlevel_sat - n_base
+            feed[n_base:] += w * np.einsum('i,xy->ixy', X.S_ground_Fi[0, n_base:X.nlevel], J_Omega_minus_xy * rho_mid_xy)
+            feed[n_base:] += w * np.einsum('i,xy->ixy', X.S_ground_Fi[1, n_base:X.nlevel], J_Omega_plus_xy * rho_mid_xy)
+            feed[n_base:] += np.einsum('i,xy->ixy', (w * X.mid_ck_L2 / n_L2) * np.ones(n_L2), rate_2s_xy)
+            if eii_R_xy is not None:
+                feed[n_base:] += np.einsum('i,xy->ixy', (w / n_L2) * np.ones(n_L2), eii_R_xy[1] * rho_mid_xy)
+
     return feed
 
 
@@ -295,18 +359,21 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
 
     """
 
-    X, chan, Omega_psxy, rho_base_ijxy, rho_2s_xy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy = params
+    (X, chan, Omega_psxy, rho_base_ijxy, rho_2s_xy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy,
+     rho_mid_xy, eii_R_xy) = params
 
     Omega_plus_sxy = Omega_psxy[0, :, :, :]
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
-    feed_diag_ixy = feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy)
+    feed_diag_ixy = feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy,
+                                              J_Omega_plus_xy, rho_mid_xy, eii_R_xy)
 
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus_satellite, X.Tijs_minus_satellite,
         chan.Mij, chan.Gamma_sp_Gij, chan.S_ion_Fi[:, :],
         feed_diag_ixy, chan.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy, X.use_rate_equations,
+        X.mix_mask_sat, X.L3_mixing_sat_fs,
     )
 
 
@@ -327,10 +394,17 @@ def MB_other_regular(t, rho_other_xy, params):
 
     """
       
-    X, rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
-    
-    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -1], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    X, rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy = params
+
     drho_ion = -np.einsum('f, fxy->xy', X.S_other_F[:], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_other_xy
+    if X.use_middlemen:
+        # "other" (M-shell holes) is the n~2 middleman population; with use_middlemen its pump goes
+        # into the middleman pool instead (docs/theory-middlemen-and-pathway-audit.md sec 2.4)
+        return drho_ion
+
+    drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -1], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    if eii_R_xy is not None:
+        drho_pump = drho_pump + eii_R_xy[3] * rho_ground_xy   # M-shell EII of ground atoms
 
     return drho_pump + drho_ion
 
@@ -352,9 +426,11 @@ def MB_2s_regular(t, rho_2s_xy, params):
 
     """
       
-    X, rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy = params
-    
+    X, rho_ground_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy = params
+
     drho_pump = np.einsum('f, fxy->xy', X.S_ground_Fi[:, -2], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    if eii_R_xy is not None:
+        drho_pump = drho_pump + eii_R_xy[2] * rho_ground_xy   # 2s EII of ground atoms (0 without use_2s_pathway)
     drho_ion = -np.einsum('f, fxy->xy', X.S_2s_F[:], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_2s_xy
     drho_2s_decay = -X.GammaL1fsm1N * rho_2s_xy
 
@@ -381,11 +457,125 @@ def MB_ground_regular(t, rho_ground_xy, params):
 
     """
     
-    X, J_Omega_minus_xy, J_Omega_plus_xy = params
+    X, J_Omega_minus_xy, J_Omega_plus_xy, eii_loss_xy = params
 
     drho = -np.einsum('fi, fxy->xy', X.S_ground_Fi[:, :], np.array([J_Omega_minus_xy, J_Omega_plus_xy])) * rho_ground_xy
+    if eii_loss_xy is not None:
+        # EII loss frozen at its start-of-step value (sum of every EII row x rho_ground at step
+        # start), i.e. exactly what the EII destinations receive over the step -- keeps the fast
+        # M-shell transfer population-conserving instead of RK4-draining a frozen-fed process.
+        drho = drho - eii_loss_xy
 
     return drho
+
+
+def eii_rates_xy(X, rho_e_gxy):
+    """
+    EII rate per target atom (fs^-1) from the current free-electron ladder populations: rows are
+    ionisation into 2p3/2, 2p1/2, 2s and the M shell (3s+3p+3d), each summed over energy groups
+    (Part VII Eq. VII.2, including `spatial_factor` and `M_shell_scale`). Frozen over one RK4 step,
+    like the photon flux.
+    """
+    return np.einsum('rg,gxy->rxy', X.eii_rate_table, rho_e_gxy)
+
+
+def middleman_gain_loss(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy,
+                        J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy=None):
+    """
+    Feed into and loss rate out of the middleman pool (docs/middlemen-implementation-plan.md steps
+    1-2), from start-of-step populations. The gain is the untracked outflow of every tracked
+    population (decays and further photoionisation with no other destination,
+    XLO_sim._build_pathway_extensions), the ground -> M-shell-hole pump that used to feed "other",
+    and M-shell EII of ground atoms. The loss is the part of the pool's own photoionisation (and
+    L-shell EII) that feed_diag_satellite_block routes into satellite blocks; the rest of its
+    ionisation returns it to the pool.
+
+    Returns
+    -------
+    (gain_xy, loss_rate_xy): d rho_mid/dt = gain_xy - loss_rate_xy * rho_mid
+    """
+    Jm, Jp = J_Omega_minus_xy, J_Omega_plus_xy
+    # scalar populations are stored complex in the integrator (imaginary part exactly 0)
+    rho_ground_xy, rho_other_xy, rho_2s_xy = np.real(rho_ground_xy), np.real(rho_other_xy), np.real(rho_2s_xy)
+    diag = np.real(np.einsum('iixy->ixy', rho_base_ijxy))
+    gain = np.einsum('i,ixy->xy', X.decay_untracked_base, diag)
+    gain += Jm * np.einsum('i,ixy->xy', X.S_untracked_base[0], diag) + Jp * np.einsum('i,ixy->xy', X.S_untracked_base[1], diag)
+    for chan, rho_sat in zip(X.satellite_channel_params, rho_sat_ijxy):
+        d = np.real(np.einsum('iixy->ixy', rho_sat))
+        gain += np.einsum('i,ixy->xy', chan.decay_untracked, d)
+        gain += Jm * np.einsum('i,ixy->xy', chan.S_untracked[0], d) + Jp * np.einsum('i,ixy->xy', chan.S_untracked[1], d)
+    gain += (X.twos_decay_untracked_fs + X.S_2s_F[0] * Jm + X.S_2s_F[1] * Jp) * rho_2s_xy
+    gain += (X.S_other_F[0] * Jm + X.S_other_F[1] * Jp) * rho_other_xy
+    gain += (X.S_ground_Fi[0, -1] * Jm + X.S_ground_Fi[1, -1] * Jp) * rho_ground_xy
+
+    loss_rate = X.mid_S_out[0] * Jm + X.mid_S_out[1] * Jp
+    if eii_R_xy is not None:
+        gain += eii_R_xy[3] * rho_ground_xy
+        share = sum(chan.mid_share for chan in X.satellite_channel_params)
+        if share:
+            routed = eii_R_xy[0] + X.mid_ck_L3 * eii_R_xy[2]
+            if X.mid_L2k_available:
+                routed = routed + eii_R_xy[1] + X.mid_ck_L2 * eii_R_xy[2]
+            loss_rate = loss_rate + share * routed
+    return np.real(gain), loss_rate
+
+
+def MB_middleman_regular(t, rho_mid_xy, params):
+    """Middleman pool: d rho_mid/dt = gain - loss_rate * rho_mid (middleman_gain_loss)."""
+    gain_xy, loss_rate_xy = params
+    return gain_xy - loss_rate_xy * rho_mid_xy
+
+
+def electron_production_gxy(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_mid_xy, rho_base_ijxy,
+                            rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy):
+    """
+    Free electrons produced per atom per fs, by ladder birth group (Part VII sec 1): one photoelectron
+    per photoabsorption event of any tracked population (top group), one fast electron per
+    non-radiative 1s-hole decay (KLL/KLM, top group), one ~0.9 keV electron per untracked L-type
+    Auger decay and per 2s L1-MM decay (LMM group), one slow electron per tracked Coster-Kronig /
+    spectator super-CK decay and per EII event (CK group). The electrons of the M-shell cascade
+    that follows an L-shell Auger decay are not counted (<1 3d ionisation each, Part VII sec 5).
+    """
+    Jm, Jp = J_Omega_minus_xy, J_Omega_plus_xy
+    birth = X.eii_birth
+    rho_ground_xy, rho_other_xy, rho_2s_xy = np.real(rho_ground_xy), np.real(rho_other_xy), np.real(rho_2s_xy)
+    prod = np.zeros((X.eii_G,) + rho_ground_xy.shape)
+    diag = np.real(np.einsum('iixy->ixy', rho_base_ijxy))
+
+    S_ground_total = np.sum(X.S_ground_Fi, axis=1)
+    photo = (S_ground_total[0] * Jm + S_ground_total[1] * Jp) * rho_ground_xy
+    photo += Jm * np.einsum('i,ixy->xy', X.S_ion_Fi[0], diag) + Jp * np.einsum('i,ixy->xy', X.S_ion_Fi[1], diag)
+    photo += (X.S_2s_F[0] * Jm + X.S_2s_F[1] * Jp) * rho_2s_xy
+    photo += (X.S_other_F[0] * Jm + X.S_other_F[1] * Jp) * rho_other_xy
+    if rho_mid_xy is not None:
+        photo += (X.sigma_mid_F[0] * Jm + X.sigma_mid_F[1] * Jp) * rho_mid_xy
+    fast = np.einsum('i,ixy->xy', X.e_emit_base['KLL'], diag)
+    lmm = np.einsum('i,ixy->xy', X.e_emit_base['LMM'], diag) + X.twos_decay_untracked_fs * rho_2s_xy
+    slow = np.einsum('i,ixy->xy', X.e_emit_base['CK'], diag) + X.twos_decay_tracked_fs * rho_2s_xy
+    for chan, rho_sat in zip(X.satellite_channel_params, rho_sat_ijxy):
+        d = np.real(np.einsum('iixy->ixy', rho_sat))
+        photo += Jm * np.einsum('i,ixy->xy', chan.S_ion_Fi[0], d) + Jp * np.einsum('i,ixy->xy', chan.S_ion_Fi[1], d)
+        fast += np.einsum('i,ixy->xy', chan.e_emit['KLL'], d)
+        lmm += np.einsum('i,ixy->xy', chan.e_emit['LMM'], d)
+        slow += np.einsum('i,ixy->xy', chan.e_emit['CK'], d)
+    targets = rho_ground_xy + (rho_mid_xy if rho_mid_xy is not None else 0.0)
+    slow += np.sum(eii_R_xy, axis=0) * targets
+
+    prod[birth['photo']] += np.real(photo)
+    prod[birth['KLL']] += fast
+    prod[birth['LMM']] += lmm
+    prod[birth['CK']] += slow
+    return prod
+
+
+def MB_electron_regular(t, rho_e_gxy, params):
+    """Free-electron slowing-down ladder (Part VII Eq. VII.3): production, then transfer g -> g+1 at
+    the continuous-slowing-down rate; the last bin (thermalised) only accumulates."""
+    X, prod_gxy = params
+    flow = X.eii_k_down[:, None, None] * rho_e_gxy
+    d = prod_gxy - flow
+    d[1:] += flow[:-1]
+    return d
 
 
 
@@ -422,7 +612,7 @@ def Omega_source_regular(X, rho_ijxy, Tijs_plus=None, Tijs_minus=None):
     return X.field_source_factor * np.einsum('p, psxy -> psxy', X.e_sign, np.asarray([Omega_plus_source, Omega_minus_source]))
 
 
-def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, rho_sat_ijxyz_list=None):
+def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, rho_sat_ijxyz_list=None, rho_mid_xyz=None):
     """
     Calculate the absorption coefficient of the pump or seed field due to photoionization of the ground and all ionic states, and the compound. The ground state population is not pre-configured.
     Parameters
@@ -454,5 +644,9 @@ def absorption(X, rho_ground_xyz, rho_other_xyz, rho_2s_xyz, rho_ijxyz, rho_sat_
     if rho_sat_ijxyz_list is not None:
         for chan, rho_sat_ijxyz in zip(X.satellite_channel_params, rho_sat_ijxyz_list):
             kappa_Omega_sxyz = kappa_Omega_sxyz + X.n * np.einsum('si, iixyz->sxyz', chan.S_ion_Fi[:, :], rho_sat_ijxyz)
+
+    if rho_mid_xyz is not None:
+        # middlemen (3d^-n ions) photoabsorb like neutral Cu (XATOM: 1.00-1.03x for n = 0..6)
+        kappa_Omega_sxyz = kappa_Omega_sxyz + X.n * np.einsum('xyz, s->sxyz', rho_mid_xyz, X.sigma_mid_F)
 
     return np.array([kappa_Omega_sxyz, kappa_Omega_sxyz])

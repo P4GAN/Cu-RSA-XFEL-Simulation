@@ -24,10 +24,26 @@ DEFAULT_E_SEED_VALUES =  [60, 40, 9, 2] #[60, 40, 30, 20, 9, 5, 2, 1, 0.1]
 # to print the matching sbatch --array bound.
 CHUNKS_PER_CONFIG = 15
 
-def yaml_modify_seed_energy(input_yaml_path, output_yaml_path, new_seed_energy):
+def parse_overrides(pairs, base_yaml_path):
+    """--set KEY=VALUE pairs -> {KEY: value}, VALUE parsed as YAML (5 -> int, 2.0 -> float, true ->
+    bool). KEY must already be a top-level key of the base config: XLO_sim accepts unknown keys
+    silently, so a typo would otherwise give a sweep that differs from its base in name only."""
+    with open(base_yaml_path, "r") as f:
+        base_keys = set(yaml.safe_load(f))
+    overrides = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or key not in base_keys:
+            raise SystemExit(f"--set {pair!r}: expected KEY=VALUE with KEY a top-level key of {base_yaml_path}")
+        overrides[key] = yaml.safe_load(value)
+    return overrides
+
+
+def yaml_modify_seed_energy(input_yaml_path, output_yaml_path, new_seed_energy, overrides=None):
     with open(input_yaml_path, "r") as f:
         yaml_data = yaml.safe_load(f)
 
+    yaml_data.update(overrides or {})
     yaml_data["E_seed_uJ"] = new_seed_energy
 
     with open(output_yaml_path, "w") as f:
@@ -42,7 +58,11 @@ def main():
     parser.add_argument("--out-dir", default="config/generated/transmittance_vs_intensity")
     parser.add_argument("--e-seed", type=float, nargs="+", default=DEFAULT_E_SEED_VALUES,
                          help="E_seed_uJ values to sweep over")
+    parser.add_argument("--set", dest="overrides", nargs="*", default=[], metavar="KEY=VALUE",
+                        help="Top-level config overrides for every generated YAML (VALUE parsed as "
+                             "YAML), e.g. --set L3_sublevel_mixing_fs_inv=2.0")
     args = parser.parse_args()
+    overrides = parse_overrides(args.overrides, args.base_yaml)
 
     os.makedirs(args.out_dir, exist_ok=True)
     manifest_path = os.path.join(args.out_dir, "manifest.txt")
@@ -50,7 +70,7 @@ def main():
     with open(manifest_path, "w") as manifest:
         for e_seed in args.e_seed:
             out_path = os.path.join(args.out_dir, f"Cu-seed-SASE_{e_seed:.2f}uJ.yaml")
-            yaml_modify_seed_energy(args.base_yaml, out_path, e_seed)
+            yaml_modify_seed_energy(args.base_yaml, out_path, e_seed, overrides)
             manifest.write(os.path.abspath(out_path) + "\n")
             print(f"wrote {out_path}")
 

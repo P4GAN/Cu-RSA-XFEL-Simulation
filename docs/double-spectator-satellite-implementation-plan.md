@@ -9,6 +9,15 @@ deterministic rate-equation solve over the user-supplied `xatom/transitions_dict
 + `xatom/f_line_dict_relativistic.json` databases), which agree with each other to within a factor
 of ~2.
 
+> **Correction (2026-09-15): the "carve-out" of the 3p± parents' widths in §3/§5/§7/§9 was wrong and
+> created population.** `feed_diag_satellite_block` adds Γ_feed·ρ_parent to each daughter without
+> subtracting anything from the parent. The parent loses population only through its own width, so
+> that width must be the **total** (2.632 eV for 2p₃/₂⁻¹3p₃/₂⁻¹, 3.179 eV for 3p₁/₂; likewise for
+> Γ_K and Γ_L2), with the feeds as branches of it. With the carved widths each decayed parent made
+> 1.1–2.5 daughter atoms. The configs now carry the totals, and `XLO_sim` rejects a feed-out that
+> exceeds the parent's width. See `docs/theory-middlemen-and-pathway-audit.md` §2.3 and the
+> corrected theory doc §12.7. The feed rates themselves (XATOM branching) are unchanged.
+
 ## 1. Motivation and the production mechanism actually used
 
 The naive route to a double-spectator state — further-photoionizing an already-populated
@@ -123,12 +132,11 @@ downstream consumer stay a single flat list — no new arrays, no new Sample.py 
 (parent looked up by name in `self.satellite_channels`, must appear *before* the double-satellite
 entry in Python-dict iteration order — enforced, not assumed).
 
-**The carve-out is exactly the established pattern** (§12.7 of the theory doc, and how
-`sigma2_Ka1_1s`/`sigma2_Ka1_2p3` were already reduced when `satellite_channels` was first added):
-the fed fraction must be *subtracted* from `3p+`/`3p-`'s own `Gamma_L_eV`, or that population
-budget is double-counted (once as generic loss via the parent's own `Mij`, once again as explicit
-double-satellite feed). Verified: `0.887 + 1.745 = 2.632` (matches `3p+`'s original/bare total decay
-width exactly); `0.985 + 2.194 = 3.179` (matches `3p-`'s).
+~~**The carve-out is exactly the established pattern** ... the fed fraction must be *subtracted*
+from `3p+`/`3p-`'s own `Gamma_L_eV`~~ **Corrected 2026-09-15 (see the note at the top):** nothing is
+double-counted, because the parent's `Mij` loss is where the fed population comes *from*, not a
+second destination for it. Keep `Gamma_L_eV` at the bare total (`2.632` for `3p+`, `3.179` for
+`3p-`); the `feed_from` rates (summing to `1.745` and `2.194`) are branches of it.
 
 ### Feed mechanism (`Model.py`)
 
@@ -195,10 +203,9 @@ single-hole fragment) — XATOM's notation packs *all* holes in one subshell int
   `feed_from`-aware branch in `feed_diag_satellite_block` is dead code with no channels to trigger
   it, and the parent channels' `Gamma_L_eV` values only change if the YAML is edited to carve them
   out, which only happens in configs that also define the new channels.
-- Carve-out budget: `Gamma_L_eV(3p+)_new + sum(Gamma_feed_eV from 3p+) == Gamma_L_eV(3p+)_bare`
-  (2.632 eV), same for `3p-` (3.179 eV) — checked by hand above; `XLO_sim.py` should assert this at
-  construction time (loudly, not silently) given how easy it is to get a carve-out wrong (§12.7's
-  own warning, borne out already once in this codebase's history for `GammaA_L1_to_L3M45eVN`).
+- Feed budget (corrected 2026-09-15): `sum(Gamma_feed_eV out of a parent manifold) <= that
+  manifold's own width`, with the width the bare total (2.632 eV for `3p+`, 3.179 eV for `3p-`).
+  `XLO_sim._build_pathway_extensions` now asserts this at construction time.
 - Population trace (sum over ground/other/2s/base-block/all single- and double-satellite channels)
   must stay ≤ 1 and decrease only via documented untracked-loss channels, exactly the existing
   Part II/§14 check, now extended one tier deeper.

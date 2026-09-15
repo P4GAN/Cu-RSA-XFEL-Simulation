@@ -3,7 +3,32 @@
 Companion to `docs/theory-eii-and-free-electrons.md` (Part VII; "VII §x" below). Depends on steps 0–2
 of `docs/middlemen-implementation-plan.md`: M-shell EII feeds the middleman pool, and the population
 bookkeeping built there (`untracked_out`, the trace check) is what EII's electron production reads.
-Nothing here has been implemented yet.
+
+> **Implementation status (2026-09-15): steps 1–5 are implemented, and step 6 (transport) is not;
+> `spatial_factor` stands in for it.** Differences from the plan:
+>
+> - The formulas live in `XLO_sim/eii.py` (`bcf_cross_section_nm2`, `stopping_power_eV_nm`,
+>   `build_ladder`, `ladder_yields`) and are evaluated at `XLO_sim.__init__` from the `eii:` block,
+>   rather than generated into the YAML by a separate `print_eii_parameters.py`. The subshell table
+>   defaults to the XATOM neutral binding energies (`eii.DEFAULT_SUBSHELLS`) and can be overridden in
+>   the config.
+> - The ladder has `n_groups` active groups (default 6, 7.1 keV → 30 eV) plus one thermalised bin
+>   that no longer ionises or moves. The sum over all bins is therefore the total number of electrons
+>   produced (output `n_e_total_t_last`; still-hot electrons are `n_e_hot_t_last`).
+> - EII sinks implemented: L-shell (2p₃/₂, 2p₁/₂, 2s) of ground atoms into base L3/L2/2s; L-shell of
+>   middlemen along the middleman routing; M-shell (×`M_shell_scale`) of ground atoms into the
+>   middleman pool, or into "other" without `use_middlemen`. **Not implemented:** M-shell EII of
+>   atoms that already have a core hole (the sublevel-preserving base→single→double-satellite
+>   conversion). Middleman M-shell EII is a self-loop.
+> - The ground's EII loss is applied at its start-of-step value, exactly what the destinations
+>   receive, so the fast M-shell transfer conserves population. Draining it by RK4 instead
+>   overshot the trace by 0.9% at a 0.03 fs step.
+> - Not counted as electron production: M-shell-cascade electrons after an L-shell Auger decay
+>   (<1 3d ionisation each).
+>
+> Smoke test: a 7.09 keV primary in the 6-group ladder gives 0.108 / 0.052 / 0.035 / 0.90 / 4.80 /
+> 63.1 ionisations of 2p₃/₂ / 2p₁/₂ / 2s / 3s / 3p / 3d (continuous: 0.109 / 0.053 / 0.035 / 0.89 /
+> 4.7 / 63), and leaves the keV range after 7.2 fs.
 
 Expected payoff at 8048 eV (estimator, VII §6.4): L-shell EII makes the 20–30 µJ dip 0.005–0.009
 deeper (+10–20% on the ln-dip). M-shell EII mostly reshapes the dip (broadening, threshold-like wings)
@@ -141,6 +166,27 @@ transport: the foil is 20 µm and the ranges are < 0.4 µm.
 4. **Estimator cross-check:** V4 and V4b of `toy_rsa.py` predict ΔT(8048, 20 µJ) = −0.005
    (spatial_factor 0.5) and −0.009 (1.0) relative to Part VI's step-0 baseline.
 5. **Cluster provenance guard** (as in the Part VI plan), since `use_eii` is a new flag.
+
+### Results (2026-09-15)
+
+1. **Reduction.** `use_eii: false` is covered by the Part VI regression (round-off agreement with
+   the pre-extension code; see the Results section of `docs/middlemen-implementation-plan.md`). The
+   `rate_fs = 0` production-only check was not run.
+2. **Single-electron yields** match the continuous-slowing-down values to the discretisation error
+   (status block above).
+3. **Population.** With the ground's EII loss frozen at its start-of-step value, the trace stays
+   within [0.99920, 1.00013] on a small test grid with M-shell EII at 0.5 × BCF, and it converges with
+   dt. The electron-number and energy checks were not run as separate asserts. `n_e_total_t_last`
+   counts every electron produced (10.6 per atom in that 20 µJ test), and `n_e_hot_t_last` counts
+   those still above 30 eV (0.34 at the peak).
+4. **Estimator cross-check.** In the mono MB shot (20 µJ, 8048 eV, seed 0), L-shell EII at spatial
+   factor 0.5 on top of middlemen + CK feeds moves T from 0.3396 to 0.3341: ΔT = −0.0055, against
+   −0.004 in the estimator.
+5. **Stability.** The fastest ladder rate is the lowest group's k_down, 8.1 fs⁻¹. At the SASE
+   production step (dt = 0.042 fs, tgrid 600) that is k·dt = 0.34, well inside RK4's stability limit.
+6. **Provenance.** `use_eii` and the other extension flags are in `tools.PATHWAY_EXTENSION_KEYS`.
+   `eii:` blocks with unknown keys (such as the superseded `tau_th_fs` / `birth_energy_eV`
+   schema of `config/base/Cu-seed-satellite-eii.yaml`) are rejected at load.
 
 ## Cost
 

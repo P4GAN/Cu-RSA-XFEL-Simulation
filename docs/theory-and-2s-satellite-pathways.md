@@ -455,15 +455,19 @@ to track the destination of).
   Eq. M2 feed (it was previously part of the unmodeled $\Gamma_{L1}-\Gamma_A^{(L1\to L3M45)}=3.06$ eV
   remainder, §7) — the generic bucket's implicit rate should increase by (3p− share) and the total
   budget $\Gamma_{L1}$ must still be respected.
-- The double-satellite $\Gamma_{L,k}/\Gamma_{K,k}/\Gamma_{L2,k}$ "redirect a fraction of `3p+`/`3p-`'s
-  own decay" carve-out (`docs/double-spectator-satellite-implementation-plan.md` §3/7/9) is the same
-  pattern: the fed amount and the parent's own reduced width are two branches of *one* `-decay`
-  calculation on the parent's own hole configuration, verified to sum exactly back to the original
-  bare total (e.g. `0.887+1.745=2.632` eV for `3p+`). Structurally load-bearing too: nothing in the
-  code subtracts the feed from the parent's population at the point of feeding
-  (`feed_diag_satellite_block` only ever *adds* into the child, reading the parent's population
-  without touching it — `XLO_sim/Model.py`), so the parent's own decay rate must *already* be net of
-  what's redirected, or population is created from nothing.
+- ~~The double-satellite $\Gamma_{L,k}/\Gamma_{K,k}/\Gamma_{L2,k}$ "redirect a fraction of
+  `3p+`/`3p-`'s own decay" carve-out~~ **Corrected 2026-09-15: this is not a carve-out, and
+  treating it as one created population.** A parent's decay width is a *loss* rate of the parent,
+  not a feed into anything, so there is nothing for the daughter feed to double-count against. In
+  the code the parent loses population only through its own `Mij` diagonal, and
+  `feed_diag_satellite_block` adds Γ_feed·ρ_parent to the daughter without touching the parent. For
+  conservation the parent's width must therefore be the **total** (2.632 eV for `3p+`), with the
+  feed a branch of it, exactly as `Γ_L1` is used in full for $\rho^{(2s)}$ while the satellite
+  Γ_A^{(2s→L_k)} feeds are additive (the Eq. M1/M2 pattern below). With the carved widths
+  (0.887 eV) each decayed 3p± parent produced 1.1–2.5 daughter atoms instead of 0.53–0.72, which
+  deepened the Kα1 dip by ≈0.014 in T at 20 µJ (`docs/theory-middlemen-and-pathway-audit.md`
+  §2.3, §6.3). The shipped configs now carry the totals, and `XLO_sim._build_pathway_extensions`
+  raises if a manifold's summed feed-out exceeds its width.
 
 **Does NOT need a carve-out** (independently-measured, different-process quantities — corrected
 2026-09, previously stated below as requiring subtraction, which was wrong):

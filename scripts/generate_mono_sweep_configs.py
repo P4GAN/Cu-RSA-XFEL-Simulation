@@ -44,10 +44,27 @@ CONFIGS_PER_TASK = 8
 # ARRAY_THROTTLE = 50
 
 
-def yaml_modify_seed_energy_and_target_energy(input_yaml_path, output_yaml_path, new_seed_energy, target_energy_eV):
+def parse_overrides(pairs, base_yaml_path):
+    """--set KEY=VALUE pairs -> {KEY: value}, VALUE parsed as YAML (5 -> int, 2.0 -> float, true ->
+    bool). KEY must already be a top-level key of the base config: XLO_sim accepts unknown keys
+    silently, so a typo would otherwise give a sweep that differs from its base in name only."""
+    with open(base_yaml_path, "r") as f:
+        base_keys = set(yaml.safe_load(f))
+    overrides = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or key not in base_keys:
+            raise SystemExit(f"--set {pair!r}: expected KEY=VALUE with KEY a top-level key of {base_yaml_path}")
+        overrides[key] = yaml.safe_load(value)
+    return overrides
+
+
+def yaml_modify_seed_energy_and_target_energy(input_yaml_path, output_yaml_path, new_seed_energy, target_energy_eV,
+                                              overrides=None):
     with open(input_yaml_path, "r") as f:
         yaml_data = yaml.safe_load(f)
 
+    yaml_data.update(overrides or {})
     yaml_data["E_seed_uJ"] = new_seed_energy
     # yaml.safe_dump can't represent numpy scalars (e.g. if target_energy_eV
     # came from hwKalpha1N + a numpy array of offsets), so cast explicitly.
@@ -68,7 +85,11 @@ def main():
     parser.add_argument("--energy", type=float, nargs="+", default=None,
                          help="Absolute monochromator_target_energy_eV values (eV) to sweep over "
                               "(default: --base-yaml's hwKalpha1N +/- 15 eV in 3 eV steps)")
+    parser.add_argument("--set", dest="overrides", nargs="*", default=[], metavar="KEY=VALUE",
+                        help="Top-level config overrides for every generated YAML (VALUE parsed as "
+                             "YAML), e.g. --set xgrid=5 ygrid=5")
     args = parser.parse_args()
+    overrides = parse_overrides(args.overrides, args.base_yaml)
 
     # with open(args.base_yaml, "r") as f:
     #     hwKalpha1N = yaml.safe_load(f)["hwKalpha1N"]
@@ -84,7 +105,8 @@ def main():
                 out_path = os.path.join(
                     args.out_dir, f"Cu-seed-mono-SASE_{e_seed:.2f}uJ_{target_energy_eV:.2f}eV.yaml"
                 )
-                yaml_modify_seed_energy_and_target_energy(args.base_yaml, out_path, e_seed, target_energy_eV)
+                yaml_modify_seed_energy_and_target_energy(args.base_yaml, out_path, e_seed, target_energy_eV,
+                                                          overrides)
                 manifest.write(os.path.abspath(out_path) + "\n")
                 print(f"wrote {out_path}")
 

@@ -188,8 +188,8 @@ satellite_channels:
   detuning_eV: 1.7865
   Gamma_A_2s_eV: 0.97250
   Gamma_A_K_eV: 0.02431
-  Gamma_L_eV: 0.6699
-  Gamma_K_eV: 1.3659
+  Gamma_L_eV: 2.40967  # total incl. 1.7398 eV fed to double_satellite_channels (was 0.6699, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  Gamma_K_eV: 3.40490  # total incl. 2.0390 eV fed to double_satellite_channels (was 1.3659, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p: 1.88202e-08
   sigma_Ka1_from_1s: 2.02344e-08
   sigma_ion_from_2p: 4.1513e-07
@@ -197,14 +197,14 @@ satellite_channels:
   detuning_eV_L2_split: 25.0917
   Gamma_A_2s_to_L2_eV: 0.52613
   Gamma_A_K_to_L2_eV: 0.04233
-  Gamma_L2_eV: 0.6457
+  Gamma_L2_eV: 2.38540  # total incl. 1.7397 eV fed to double_satellite_channels (was 0.6457, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
   detuning_eV: -1.5140
   Gamma_A_2s_eV: 0.54985
   Gamma_A_K_eV: 0.02309
-  Gamma_L_eV: 0.6699
-  Gamma_K_eV: 1.3659
+  Gamma_L_eV: 2.85964  # total incl. 2.1897 eV fed to double_satellite_channels (was 0.6699, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  Gamma_K_eV: 3.89610  # total incl. 2.5302 eV fed to double_satellite_channels (was 1.3659, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p: 9.4244e-09
   sigma_Ka1_from_1s: 1.01334e-08
   sigma_ion_from_2p: 4.1513e-07
@@ -212,7 +212,7 @@ satellite_channels:
   detuning_eV_L2_split: 14.5234
   Gamma_A_2s_to_L2_eV: 0.44463
   Gamma_A_K_to_L2_eV: 0.00365
-  Gamma_L2_eV: 0.6457
+  Gamma_L2_eV: 2.83550  # total incl. 2.1898 eV fed to double_satellite_channels (was 0.6457, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p1: 9.4244e-09
 
 double_satellite_channels:

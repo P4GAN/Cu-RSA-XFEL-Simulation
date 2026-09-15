@@ -95,11 +95,9 @@ of U is then replaced by one stimulated absorption, so the photon absorption rat
 the bright-pair balance, with Kα1 radiative decay returning half of its population to bright states
 (Clebsch–Gordan weights 1/3 + 1/6 from each K sublevel):
 
-$$
-\eta_{3/2}=\frac12\,\frac{\Gamma_K}{\Gamma_{L3}+\Gamma_K-\Gamma_{r1}/2}=0.392,\qquad
+$$\eta_{3/2}=\frac12\,\frac{\Gamma_K}{\Gamma_{L3}+\Gamma_K-\Gamma_{r1}/2}=0.392,\qquad
 \eta_{1/2}=\frac{\Gamma_K}{\Gamma_{L2}+\Gamma_K-\Gamma_{r2}}=0.640
-\tag{VI.1}
-$$
+\tag{VI.1}$$
 
 photons per created hole (config widths). If the 2p₃/₂ sublevels were mixed faster than the hole
 decays, all six states would share the population and η₃/₂ would rise to 0.643 (§1.5).

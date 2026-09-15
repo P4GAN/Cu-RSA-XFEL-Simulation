@@ -78,6 +78,10 @@ The simulation is one z-marching loop coupling two subsystems at each longitudin
   - `_evaluate_n_level_3D_lean`: identical numerics, only keeps a rolling 2-slot z buffer plus the
     z=0/last snapshot — this is what `X.keep_z_history = False` selects, and is what all
     `run_*_sweep.py` batch scripts use (they only ever read z=0/z=-1 via `tools.compute_run_outputs`).
+  - An optional `X.movie_recorder` (`movie.py`, lean path only) streams a float32 reduction of the
+    full (t, x, y, z) history to HDF5 one z-plane at a time. It exists for visualisation runs
+    (`scripts/run_movie.py` / `submit_movie.sh`, config `config/base/Cu-seed-SASE-movie.yaml`) and
+    only reads state, so the numerics are bit-identical with or without it.
 - **`Optics.py`** — `XLO_optics`: FFT-based Fresnel propagation (`Fresnel_propagator_with_absorption`
   / `_no_absorption`), the numerical Green's function for the sample, k-space grids/filters, thin
   lens / drift kernels. `enable_self_diffraction=False` in a config short-circuits propagation to a

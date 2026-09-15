@@ -120,6 +120,8 @@ class XLO_sample:
 
         """
         if getattr(X, "keep_z_history", True):
+            if getattr(X, "movie_recorder", None) is not None:
+                raise ValueError("X.movie_recorder is only driven by the lean path: set X.keep_z_history = False")
             self._evaluate_n_level_3D_full(X)
         else:
             self._evaluate_n_level_3D_lean(X)
@@ -237,9 +239,13 @@ class XLO_sample:
         mode agree exactly -- do not "fix" this without also changing the full-history path.
 
         Not used for interactive/notebook work -- Plot.py needs the full z/x/y profile.
+
+        An optional X.movie_recorder (XLO_sim/movie.py) is handed every step's state and streams a
+        reduced full-grid history to HDF5; it only reads, so the numerics are unchanged.
         """
 
         nlevel, tgrid, xgrid, ygrid, zgrid = X.nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid
+        recorder = getattr(X, "movie_recorder", None)
         cx, cy = int(X.xgrid / 2), int(X.ygrid / 2)  # matches tools.compute_run_outputs exactly
 
         # t=0 initial-condition template, identical for every z -- re-copied into the rolling "xy"
@@ -349,6 +355,11 @@ class XLO_sample:
                 curr_rho_diag_txy[:, it, :, :] = rho_ijxy[diag_idx, diag_idx, :, :]
                 if is_final_iz:
                     final_rho_ijt_center[:, :, it] = rho_phys_ijxy[:, :, cx, cy]
+                if recorder is not None:
+                    # Before the propagation below overwrites Omega_pstxy[:, :, it]: this is still the
+                    # field that drove the step just taken.
+                    recorder.record_step(it, Omega_pstxy[:, :, it, :, :], rho_phys_ijxy, rho_sat_phys_ijxy,
+                                         rho_ground_xy, rho_other_xy, rho_2s_xy, rho_mid_xy, rho_e_gxy)
 
                 if iz != 0:
                     # Same [iz-1, iz] window Model.absorption() reads in the full-history path.
@@ -389,6 +400,9 @@ class XLO_sample:
 
             # ######################
             # Loop over simulation time window ends
+
+            if recorder is not None:
+                recorder.end_plane(iz, Omega_pstxy)
 
             # Reproduces the full-history path's off-by-one (see docstring).
             if iz == zgrid - 2:

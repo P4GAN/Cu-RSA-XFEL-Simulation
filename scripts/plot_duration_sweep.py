@@ -56,6 +56,8 @@ HOLE_2P3, HOLE_2P1, HOLE_1S = "#2a78d6", "#1baf7a", "#eb6834"
 
 # Durations left out of the transmittance-spectra and population figures.
 DROP_FROM_SPECTRA_AND_POPULATIONS = (0.1,)
+# Magnification of the (common-scale) input-intensity fill in the population figure.
+PULSE_FILL_GAIN = 3.0
 
 # Slide versions are drawn at their true size on the Beamer 16:9 PaloAlto slide (\textwidth = 5.28 in),
 # with the same fonts as plot_saturation_slide.py, so they can be included at width=\linewidth.
@@ -134,13 +136,6 @@ def input_intensity_W_cm2(a, C):
     mean temporal profile (I_t_0, spatially integrated) and the Gaussian spot's effective area."""
     t, P = a["t_axis"], np.real(a["I_t_0"])
     return C["E_seed_uJ"] * 1e-6 * P / np.trapz(P, t * 1e-15) / C["spot_area_cm2"]
-
-
-def sci_unicode(x):
-    """2.64e20 -> '2.6×10²⁰' (plain text: far more compact than mathtext at slide font sizes)."""
-    exp = int(np.floor(np.log10(x)))
-    return f"{x / 10 ** exp:.1f}×10" + str(exp).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
-
 
 def metrics(a, C):
     """Scalar observables for one (chunk- or pool-) mean dict."""
@@ -332,7 +327,7 @@ def fig_populations(S, C, out_dir, slide=False):
     Colour = hole type (2p3/2, 2p1/2, 1s), line style = main line (solid) vs spectator satellites
     summed over all satellite blocks (dashed). Populations are shown in units of 1e-3. The grey
     fill is the shot-averaged input intensity on ONE scale shared by every panel (all pulses carry
-    the same energy, so shorter = more intense), with its peak value printed under the duration.
+    the same energy, so shorter = more intense), magnified by PULSE_FILL_GAIN.
     """
     dash = (0, (3.5, 1.8)) if slide else (0, (5, 2.5))
     lw = 0.8 if slide else 1.4
@@ -356,14 +351,14 @@ def fig_populations(S, C, out_dir, slide=False):
             half = max(1.6 * dur, 0.5)
             ax.set_xlim(-half, half + 2.5)
             ax.xaxis.set_major_locator(MaxNLocator(3 if slide else 5))
-        I_scale = max(I.max() for _, I in pulses.values())
+        # One intensity scale for every panel, magnified so the long, weak pulses stay visible; the
+        # shortest (most intense) pulses are allowed to run off the top of the axes.
+        I_scale = max(I.max() for _, I in pulses.values()) / PULSE_FILL_GAIN
         for ax, (dur, (x, I)) in zip(axs, pulses.items()):
             ax.fill_between(x, 0, 0.95 * ymax * I / I_scale, color=GRID, zorder=0, lw=0)
             ax.text(0.97, 0.97, f"{dur:g} fs", transform=ax.transAxes, ha="right", va="top",
-                    fontweight="bold", color=INK, fontsize=None if slide else 11)
-            ax.text(0.97, 0.83, f"{sci_unicode(I.max())} W/cm²", transform=ax.transAxes, ha="right",
-                    va="top", color=INK_2, fontsize=6.4 if slide else 9)
-        axs[0].set_ylim(0, 1.45 * ymax)
+                    color=INK, fontsize=7 if slide else 10)
+        axs[0].set_ylim(0, 1.2 * ymax)
         axs[0].yaxis.set_major_locator(MaxNLocator(4, integer=True))
         axs[0].set_ylabel("Population ($10^{-3}$)")
         axs[len(axs) // 2].set_xlabel("Time relative to pulse centre (fs)")

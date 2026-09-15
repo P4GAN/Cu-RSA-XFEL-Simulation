@@ -787,10 +787,29 @@ def compute_run_outputs(X, tpad, ypad):
     them to check population conservation. total_population_t_last below is
     the actual (unweighted) trace for that: ground + other + 2s + the base
     block's own raw diagonal trace + every satellite block's raw diagonal
-    trace, with no Tijs anywhere -- should equal 1 for a trace-preserving,
-    exactly-integrated system, so 1 - this is the right population-leak/
-    trace-conservation diagnostic (e.g. for the fixed-dt RK4 convergence
-    checks in scripts/generate_tgrid_sweep_configs.py).
+    trace, with no Tijs anywhere.
+
+    It is NOT expected to equal 1, even in exact arithmetic: Gamma_sp_fsm1N
+    (radiative-only, GammarKalpha1fsm1N+GammarKalpha2fsm1N) is less than half
+    of GammaKfsm1N (the total K-hole rate Mij[K,K] uses for the loss term) --
+    K-hole Auger decay beyond the tracked Kalpha1/Kalpha2 radiative branching,
+    L3-hole decay (Mij[L3,L3], no feed term at all), and the further-
+    photoionization loss (S_ion_Fi/gamma_ion in Model.py) are all genuine,
+    deliberate sinks with no destination among the tracked states -- so this
+    quantity is expected to drift *below* 1 over a pulse, monotonically, as
+    population Auger-decays or photoionizes into charge states the model
+    doesn't resolve further. Verified analytically (scratchpad
+    decay_only_check.py, field/feed zeroed, compared against
+    scipy.linalg.expm of the exact linear decay system): matches to ~1e-4 at
+    dt=X.dt and never exceeds 1 at any point, confirming the sink bookkeeping
+    itself is correct. What total_population_t_last *is* diagnostic for is
+    any INCREASE above 1 (impossible for a sink-only system) or above its
+    own running value -- that isolates numerical error in the coherently-
+    driven (Hint/Rabi) part of the integration, since the decay-only physics
+    has been shown not to produce it. That's the number the fixed-dt RK4
+    convergence checks in scripts/generate_tgrid_sweep_configs.py should
+    watch for shrinking with finer tgrid, not proximity of the whole
+    trajectory to 1.
     """
     womega_ar, I_int_thy_w_0, I_thy0_w_0 = SF_spectrum_w(X, 0, ypad, tpad)
     womega_ar, I_int_thy_w_last, I_thy0_w_last = SF_spectrum_w(X, -1, ypad, tpad)

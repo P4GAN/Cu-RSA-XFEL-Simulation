@@ -148,6 +148,10 @@ population-creating bug until 2026-09-15 (`docs/theory-middlemen-and-pathway-aud
   2p₁/₂→2p₃/₂+3d Coster–Kronig; 2s→bare 2p₁/₂).
 - **`L3_sublevel_mixing_fs_inv`** / **`..._satellite_fs_inv`** — depolarising mixing of the 2p₃/₂
   sublevels inside `_MB_nlevel_regular_core` (dark-state test, Part VI §1.5).
+  `L3_sublevel_mixing_coherence_factor` (default 1) scales the coherence-damping half of that map:
+  1 is the Lindblad form (also dephases the optical coherence by ħγ/2), 0 keeps only the population
+  exchange. `Model.MODEL_FEATURES` names such kernel features so `tools.verify_code` can refuse a
+  config that needs one the imported code lacks.
 - **`use_eii: true`** + `eii: {...}` — free-electron slowing-down ladder (`XLO_sim/eii.py`:
   Burgess–Chidichimo cross sections, Joy–Luo stopping) whose EII rates feed base/2s/middleman
   populations. `docs/eii-free-electrons-implementation-plan.md`.
@@ -197,7 +201,11 @@ runner. The `pathway_sweep` family (`generate_pathway_sweeps.sh` → `submit_pat
 shape. It runs the Part VI/VII variants of the double-satellite model and writes one flat
 `<variant> <yaml>` manifest per family. Variants that differ only in a scalar are expressed as
 `--set KEY=VALUE` overrides, which both generators accept; they refuse keys missing from the base
-config. `scripts/plot_*.py` are standalone (non-notebook) counterparts to the `plot-*.ipynb`
+config. Structured edits (every satellite detuning, the foil thickness, another config's extension
+blocks) go through `scripts/derive_config.py`, which writes a variant base config with a `derived:`
+record of its transforms; `generate_bracket_sweeps.sh` uses it to build one-change-at-a-time
+brackets around a reference model, and the two `submit_pathway_sweep_*.sh` scripts take the
+family directory as `$1`. `scripts/plot_*.py` are standalone (non-notebook) counterparts to the `plot-*.ipynb`
 notebooks below; each is tied to one specific sweep's output directory (check the file's own
 docstring for which `data/...` folder it expects).
 

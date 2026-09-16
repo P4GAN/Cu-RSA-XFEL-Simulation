@@ -997,7 +997,28 @@ def peak_memory_gb(who=resource.RUSAGE_SELF):
 # Config keys whose physics only exists in code that has XLO_sim._build_pathway_extensions
 # (docs/middlemen-implementation-plan.md, docs/eii-free-electrons-implementation-plan.md).
 PATHWAY_EXTENSION_KEYS = ('use_middlemen', 'use_eii', 'L2_CK_feed', 'L3_sublevel_mixing_fs_inv',
-                          'L3_sublevel_mixing_satellite_fs_inv', 'GammaA_L1_to_L2eVN')
+                          'L3_sublevel_mixing_satellite_fs_inv', 'L3_sublevel_mixing_coherence_factor',
+                          'GammaA_L1_to_L2eVN')
+# Keys that are "active" at a value other than the truthy/falsy split: (key, inactive value).
+_EXTENSION_INACTIVE_VALUE = {'L3_sublevel_mixing_coherence_factor': 1.0}
+# Model.MODEL_FEATURES entries a key needs beyond the base extension code.
+_EXTENSION_REQUIRED_FEATURE = {'L3_sublevel_mixing_coherence_factor': 'mixing_coherence_factor'}
+
+
+def active_pathway_extensions(config):
+    """The PATHWAY_EXTENSION_KEYS a config sets to a value that changes the model."""
+    active = []
+    for key in PATHWAY_EXTENSION_KEYS:
+        if key not in config:
+            continue
+        value = config[key]
+        inactive = _EXTENSION_INACTIVE_VALUE.get(key, None)
+        if inactive is None:
+            if value:
+                active.append(key)
+        elif value != inactive:
+            active.append(key)
+    return active
 
 
 def verify_code(X, repo_root):
@@ -1037,9 +1058,14 @@ def verify_code(X, repo_root):
         if np.allclose(d_re, d_mb):
             sys.exit("use_rate_equations is set but the kernel gives the Maxwell-Bloch RHS -- refusing to run")
 
-    extensions = [k for k in PATHWAY_EXTENSION_KEYS if X.config.get(k)]
+    extensions = active_pathway_extensions(X.config)
     if extensions and not (hasattr(type(X), "_build_pathway_extensions") and hasattr(Model, "middleman_gain_loss")):
         sys.exit(f"config sets {extensions} but the imported XLO_sim predates them -- refusing to run")
+    model_features = getattr(Model, "MODEL_FEATURES", frozenset())
+    for key in extensions:
+        needed = _EXTENSION_REQUIRED_FEATURE.get(key)
+        if needed and needed not in model_features:
+            sys.exit(f"config sets {key} but the imported Model lacks the {needed!r} feature -- refusing to run")
 
     def git(*cmd):
         try:

@@ -513,6 +513,10 @@ class XLO_sim:
         # ---- L3 sublevel mixing (plan step 5): depolarising Lindblad term on each L3 manifold ----
         self.L3_mixing_base_fs = float(self.config.get('L3_sublevel_mixing_fs_inv', 0.0))
         self.L3_mixing_sat_fs = float(self.config.get('L3_sublevel_mixing_satellite_fs_inv', 0.0))
+        # 1 = Lindblad jumps (also dephase the optical coherence), 0 = population exchange only
+        self.L3_mixing_coh = float(self.config.get('L3_sublevel_mixing_coherence_factor', 1.0))
+        if not 0.0 <= self.L3_mixing_coh <= 1.0:
+            raise ValueError('L3_sublevel_mixing_coherence_factor must be in [0, 1]')
         self.mix_mask_base = np.asarray(self.ei_L3, dtype=float)
         self.mix_mask_sat = np.asarray(self.ei_L3_satellite, dtype=float)
 

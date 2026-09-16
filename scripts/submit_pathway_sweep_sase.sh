@@ -37,9 +37,14 @@ REPO_ROOT="$SLURM_SUBMIT_DIR"
 cd "$REPO_ROOT"
 mkdir -p logs
 
-MANIFEST=config/generated/pathway_sweep_sase/manifest.txt
+# Optional $1: the family directory holding manifest.txt (default: the pathway sweep). Any
+# generator that writes "<variant> <yaml>" lines can reuse this script, e.g.
+# generate_bracket_sweeps.sh -> sbatch --array=... scripts/submit_pathway_sweep_sase.sh config/generated/bracket_sweep_sase
+FAMILY_DIR=${1:-config/generated/pathway_sweep_sase}
+FAMILY=$(basename "$FAMILY_DIR")
+MANIFEST="$FAMILY_DIR/manifest.txt"
 if [[ ! -f "$MANIFEST" ]]; then
-    echo "Missing $MANIFEST -- run scripts/generate_pathway_sweeps.sh first" >&2
+    echo "Missing $MANIFEST -- run the generator for $FAMILY first" >&2
     exit 1
 fi
 mapfile -t LINES < "$MANIFEST"
@@ -51,7 +56,7 @@ fi
 read -r VARIANT YAML <<< "$LINE"
 
 NREP=200
-DATA_PATH=data/pathway_sweep_sase_${SLURM_ARRAY_JOB_ID}/${VARIANT}
+DATA_PATH=data/${FAMILY}_${SLURM_ARRAY_JOB_ID}/${VARIANT}
 
 echo "task $SLURM_ARRAY_TASK_ID -> $VARIANT ($YAML), $NREP reps -> $DATA_PATH"
 

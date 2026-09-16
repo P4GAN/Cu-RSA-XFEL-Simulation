@@ -2,11 +2,16 @@ import numpy as np
 from numba import njit
 from . import tools
 
+# Model features a config may require; tools.verify_code refuses to run a config whose flags need a
+# feature the imported Model lacks (a stale import would otherwise ignore the flag silently).
+MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor'})
+
 
 @njit(cache=True, fastmath=True)
 def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus, Tijs_minus,
                              Mij, Gamma_sp_Gij, S_ion_Fif, feed_diag_ixy, Delta_ij,
-                             J_Omega_minus_xy, J_Omega_plus_xy, rate_equations, mix_mask, gamma_mix):
+                             J_Omega_minus_xy, J_Omega_plus_xy, rate_equations, mix_mask, gamma_mix,
+                             mix_coh):
     nlevel = rho_ijxy.shape[0]
     s_dim = Tijs_plus.shape[2]
     nx = rho_ijxy.shape[2]
@@ -44,6 +49,11 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
     #   d rho_ak = -(gamma/2) rho_ak                                 (one flagged),
     # trace-preserving. Tests the dark-state ceiling (docs/theory-middlemen-and-pathway-audit.md
     # sec 1.5, docs/middlemen-implementation-plan.md step 5). gamma_mix = 0 skips it entirely.
+    # mix_coh in [0, 1] scales the coherence-damping half of the map: 1 is the Lindblad form above
+    # (a jump process also dephases the optical coherence, 0.66 eV at 2 fs^-1), 0 keeps only the
+    # population exchange (a Hamiltonian precession of the sublevels rotates the coherences rather
+    # than damping them, so this is the bracket in which mixing costs no line width; not a
+    # completely positive map on its own, like the rate-equation limit).
     mixing = gamma_mix != 0.0
     n_mix = 0.0
     for i in range(nlevel):
@@ -83,7 +93,7 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                                     K_is = rho_ijxy[i, s, x, y]
                                     g_is = Mij[i, s] + 0.5 * (gamma_ion[i, x, y].real + gamma_ion[s, x, y].real)
                                     if mixing:
-                                        g_is += 0.5 * gamma_mix * (mix_mask[i] + mix_mask[s])
+                                        g_is += 0.5 * gamma_mix * mix_coh * (mix_mask[i] + mix_mask[s])
                                     W_is = 2.0 * g_is * (K_is.real * K_is.real + K_is.imag * K_is.imag)
                                     comm += W_is * (rho_ijxy[s, s, x, y] - rho_ijxy[i, i, x, y])
                         else:
@@ -99,9 +109,12 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                         val += -1j * Delta_ij[i, j] * rho_ijxy[i, j, x, y]
                     val += -0.5 * (gamma_ion[i, x, y] + gamma_ion[j, x, y]) * rho_ijxy[i, j, x, y]
                     if mixing:
-                        val += -0.5 * gamma_mix * (mix_mask[i] + mix_mask[j]) * rho_ijxy[i, j, x, y]
-                        if i == j and mix_mask[i] != 0.0:
-                            val += (gamma_mix / n_mix) * trace_mix[x, y]
+                        if i == j:
+                            val += -gamma_mix * mix_mask[i] * rho_ijxy[i, j, x, y]
+                            if mix_mask[i] != 0.0:
+                                val += (gamma_mix / n_mix) * trace_mix[x, y]
+                        else:
+                            val += -0.5 * gamma_mix * mix_coh * (mix_mask[i] + mix_mask[j]) * rho_ijxy[i, j, x, y]
                     drho[i, j, x, y] = val
 
     return drho
@@ -166,7 +179,7 @@ def MB_nlevel_regular(t, rho_ijxy, params):
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
         X.Mij, X.Gamma_sp_Gij, X.S_ion_Fi[:, :], feed_diag_ixy, X.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy, X.use_rate_equations,
-        X.mix_mask_base, X.L3_mixing_base_fs,
+        X.mix_mask_base, X.L3_mixing_base_fs, X.L3_mixing_coh,
     )
 
 
@@ -373,7 +386,7 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
         chan.Mij, chan.Gamma_sp_Gij, chan.S_ion_Fi[:, :],
         feed_diag_ixy, chan.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy, X.use_rate_equations,
-        X.mix_mask_sat, X.L3_mixing_sat_fs,
+        X.mix_mask_sat, X.L3_mixing_sat_fs, X.L3_mixing_coh,
     )
 
 

@@ -39,9 +39,14 @@ REPO_ROOT="$SLURM_SUBMIT_DIR"
 cd "$REPO_ROOT"
 mkdir -p logs
 
-MANIFEST=config/generated/pathway_sweep_mono/manifest.txt
+# Optional $1: the family directory holding manifest.txt (default: the pathway sweep). Any
+# generator that writes "<variant> <yaml>" lines can reuse this script, e.g.
+# generate_bracket_sweeps.sh -> sbatch --array=... scripts/submit_pathway_sweep_mono.sh config/generated/bracket_sweep_mono
+FAMILY_DIR=${1:-config/generated/pathway_sweep_mono}
+FAMILY=$(basename "$FAMILY_DIR")
+MANIFEST="$FAMILY_DIR/manifest.txt"
 if [[ ! -f "$MANIFEST" ]]; then
-    echo "Missing $MANIFEST -- run scripts/generate_pathway_sweeps.sh first" >&2
+    echo "Missing $MANIFEST -- run the generator for $FAMILY first" >&2
     exit 1
 fi
 mapfile -t LINES < "$MANIFEST"
@@ -62,7 +67,7 @@ for (( i = 0; i < CONFIGS_PER_TASK; i++ )); do
         break  # last task: fewer than CONFIGS_PER_TASK configs remain
     fi
     read -r VARIANT YAML <<< "$LINE"
-    DATA_PATH=data/pathway_sweep_mono_${SLURM_ARRAY_JOB_ID}/${VARIANT}
+    DATA_PATH=data/${FAMILY}_${SLURM_ARRAY_JOB_ID}/${VARIANT}
     echo "task $SLURM_ARRAY_TASK_ID slot $i -> config $IDX: $VARIANT ($YAML), reps [0, $NREP), $NPROC_PER_CONFIG workers -> $DATA_PATH"
     python scripts/run_mono_sweep.py \
         --yaml "$YAML" \

@@ -54,13 +54,29 @@ class XLO_sample:
         rho_sat_ijtxyz = [np.zeros((X.satellite_nlevel, X.satellite_nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
                           for _ in X.satellite_channel_params]
 
+        # Plane 0 is driven by the incident field, so its photoionisation flux must come from that
+        # field too. The t-loop only writes J at the end of each step, from the field handed on to
+        # the next plane, so zeros here left plane 0 un-ionised while the seed still drove its
+        # coherent coupling.
         J_Omega_minus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
         J_Omega_plus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
+        J_Omega_minus_txy[:], J_Omega_plus_txy[:] = self._photon_flux(X, Omega_pstxyz[:, :, :, :, :, 0])
 
         return rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, rho_sat_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy
 
 
   
+    @staticmethod
+    def _photon_flux(X, Omega_ps):
+        """
+        Photon fluxes (J_Omega-, J_Omega+) from a field whose leading axes are (p, s), i.e.
+        (2, 2, t, x, y) or (2, 2, x, y) (PDF Eq. 9). Used for the z=0 initialisation and the
+        per-step update in both _evaluate_n_level_3D_full and _lean.
+        """
+        J_minus = np.real(Omega_ps[0, 0] * Omega_ps[1, 0] / X.flux_factor)
+        J_plus = np.real(Omega_ps[0, 1] * Omega_ps[1, 1] / X.flux_factor)
+        return J_minus, J_plus
+
     @staticmethod
     def _step_increments(X, it, Omega_it, rho_ijxy, rho_sat_ijxy, rho_ground_xy, rho_other_xy, rho_2s_xy,
                          rho_mid_xy, rho_e_gxy, J_minus_xy, J_plus_xy):
@@ -201,8 +217,7 @@ class XLO_sample:
                     Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
                         X, rho_sat_ijtxyz[k][:, :, it, :, :, iz], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
-                J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
-                J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
+                J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :] = self._photon_flux(X, Omega_pstxy[:, :, it, :, :])
 
             # ######################
             # Loop over simulation time window ends
@@ -269,8 +284,10 @@ class XLO_sample:
         Omega_pstxyz_z0 = Omega_pstxy.copy()
         Omega_pstxyz_zlast = Omega_pstxyz_z0
 
+        # Plane 0 sees the incident field's flux, as in init_n_level_3D (full path).
         J_Omega_minus_txy = np.zeros((tgrid, xgrid, ygrid))
         J_Omega_plus_txy = np.zeros((tgrid, xgrid, ygrid))
+        J_Omega_minus_txy[:], J_Omega_plus_txy[:] = self._photon_flux(X, Omega_pstxy)
 
         diag_idx = np.arange(nlevel)
         sat_diag_idx = np.arange(satellite_nlevel)
@@ -395,8 +412,7 @@ class XLO_sample:
                     Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
                         X, rho_sat_phys_ijxy[k], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
-                J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
-                J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
+                J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :] = self._photon_flux(X, Omega_pstxy[:, :, it, :, :])
 
             # ######################
             # Loop over simulation time window ends

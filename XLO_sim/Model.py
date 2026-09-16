@@ -292,14 +292,17 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
         parent_pop_xy = sum(np.real(parent_rho[i, i]) for i in range(n_base) if src_mask[i] > 0)
         feed[:n_base] += np.einsum('i,xy->ixy', dst_weight, Gamma_feed_fs * parent_pop_xy)
 
-    rate_2p_xy = chan.S_feed_2p[0] * J_Omega_minus_xy + chan.S_feed_2p[1] * J_Omega_plus_xy
-    rate_1s_xy = chan.S_feed_1s[0] * J_Omega_minus_xy + chan.S_feed_1s[1] * J_Omega_plus_xy
+    # Photoionisation feeds out of the base block carry the base further-ionisation sublevel
+    # pattern (X.pi_feed_pattern_Fi, manifold mean 1): rate_i = sum_f sigma[f] pattern[f, i] J[f].
+    pattern = X.pi_feed_pattern_Fi
+    J_F = (J_Omega_minus_xy, J_Omega_plus_xy)
+
+    def pi_rate(sigma_F, i):
+        return sum(sigma_F[f] * pattern[f, i] * J_F[f] for f in range(2))
 
     for i in range(n_base):
-        if ei_L3_sat[i] > 0:
-            feed[i] += rate_2p_xy * rho_base_ijxy[i, i]
-        else:
-            feed[i] += rate_1s_xy * rho_base_ijxy[i, i]
+        sigma_F = chan.S_feed_2p if ei_L3_sat[i] > 0 else chan.S_feed_1s
+        feed[i] += pi_rate(sigma_F, i) * rho_base_ijxy[i, i]
 
     if nlevel_sat > n_base:
         n_L2 = nlevel_sat - n_base
@@ -310,10 +313,16 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
         feed[n_base:] += np.einsum(
             'i,xy->ixy', (chan.Gamma_A_K_to_L2_fs / n_L2) * np.ones(n_L2), rho_K_base_xy)
 
-        rate_2p1_xy = chan.S_feed_2p1[0] * J_Omega_minus_xy + chan.S_feed_2p1[1] * J_Omega_plus_xy
         for offset in range(n_L2):
             i_base = n_base + offset
-            feed[n_base + offset] += rate_2p1_xy * rho_base_ijxy[i_base, i_base]
+            feed[n_base + offset] += pi_rate(chan.S_feed_2p1, i_base) * rho_base_ijxy[i_base, i_base]
+
+        # Base L3 -> L2k (sigma_Ka1_from_2p_to_L2): the 2p3/2-hole atom loses its 2p1/2 electron; the
+        # source sublevel structure is not carried over, so spread evenly over the L2k levels.
+        if chan.S_feed_2p_to_L2 is not None and np.any(chan.S_feed_2p_to_L2):
+            src_xy = sum(pi_rate(chan.S_feed_2p_to_L2, i) * np.real(rho_base_ijxy[i, i])
+                         for i in range(n_base) if ei_L3_sat[i] > 0)
+            feed[n_base:] += np.einsum('i,xy->ixy', np.ones(n_L2) / n_L2, src_xy)
 
     # Base L2 -> 2p3/2 + 3d hole Coster-Kronig (L2_CK_feed, metal only), even spread over this
     # channel's L3k manifold (docs/middlemen-implementation-plan.md step 4). A branch of the base L2

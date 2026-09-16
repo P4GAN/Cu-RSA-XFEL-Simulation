@@ -376,6 +376,10 @@ class XLO_sim:
             Gamma_A_L2_fs = None
             Gamma_A_K_to_L2_fs = None
             S_feed_2p1 = None
+            S_feed_2p_to_L2 = None
+            if channel.get('sigma_Ka1_from_2p_to_L2') and not self.use_L2_satellite_pathway:
+                raise ValueError(f"satellite channel {channel.get('name', '?')!r} sets sigma_Ka1_from_2p_to_L2, "
+                                 "which needs the 2p1/2-satellite extension (use_L2_pathway: True)")
             if self.use_L2_satellite_pathway:
                 is_double_satellite = bool(channel.get('feed_from'))
                 # New keys from xatom_tools.l2_satellite_channel_parameters; fail loudly on a missing
@@ -400,6 +404,10 @@ class XLO_sim:
                 Gamma_A_K_to_L2_fs = channel.get('Gamma_A_K_to_L2_eV', 0.0) / self.hbar
                 GammaL2_fs = channel['Gamma_L2_eV'] / self.hbar
                 S_feed_2p1 = np.asarray([channel.get('sigma_Ka1_from_2p1', 0.0), channel.get('sigma_Ka1_from_2p1', 0.0)])
+                # Base L3 -> this channel's L2k manifold: a 2p3/2-hole atom losing a 2p1/2 electron
+                # (the 2p^-2 absorber's Kalpha2-type line, xatom/double_L_hole_parameters.py). A branch
+                # of the base L3 further-ionisation cross section, drained in the untracked bookkeeping.
+                S_feed_2p_to_L2 = np.asarray([channel.get('sigma_Ka1_from_2p_to_L2', 0.0)] * 2)
 
                 # f[L2k] = f[Uk] - Delta_L2_split: per-channel analogue of the base block's
                 # f[L2]=f[K]-DeltaomegaL2mL3A, using this channel's own satellite splitting.
@@ -426,6 +434,7 @@ class XLO_sim:
                 S_feed_2p=S_feed_2p,
                 S_feed_1s=S_feed_1s,
                 S_feed_2p1=S_feed_2p1,  # None unless use_L2_satellite_pathway
+                S_feed_2p_to_L2=S_feed_2p_to_L2,  # None unless use_L2_satellite_pathway
                 Mij=Mij,
                 Gamma_sp_Gij=Gamma_sp_Gij_sat,
                 S_ion_Fi=S_ion_Fi_chan,  # further-ionization loss (theory doc §12.4)
@@ -547,12 +556,27 @@ class XLO_sim:
         decay_base = np.real(np.diag(self.Mij)) - radiative_return
         klm_fs = sum(chan.Gamma_A_K_fs + (chan.Gamma_A_K_to_L2_fs or 0.0) for chan in params)
         self.decay_untracked_base = decay_base - klm_fs * self.ei_K - self.Gamma_CK_L2_total_fs * self.ei_L2
-        self.S_untracked_base = np.array(np.real(self.S_ion_Fi[:, :self.nlevel]), dtype=float)
+        # The base block's further-ionisation cross section is sublevel-weighted (0.70..1.41 over the
+        # L3 msublevels, 0.75/1.25 over K). A photoionisation feed out of a base level is a branch of
+        # that same process, so it carries the same pattern: feed[f, i] = sigma_feed[f] *
+        # pi_feed_pattern_Fi[f, i], with the pattern normalised to a manifold mean of 1 so the config
+        # value is the sublevel-averaged cross section. This keeps every sublevel's untracked
+        # remainder non-negative whenever the manifold-averaged one is.
+        S_ion = np.array(np.real(self.S_ion_Fi[:, :self.nlevel]), dtype=float)
+        self.pi_feed_pattern_Fi = np.ones_like(S_ion)
+        for mask in (self.ei_L3, self.ei_K, self.ei_L2):
+            m = np.asarray(mask[:self.nlevel], dtype=bool)
+            if m.any():
+                mean = S_ion[:, m].mean(axis=1, keepdims=True)
+                self.pi_feed_pattern_Fi[:, m] = np.where(mean > 0, S_ion[:, m] / np.where(mean > 0, mean, 1.0), 1.0)
+        self.S_untracked_base = S_ion.copy()
         for chan in params:
-            self.S_untracked_base[:, :n_base] -= (np.outer(chan.S_feed_2p, self.ei_L3[:n_base])
-                                                  + np.outer(chan.S_feed_1s, self.ei_K[:n_base]))
+            feed_F = np.outer(chan.S_feed_2p, self.ei_L3[:n_base]) + np.outer(chan.S_feed_1s, self.ei_K[:n_base])
+            if chan.S_feed_2p_to_L2 is not None:
+                feed_F = feed_F + np.outer(chan.S_feed_2p_to_L2, self.ei_L3[:n_base])
+            self.S_untracked_base[:, :n_base] -= feed_F * self.pi_feed_pattern_Fi[:, :n_base]
             if chan.S_feed_2p1 is not None and self.nlevel > n_base:
-                self.S_untracked_base[:, n_base:] -= chan.S_feed_2p1[:, None]
+                self.S_untracked_base[:, n_base:] -= chan.S_feed_2p1[:, None] * self.pi_feed_pattern_Fi[:, n_base:]
         # electrons emitted per unit level population (fs^-1), by birth energy: every non-radiative K
         # decay (KLL/KLM, ~7-8 keV), untracked L-type Auger (~0.9 keV), tracked Coster-Kronig (<0.1 keV)
         # (K-type: total width minus BOTH Kalpha radiative rates -- without use_L2_pathway the Kalpha2

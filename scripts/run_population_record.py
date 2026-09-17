@@ -14,7 +14,10 @@ see Sample._evaluate_n_level_3D_lean), so its effective field depth is max(iz-1,
 
 By default it refuses configs with any level-structure extension switched on (2s, L2, satellites,
 middlemen, EII, sublevel mixing), since the analytic comparison assumes the plain L3/K model;
---allow-extensions lifts that.
+--allow-extensions lifts that. --rate-equations sets use_rate_equations: true (coherences
+adiabatically eliminated, same level structure), for paired Maxwell-Bloch vs rate-equation runs;
+tools.verify_code checks the rate-equation kernel is the one that runs. The recorded diagonal is
+unchanged by Model.physical_rho, so the saved populations mean the same thing in both modes.
 
 Example (see scripts/submit_population_record.sh for the cluster job):
     python scripts/run_population_record.py --yaml config/base/Cu-seed-SASE-no-2s.yaml \\
@@ -42,7 +45,7 @@ from XLO_sim import tools  # noqa: E402
 
 EXTENSION_FLAGS = ("use_2s_pathway", "use_L2_pathway", "satellite_channels", "double_satellite_channels",
                    "use_middlemen", "use_eii", "L3_sublevel_mixing_fs_inv", "L3_sublevel_mixing_satellite_fs_inv",
-                   "L2_CK_feed", "GammaA_L1_to_L2eVN", "use_rate_equations")
+                   "L2_CK_feed", "GammaA_L1_to_L2eVN")
 
 
 class PopulationRecorder:
@@ -109,6 +112,8 @@ def main():
     parser.add_argument("--rep-end", type=int, default=40)
     parser.add_argument("--nproc", type=int, default=None, help="Worker processes (default: cores available)")
     parser.add_argument("--out", default=None, help="Output .npz path (derived config + provenance saved next to it)")
+    parser.add_argument("--rate-equations", action="store_true",
+                        help="Run with use_rate_equations: true (adiabatically eliminated coherences)")
     parser.add_argument("--allow-extensions", action="store_true",
                         help="Run even if the config switches on a level-structure extension")
     parser.add_argument("--check-only", action="store_true", help="Load the config, run the checks, exit")
@@ -117,6 +122,8 @@ def main():
     with open(args.yaml) as f:
         cfg = yaml.safe_load(f)
     cfg.update(parse_overrides(args.overrides, cfg))
+    if args.rate_equations:
+        cfg["use_rate_equations"] = True
     active = [k for k in EXTENSION_FLAGS if cfg.get(k)]
     if active and not args.allow_extensions:
         sys.exit(f"config switches on {active}; this runner is for the original L3/K model "
@@ -162,7 +169,8 @@ def main():
         t=np.asarray(X.t, float), z=np.asarray(X.z, float), dz=float(X.dz), reps=np.asarray(reps),
         ei_L3=np.asarray(X.ei_L3), ei_K=np.asarray(X.ei_K), E_seed_uJ=float(X.E_seed_uJ),
         target_energy_eV=float(getattr(X, "monochromator_target_energy_eV", np.nan)),
-        seed_pulse_format=X.seed_pulse_format, config_yaml=open(derived_yaml).read(), provenance=provenance)
+        seed_pulse_format=X.seed_pulse_format, use_rate_equations=bool(X.use_rate_equations),
+        config_yaml=open(derived_yaml).read(), provenance=provenance)
     print(f"saved {args.out} ({tools.format_duration(time.perf_counter() - t0)})", flush=True)
 
 

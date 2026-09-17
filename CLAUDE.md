@@ -82,6 +82,11 @@ The simulation is one z-marching loop coupling two subsystems at each longitudin
     full (t, x, y, z) history to HDF5 one z-plane at a time. It exists for visualisation runs
     (`scripts/run_movie.py` / `submit_movie.sh`, config `config/base/Cu-seed-SASE-movie.yaml`) and
     only reads state, so the numerics are bit-identical with or without it.
+  - `population_budget.py` is a lighter recorder on the same hook, sized for sweeps. It keeps every
+    population (middleman pool, base and each satellite block per manifold, each free-electron
+    group) at every z plane. It stores the centre pixel and an incident-fluence-weighted beam average,
+    averaged over shots, and drives `scripts/run_population_budget.py`. The sweep outputs keep only
+    the exit plane's centre pixel.
 - **`Optics.py`** — `XLO_optics`: FFT-based Fresnel propagation (`Fresnel_propagator_with_absorption`
   / `_no_absorption`), the numerical Green's function for the sample, k-space grids/filters, thin
   lens / drift kernels. `enable_self_diffraction=False` in a config short-circuits propagation to a
@@ -224,7 +229,10 @@ Several things are easy to get wrong with these families:
 - The SASE base configs are 3×3. Use `xgrid=ygrid=5` for anything compared with experiment:
   `generate_coherence_sweeps.sh` does, and `SASE_GRID=... generate_bracket_sweeps.sh` can.
 - 5×5 SASE needs `sbatch --mem=64G`, and the generators print it.
-`scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families.
+`scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families. The population-budget
+family (`generate_population_budget.sh` → `submit_population_budget.sh <family dir>`, with `NREP`
+and `CONFIGS_PER_TASK` passed via `--export` → `run_population_budget.py` →
+`plot_population_budget.py`) records where atoms and electrons go during the pulse.
 `scripts/plot_*.py` are standalone (non-notebook) counterparts to the `plot-*.ipynb`
 notebooks below; each is tied to one specific sweep's output directory (check the file's own
 docstring for which `data/...` folder it expects).
@@ -249,6 +257,9 @@ conventions (e.g. `Tijs_plus` vs `Tijs_minus`, the `Delta_ij` detuning sign) are
 and non-obvious from the code alone; get one wrong and a spectral feature flips sign or lands at the
 wrong detuning without erroring.
 
+`docs/model-changes-2026-09-physics.md` and `docs/model-changes-2026-09-code.md` summarise every
+change made 14–17 September 2026, physically step by step and file by file (commits, config keys,
+outputs, run families, validation). Start there before the individual plans.
 `docs/theory-middlemen-and-pathway-audit.md`/`docs/middlemen-implementation-plan.md` (Part VI) and
 `docs/theory-eii-and-free-electrons.md`/`docs/eii-free-electrons-implementation-plan.md` (Part VII)
 are the theory and the implementation record of the pathway extensions described under Level

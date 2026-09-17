@@ -150,15 +150,26 @@ population-creating bug until 2026-09-15 (`docs/theory-middlemen-and-pathway-aud
   sublevels inside `_MB_nlevel_regular_core` (dark-state test, Part VI §1.5).
   `L3_sublevel_mixing_coherence_factor` (default 1) scales the coherence-damping half of that map:
   1 is the Lindblad form (also dephases the optical coherence by ħγ/2), 0 keeps only the population
-  exchange. `Model.MODEL_FEATURES` names such kernel features so `tools.verify_code` can refuse a
-  config that needs one the imported code lacks.
+  exchange. Population exchange alone leaves the dark state intact, because the dark state is a
+  Raman *coherence* between 2p₃/₂ sublevels, not a population imbalance. `Model.MODEL_FEATURES`
+  names such kernel features so `tools.verify_code` can refuse a config that needs one the imported
+  code lacks.
+- **`sublevel_raman_dephasing_fs_inv`** — extra pure dephasing of the 2p–2p and 1s–1s coherences
+  only, in every block. It removes the dark state without broadening the line. It is added to the
+  off-diagonal `Mij` in `XLO_sim.__init__` (`raman_coherence_mask`); only the kernel reads those
+  entries. The broadening counterpart is the older scalar `additional_dephasing`, which is added to
+  every optical coherence and to the 2p₃/₂–2p₁/₂ coherence.
 - **`use_eii: true`** + `eii: {...}` — free-electron slowing-down ladder (`XLO_sim/eii.py`:
   Burgess–Chidichimo cross sections, Joy–Luo stopping) whose EII rates feed base/2s/middleman
   populations. `docs/eii-free-electrons-implementation-plan.md`.
 
 `config/base/Cu-seed-{SASE,mono-SASE}-middlemen.yaml` and `...-middlemen-eii.yaml` are the base
 configs: the double-satellite configs of the same name plus the extension blocks. The `eii:`,
-`middlemen:` and `L2_CK_feed:` sub-blocks reject unknown keys.
+`middlemen:` and `L2_CK_feed:` sub-blocks reject unknown keys. `...-middlemen-eii-dLL.yaml` adds
+the 2s⁻¹2p⁻¹ and 2p⁻² absorbers as two more satellite channels (`xatom/double_L_hole_parameters.py`;
+new channel key `sigma_Ka1_from_2p_to_L2`). Photoionisation feeds out of a base manifold carry that
+manifold's own further-ionisation sublevel pattern (`XLO_sim.pi_feed_pattern_Fi`), so they can be
+drained sublevel by sublevel in the untracked bookkeeping.
 New flags go into `tools.PATHWAY_EXTENSION_KEYS`, so `tools.verify_code` (called by
 `run_intensity_sweep.py` and `run_mono_sweep.py`) refuses to run them from a stale XLO_sim import.
 
@@ -204,8 +215,17 @@ shape. It runs the Part VI/VII variants of the double-satellite model and writes
 config. Structured edits (every satellite detuning, the foil thickness, another config's extension
 blocks) go through `scripts/derive_config.py`, which writes a variant base config with a `derived:`
 record of its transforms; `generate_bracket_sweeps.sh` uses it to build one-change-at-a-time
-brackets around a reference model, and the two `submit_pathway_sweep_*.sh` scripts take the
-family directory as `$1`. `scripts/plot_*.py` are standalone (non-notebook) counterparts to the `plot-*.ipynb`
+brackets around a reference model. The two `submit_pathway_sweep_*.sh` scripts take the family
+directory as `$1`. `generate_b1_sweeps.sh` (double-L-hole absorbers) and
+`generate_coherence_sweeps.sh` (Raman dephasing and homogeneous broadening) reuse the same pair.
+Several things are easy to get wrong with these families:
+- A family's data lands in `data/<family dir basename>_<array job id>/<variant>/`.
+- Omitting `$1` silently runs the pathway manifest instead.
+- The SASE base configs are 3×3. Use `xgrid=ygrid=5` for anything compared with experiment:
+  `generate_coherence_sweeps.sh` does, and `SASE_GRID=... generate_bracket_sweeps.sh` can.
+- 5×5 SASE needs `sbatch --mem=64G`, and the generators print it.
+`scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families.
+`scripts/plot_*.py` are standalone (non-notebook) counterparts to the `plot-*.ipynb`
 notebooks below; each is tied to one specific sweep's output directory (check the file's own
 docstring for which `data/...` folder it expects).
 

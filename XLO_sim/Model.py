@@ -4,7 +4,9 @@ from . import tools
 
 # Model features a config may require; tools.verify_code refuses to run a config whose flags need a
 # feature the imported Model lacks (a stale import would otherwise ignore the flag silently).
-MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor'})
+# ('raman_dephasing' is built in XLO_sim.__init__ as extra off-diagonal Mij; it is listed here because
+# a checkout that has it has both files.)
+MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor', 'raman_dephasing'})
 
 
 @njit(cache=True, fastmath=True)

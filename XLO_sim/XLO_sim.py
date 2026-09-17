@@ -10,6 +10,15 @@ from . import Optics as XLO_optics
 import h5py
 
 
+def raman_coherence_mask(ei_L, ei_K):
+    """1 on every coherence between two core-hole sublevels of the same shell (2p-2p, including
+    2p3/2-2p1/2, or 1s-1s), 0 on the populations and on the optical 1s-2p coherences. The 2p-2p
+    coherences are the Raman coherences a linearly polarised field pumps the 2p3/2 hole into its
+    dark superposition with; damping them removes the dark state without broadening the line."""
+    M = np.outer(ei_L, ei_L) + np.outer(ei_K, ei_K)
+    return M - np.diag(np.diag(M))
+
+
 class XLO_sim:
 
     def __init__(self, YAML):
@@ -262,6 +271,16 @@ class XLO_sim:
                         Gamma_ij_L2K * (np.outer(self.ei_L2, self.ei_K) + np.outer(self.ei_K, self.ei_L2)) +
                         Gamma_ij_L2L3 * (np.outer(self.ei_L2, self.ei_L3) + np.outer(self.ei_L3, self.ei_L2)))
 
+        # Optional extra pure dephasing of the sublevel (Raman) coherences only, in this block and in
+        # every satellite block below: the dark-state lever without the optical dephasing that the
+        # Lindblad sublevel mixing (L3_sublevel_mixing_*) also adds. Only the kernel reads the
+        # off-diagonal Mij, so nothing else changes; 0 (default) leaves Mij untouched.
+        self.raman_dephasing_fs = float(self.config.get('sublevel_raman_dephasing_fs_inv', 0.0))
+        if self.raman_dephasing_fs < 0.0:
+            raise ValueError('sublevel_raman_dephasing_fs_inv must be >= 0')
+        if self.raman_dephasing_fs:
+            self.Mij = self.Mij + self.raman_dephasing_fs * raman_coherence_mask(self.ei_L3 + self.ei_L2, self.ei_K)
+
         # Sign convention reference for the base K<->L3 pair (+1 for i in K,j in L3; -1 reversed;
         # 0 within a manifold) -- not consumed elsewhere, the satellite channels use the equivalent
         # f_i-f_j formulation below instead (theory doc Eq. K4).
@@ -420,6 +439,9 @@ class XLO_sim:
                        Gamma_coh_L2L3_fs * (np.outer(ei_L2_sat, ei_L3_sat) + np.outer(ei_L3_sat, ei_L2_sat)))
 
                 S_ion_Fi_chan[:, ei_L2_sat.astype(bool)] = channel.get('sigma_ion_from_2p1', 0.0)
+
+            if self.raman_dephasing_fs:
+                Mij = Mij + self.raman_dephasing_fs * raman_coherence_mask(ei_L3_sat + ei_L2_sat, ei_K_sat)
 
             Delta_ij_chan = f_local[:, None] - f_local[None, :]
 

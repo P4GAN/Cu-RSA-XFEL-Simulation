@@ -20,7 +20,9 @@
 #   foil10      10 um foil, against Ichiro's 10 um data (excess absorption is front-loaded:
 #               260 cm^-1 at 10 um vs ~200 at 20 um)
 #
-# Grids: SASE as the base configs (tgrid 600, zgrid 30, 3x3) at 2/9/20/40 uJ, 200 reps. Mono: tgrid
+# Grids: SASE as the base configs (tgrid 600, zgrid 30, 3x3) at 2/9/20/40 uJ, 200 reps; SASE_GRID in
+# the environment overrides that (e.g. SASE_GRID="xgrid=5 ygrid=5", which the 3x3 on-axis-fluence
+# artefact calls for; submit with sbatch --mem=64G then, 40 workers at ~2.8x the 3x3 memory). Mono: tgrid
 # 12000, zgrid 15, 5x5 (as the pathway sweep) but only 15 photon energies x 1/5/20/30 uJ, 10 reps:
 # enough to read T_wing, both line depths and the between-lines level, at a quarter of the cost.
 #
@@ -36,6 +38,7 @@ SASE_E_SEED=(2 9 20 40)
 MONO_E_SEED=(1 5 20 30)
 MONO_ENERGIES=(8000 8015 8020 8025 8028 8032 8036 8040 8044 8046 8048 8050 8055 8060 8070)
 MONO_GRID="xgrid=5 ygrid=5"
+SASE_GRID=${SASE_GRID:-}  # empty: the base configs' own grid
 MONO_CONFIGS_PER_TASK=8  # must match CONFIGS_PER_TASK in submit_pathway_sweep_mono.sh
 
 SASE_R=config/base/Cu-seed-SASE-middlemen-eii.yaml
@@ -53,7 +56,7 @@ gen() {  # gen <variant> <SASE base> <mono base> [derive_config transforms...]
     python scripts/derive_config.py --base "$mono" --out "$BASES/mono_$name.yaml" --apply "$@"
     python scripts/generate_intensity_sweep_configs.py \
         --base-yaml "$BASES/sase_$name.yaml" --out-dir "$SASE_OUT/$name" \
-        --e-seed "${SASE_E_SEED[@]}" > /dev/null
+        --e-seed "${SASE_E_SEED[@]}" ${SASE_GRID:+--set $SASE_GRID} > /dev/null
     python scripts/generate_mono_sweep_configs.py \
         --base-yaml "$BASES/mono_$name.yaml" --out-dir "$MONO_OUT/$name" \
         --e-seed "${MONO_E_SEED[@]}" --energy "${MONO_ENERGIES[@]}" --set $MONO_GRID > /dev/null
@@ -79,5 +82,5 @@ echo "SASE: $n_sase configs -> $SASE_OUT/manifest.txt (one array task each)"
 echo "mono: $n_mono configs -> $MONO_OUT/manifest.txt ($MONO_CONFIGS_PER_TASK per array task)"
 echo
 echo "submit with:"
-echo "  sbatch --array=0-$(( n_sase - 1 )) scripts/submit_pathway_sweep_sase.sh $SASE_OUT"
+echo "  sbatch ${SASE_GRID:+--mem=64G }--array=0-$(( n_sase - 1 )) scripts/submit_pathway_sweep_sase.sh $SASE_OUT"
 echo "  sbatch --array=0-$(( (n_mono + MONO_CONFIGS_PER_TASK - 1) / MONO_CONFIGS_PER_TASK - 1 )) scripts/submit_pathway_sweep_mono.sh $MONO_OUT"

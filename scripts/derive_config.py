@@ -22,6 +22,10 @@ Transforms (KEY=VALUE, applied in order):
                         L3 sublevel mixing at <rate> fs^-1 in scope 'sat' (satellite blocks) or
                         'all' (base too); <coh> = L3_sublevel_mixing_coherence_factor (1 Lindblad,
                         0 population exchange only)
+  raman=<rate>          sublevel_raman_dephasing_fs_inv = rate: extra pure dephasing of the 2p-2p and
+                        1s-1s (Raman) coherences in every block, which removes the 2p3/2 dark state
+                        without broadening the line (a key the base configs don't carry, so set=
+                        can't add it)
   extensions_from=<yaml>
                         copy the Part VI/VII extension keys (use_middlemen, middlemen, L2_CK_feed,
                         GammaA_L1_to_L3M45eVN, GammaA_L1_to_L2eVN, L3_sublevel_mixing_*, use_eii,
@@ -38,7 +42,7 @@ import yaml
 EXTENSION_KEYS = ('use_middlemen', 'middlemen', 'L2_CK_feed', 'GammaA_L1_to_L3M45eVN',
                   'GammaA_L1_to_L2eVN', 'L3_sublevel_mixing_fs_inv',
                   'L3_sublevel_mixing_satellite_fs_inv', 'L3_sublevel_mixing_coherence_factor',
-                  'use_eii', 'eii')
+                  'sublevel_raman_dephasing_fs_inv', 'use_eii', 'eii')
 
 
 def _channels(cfg):
@@ -72,6 +76,11 @@ def apply(cfg, name, value):
         if scope not in ('sat', 'all'):
             raise SystemExit(f"mixing scope must be sat or all, got {scope!r}")
         cfg['L3_sublevel_mixing_coherence_factor'] = coh
+    elif name == 'raman':
+        rate = float(value)
+        if rate < 0:
+            raise SystemExit('raman rate must be >= 0')
+        cfg['sublevel_raman_dephasing_fs_inv'] = rate
     elif name == 'extensions_from':
         with open(value) as f:
             src = yaml.safe_load(f)

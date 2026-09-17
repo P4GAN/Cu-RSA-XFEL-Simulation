@@ -998,11 +998,12 @@ def peak_memory_gb(who=resource.RUSAGE_SELF):
 # (docs/middlemen-implementation-plan.md, docs/eii-free-electrons-implementation-plan.md).
 PATHWAY_EXTENSION_KEYS = ('use_middlemen', 'use_eii', 'L2_CK_feed', 'L3_sublevel_mixing_fs_inv',
                           'L3_sublevel_mixing_satellite_fs_inv', 'L3_sublevel_mixing_coherence_factor',
-                          'GammaA_L1_to_L2eVN')
+                          'GammaA_L1_to_L2eVN', 'sublevel_raman_dephasing_fs_inv')
 # Keys that are "active" at a value other than the truthy/falsy split: (key, inactive value).
 _EXTENSION_INACTIVE_VALUE = {'L3_sublevel_mixing_coherence_factor': 1.0}
 # Model.MODEL_FEATURES entries a key needs beyond the base extension code.
-_EXTENSION_REQUIRED_FEATURE = {'L3_sublevel_mixing_coherence_factor': 'mixing_coherence_factor'}
+_EXTENSION_REQUIRED_FEATURE = {'L3_sublevel_mixing_coherence_factor': 'mixing_coherence_factor',
+                               'sublevel_raman_dephasing_fs_inv': 'raman_dephasing'}
 
 
 def active_pathway_extensions(config):

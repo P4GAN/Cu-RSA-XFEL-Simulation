@@ -132,6 +132,22 @@ Three-stage pipeline for cluster (SLURM) parameter sweeps, e.g. transmittance vs
    `OMP_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`MKL_NUM_THREADS`/`NUMEXPR_NUM_THREADS=1` before importing
    numpy, since each multiprocessing worker gets its own BLAS thread pool otherwise.
 
+### Two-level solver for the analytic RSA comparison (`XLO_sim/twolevel.py`)
+
+A separate, standalone plane-wave Maxwell–Bloch solver, independent of the `XLO_sim` class. It
+covers ground g, 2p₃/₂ hole l, 1s hole u (coherent l–u pair) and an auxiliary x = 1−g−l−u absorbing
+with σ_x. It solves exactly the equations of the analytic model in `../RSA-derivation`
+(`RSA_technical_spec.md` §3), in its units and parameter names. There are no sublevels (so no dark
+state), no extra pathways and no diffraction. Each point of the focus is an independent 1D (t, z)
+problem; the beam average is a Gauss–Legendre quadrature in v = local/peak fluence (derivation
+Eq. 32). The runner is `--mode mb` (Maxwell–Bloch) or `re` (coherence slaved to the populations),
+with `--beam mono` (transform-limited photon-energy scan) or `sase` (spectrally resolved chaotic
+shots, paired across energies and modes). Each run records the entrance plane (L → 0) and every
+thickness in `grid.z_record_um`. The pipeline is `config/base/Cu-2level-analytic.yaml` →
+`submit_twolevel_sweep.sh` → `run_twolevel_sweep.py` → `plot_twolevel_vs_analytic.py`, which
+imports `rsa_transmittance.py` from `../RSA-derivation`, so plotting needs the local checkout. The
+runner runs `twolevel.self_check` (closed-form steady states, photon bookkeeping) before every sweep.
+
 ### Notebooks (`notebooks/`)
 
 Interactive counterparts to the batch scripts (e.g. `run-transmittance-vs-intensity.ipynb` mirrors

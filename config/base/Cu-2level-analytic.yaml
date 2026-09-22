@@ -1,0 +1,67 @@
+# Two-level Kalpha1 RSA model: ground g, 2p3/2 hole l, 1s hole u (coherent l-u pair) and an
+# auxiliary state x = 1 - g - l - u. Numerical Maxwell-Bloch solution in XLO_sim/twolevel.py,
+# compared with the analytic model in ../RSA-derivation (rsa_transmittance.py,
+# RSA_derivation_attempt1.md) by scripts/plot_twolevel_vs_analytic.py.
+#
+# Units: eV, fs, nm (focal spot), um (foil). Atomic block in the analytic script's units
+# (cm^2, cm^-3), so it maps 1:1 onto rsa_transmittance.ATOM.
+
+atom:
+  E_ul: 8047.8              # eV, Kalpha1 (analytic default; XLO_sim configs use 8047.91)
+  Gamma_u_eV: 1.49          # 1s^-1 total width (GammaKeVN)
+  Gamma_l_eV: 0.61          # 2p3/2^-1 total width (GammaL3eVN)
+  Gamma_sp_eV: 0.39         # Kalpha1 radiative width u -> l (GammarKalpha1eVN)
+  gamma_phi_eV: 0.0         # pure dephasing (spec: 0)
+  sig_g: 5.86e-21           # cm^2, total photoabsorption of neutral Cu (sigma1_Ka1_2s + 2p3 + other)
+  sig_L3: 1.52e-21          # cm^2, 2p3/2 partial (sigma1_Ka1_2p3): the source of l
+  sig_u: 6.53e-21           # cm^2, total out of the 1s hole (sigma2_Ka1_1s)
+  sig_l: 4.15e-21           # cm^2, total out of the 2p3/2 hole (sigma2_Ka1_2p3)
+  sig_x: 4.58e-21           # cm^2, auxiliary state (sigma2_Ka1_2s + sigma2_Ka1_other); spec eq. 3.3 has 0
+  sigma0_prefactor: 0.07957747154594767   # sigma0 = prefactor * lambda^2; 1/(4 pi) = Einstein value
+                            #   for isotropic 2p3/2 -> 1s (derivation sec. 11.1); spec: 3/(8 pi)
+  bright_fraction: 1.0      # 1 = plain two-level atom. rsa_transmittance.ATOM uses 0.45 to mimic the
+                            #   6-sublevel dark state; the two-level solver has no dark state
+  n_a: 8.25e+22             # cm^-3
+
+# Transform-limited Gaussian pulse, photon energy scanned (Exp 2 focus). Every scan point is its
+# own pulse; T is the energy transmission.
+mono:
+  tau_fs: 6.0               # intensity FWHM (TL bandwidth 4 ln2 hbar / tau = 0.30 eV)
+  wx_nm: 100.0              # fluence FWHM
+  wy_nm: 170.0
+  T_beamline: 1.0           # fraction of the quoted pulse energy on target
+  scan_eV:                  # detunings from E_ul, [start, stop, step] (stop inclusive); the
+    - [-60.0, -12.0, 2.0]   #   power-broadened line is tens of eV wide above ~100 uJ
+    - [-12.0, -4.0, 0.4]
+    - [-4.0, 4.0, 0.1]
+    - [4.0, 12.0, 0.4]
+    - [12.0, 60.0, 2.0]
+  bloch_detunings_eV: [0.0, 1.0, 2.0, 4.0]   # on-axis entrance-plane time series saved for these
+
+# Chaotic (SASE) pulse, spectrum resolved after the foil (Exp 1 focus).
+sase:
+  E_c: 8045.0               # eV, spectrum centre
+  bw_eV: 15.0               # eV, FWHM of the ensemble-averaged spectrum
+  tau_fs: 6.0               # FWHM of the ensemble-averaged intensity envelope
+  wx_nm: 180.0
+  wy_nm: 210.0
+  T_beamline: 1.0
+  n_shots: 800              # every shot carries exactly the nominal pulse energy
+  n_blocks: 20              # statistical blocks of 40 shots (jackknife errors)
+  n_ref_shots: 40           # shots re-run with the Kalpha1 coupling off (non-resonant baseline)
+  n_bloch_shots: 2          # on-axis entrance-plane time series saved for the first shots
+  seed: 20260922            # same realizations for every pulse energy and both modes (paired)
+
+grid:
+  t_half_window_fs: 25.0    # time window [-25, 25) fs: 0.083 eV spectral bins
+  dt_fs: 0.01               # largest time step (SASE shots are drawn on a fixed 0.01 fs grid)
+  rabi_step: 0.25           # dt <= rabi_step / Omega_ref (peak Rabi frequency; SASE: 99.9th pct)
+  max_field_elements: 3.0e+7  # SASE: cap on stored complex64 field samples per chunk (memory)
+  zmax_um: 20.0
+  dz_um: 0.1
+  z_record_um: [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]   # foil thicknesses read out in one run
+  n_v: 16                   # Gauss-Legendre nodes in v = local/peak fluence (+ one on-axis node)
+  ts_stride_fs: 0.02        # sampling of the saved entrance-plane time series
+
+pulse_energies_uJ: [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
+                    1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]

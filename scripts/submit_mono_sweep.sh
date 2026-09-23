@@ -33,6 +33,9 @@
 # needed. A CLI --array overrides the pragma below, so always submit with
 # the printed command -- the pragma is just a stale-safe fallback.
 #
+# MANIFEST, NREP, CONFIGS_PER_TASK (NREP * CONFIGS_PER_TASK = 40) and DATA_TAG can be set in the
+# environment; defaults reproduce the original sweep.
+#
 # Before submitting:
 #   1. python scripts/generate_mono_sweep_configs.py   (writes the manifest
 #      and prints the sbatch command to run)
@@ -61,7 +64,7 @@ export NUMEXPR_NUM_THREADS=1
 REPO_ROOT="$SLURM_SUBMIT_DIR"
 cd "$REPO_ROOT"
 
-MANIFEST=config/generated/mono_transmittance_vs_intensity/manifest.txt
+MANIFEST=${MANIFEST:-config/generated/mono_transmittance_vs_intensity/manifest.txt}
 if [[ ! -f "$MANIFEST" ]]; then
     echo "Missing $MANIFEST -- run scripts/generate_mono_sweep_configs.py first" >&2
     exit 1
@@ -72,12 +75,12 @@ mapfile -t YAML_FILES < "$MANIFEST"
 # gets exactly enough workers for its own reps and all of them run in one
 # parallel wave -- these must match generate_mono_sweep_configs.py's
 # CONFIGS_PER_TASK.
-NREP=5
-CONFIGS_PER_TASK=8
+NREP=${NREP:-5}
+CONFIGS_PER_TASK=${CONFIGS_PER_TASK:-8}
 NPROC_PER_CONFIG=$(( SLURM_CPUS_PER_TASK / CONFIGS_PER_TASK ))
 
 CONFIG_START=$(( SLURM_ARRAY_TASK_ID * CONFIGS_PER_TASK ))
-DATA_PATH=data/mono_sweep_${SLURM_ARRAY_JOB_ID}
+DATA_PATH=data/${DATA_TAG:-mono_sweep}_${SLURM_ARRAY_JOB_ID}
 
 pids=()
 n_launched=0

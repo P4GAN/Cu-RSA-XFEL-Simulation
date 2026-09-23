@@ -147,13 +147,20 @@ def Gaussian_pulse_aniso_seed(X):
     print('number of seed photons = ' + f"{N_seed_photons:.1e}")
     
     seed = np.sqrt(N_seed_photons) * field_txy
-    
+
+    # Central photon energy: carrier exp(+i domega (t - t0)) in the Kalpha1 rotating frame, the
+    # same sign as the Si(111) DCM response (Roh), which puts a pulse at monochromator_target_energy_eV
+    # on the spectral axis hwKalpha1N + womega_ar. Configs without the key stay on resonance.
+    target_energy_eV = getattr(X, 'monochromator_target_energy_eV', X.hwKalpha1N)
+    domega = (target_energy_eV - X.hwKalpha1N) / X.hbar
+    seed = seed * np.exp(1j * domega * (X.t_mesh - X.t0))
+
     Omega_seed_pstxy = np.zeros((2, 2, X.tgrid, X.xgrid, X.ygrid), dtype=complex)
     fluxfield2Rabi = np.sqrt((3.0 * X.lambdaKalpha1N**2 * X.Gamma_sp_fsm1N / 8.0 / np.pi))
     Omega_seed_pstxy[0,1,:,:,:] = fluxfield2Rabi * seed # in linear polarization basis, along y-axis
     Omega_seed_pstxy[1,:,:,:,:] = np.conj(Omega_seed_pstxy[0,:,:,:,:])
-    
-    return Omega_seed_pstxy 
+
+    return Omega_seed_pstxy
 
 
 def roll_zeropad(a, shift, axis=None):

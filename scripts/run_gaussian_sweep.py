@@ -37,6 +37,32 @@ TPAD = 1000
 YPAD = 64
 
 
+def check_one(yaml_path):
+    """Build the config and the seed without running the solver (cheap, safe locally): photon
+    count, peak fluence, cold transmission from the ground-state cross sections, the fit knobs, and
+    the seed's spectral centroid on the same axis as the saved spectra (hwKalpha1N + womega_ar),
+    which must equal monochromator_target_energy_eV."""
+    X = XLO_sim(yaml_path)
+    seed = tools.Gaussian_pulse_aniso_seed(X)
+    X.Omega_pstxyz = seed[..., None]
+    womega, I_int, _ = tools.SF_spectrum_w(X, 0, YPAD, TPAD)
+    I_w = np.real(I_int)
+    centroid = X.hwKalpha1N + float(np.sum(womega * I_w) / np.sum(I_w))
+    J_txy = np.real(np.einsum("stxy,stxy->txy", seed[0], seed[1])) / X.flux_factor
+    F_xy = J_txy.sum(axis=0) * X.dt
+    N = F_xy.sum() * X.dx * X.dy
+    sig_g = X.S_ground_Fi.sum(axis=1).mean()
+    T_cold = np.exp(-X.n * sig_g * X.zmax)
+    print(f"{os.path.basename(yaml_path)}: nlevel {X.nlevel}, 2s {X.use_2s_pathway}, L2 {X.use_L2_pathway}, "
+          f"satellites {len(X.satellite_channel_params)}, additional_dephasing {X.additional_dephasing} fs^-1, "
+          f"resonant_source_scale {X.resonant_source_scale}\n"
+          f"  photons {N:.4e} (E/hw {X.E_seed_uJ * 1e-6 / (X.hwKalpha1N * 1.602176634e-19):.4e}), "
+          f"peak fluence {F_xy.max():.4e} /nm^2, sigma_g {sig_g:.4e} nm^2 -> T_cold(L) {T_cold:.4f}\n"
+          f"  target {X.monochromator_target_energy_eV:.2f} eV, seed spectral centroid {centroid:.2f} eV, "
+          f"dt {X.dt:.4f} fs, dx {X.dx:.1f} nm", flush=True)
+    return abs(centroid - X.monochromator_target_energy_eV)
+
+
 def run_one(yaml_path, data_path):
     t0 = time.perf_counter()
 
@@ -50,11 +76,11 @@ def run_one(yaml_path, data_path):
     acc = tools.accumulate_run_outputs([out])
 
     target_energy_eV = X.monochromator_target_energy_eV
-    run_path = os.path.join(data_path, f"runs_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV")
+    run_path = os.path.join(data_path, f"runs_seed_{X.E_seed_uJ:g}_uJ__energy_{target_energy_eV:.2f}_eV")
     os.makedirs(run_path, exist_ok=True)
     shutil.copy2(yaml_path, run_path)
 
-    out_stem = f"run_at_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV__reps_0-1"
+    out_stem = f"run_at_seed_{X.E_seed_uJ:g}_uJ__energy_{target_energy_eV:.2f}_eV__reps_0-1"
     out_path = os.path.join(run_path, out_stem + ".npz")
     np.savez(out_path, **acc)
 
@@ -67,11 +93,25 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--manifest", help="Path to a manifest.txt of YAML config paths (one per line)")
     group.add_argument("--yaml", help="Path to a single generated config YAML (runs just that one point)")
-    parser.add_argument("--data-path", required=True, help="Top-level output directory")
+    parser.add_argument("--data-path", default=None, help="Top-level output directory (required unless --check-only)")
+    parser.add_argument("--check-only", action="store_true",
+                         help="build config + seed and report them, no simulation (for --manifest: first, middle, last)")
     parser.add_argument("--nproc", type=int, default=None,
                          help="Worker processes for --manifest mode (default: cores available to this job)")
     args = parser.parse_args()
 
+    if args.check_only:
+        if args.yaml:
+            paths = [args.yaml]
+        else:
+            with open(args.manifest) as f:
+                all_paths = [line.strip() for line in f if line.strip()]
+            paths = [all_paths[0], all_paths[len(all_paths) // 2], all_paths[-1]]
+        worst = max(check_one(p) for p in paths)
+        print(f"max |seed centroid - target| = {worst:.3f} eV")
+        return
+    if args.data_path is None:
+        parser.error("--data-path is required unless --check-only")
     os.makedirs(args.data_path, exist_ok=True)
 
     if args.yaml:

@@ -101,6 +101,10 @@ def load_runs(data_path):
         if not m:
             continue
         with np.load(path, allow_pickle=False) as f:
+            if m[2] == "re" and "re_closure" not in f.files:
+                print(f"skipping {os.path.basename(path)}: rate-equation run from before the photon-"
+                      "conserving closure (XLO_sim/twolevel.py docstring)")
+                continue
             runs.setdefault((m[1], m[2]), {})[float(m[3])] = {k: f[k] for k in f.files}
     if not runs:
         sys.exit(f"no <beam>_<mode>_<E>uJ.npz files in {data_path}")

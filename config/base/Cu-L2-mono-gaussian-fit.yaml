@@ -1,0 +1,112 @@
+#units: nm, fs
+
+# Base block + 2p1/2 (L2, Kalpha2) pathway ONLY: no 2s pathway, no satellite channels, nothing else.
+# Two non-physical fit knobs stand in for missing physics, fitted to the self-seeded 20 um mono
+# spectra by ../RSA-derivation-bloch/ka2_fit.py --no-ck (RSA_Ka2_fit.md sec. 5.3, "no 2s
+# Coster-Kronig feed", common f):
+#   additional_dephasing  = 2.1333 eV / hbar = 3.2410 fs^-1   (added to every Kalpha coherence rate)
+#   resonant_source_scale = 5.3193                            (f: scales the resonant field source,
+#                                                              == scaling the 2p-hole production in
+#                                                              the analytic model, cold T unchanged)
+# Deterministic coherent Gaussian pulse (tools.Gaussian_pulse_aniso_seed), 6 fs intensity FWHM,
+# 100 x 170 nm fluence FWHM (Results_RSA_seeded.pdf slide 4), the pulse/focus the fit assumed.
+# One run = one (E_seed_uJ, monochromator_target_energy_eV) point; swept by
+# scripts/generate_gaussian_sweep_configs.py + scripts/submit_gaussian_sweep.sh.
+
+#Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
+# use_2s_pathway is False below, which zeroes the 2s column of S_ground_Fi: the 2s share is
+# folded into "other" so that the total ground-state photoabsorption stays 4.34e-7 + 1.52e-7 nm^2
+# (cold T of the 20 um foil unchanged).
+sigma1_Ka1_2s: 2.45e-7          # unused (use_2s_pathway: False)
+sigma1_Ka1_2p3: 1.52e-7
+sigma1_Ka1_other: 3.650617e-7   # 4.34e-7 - 6.89383e-8 (2s folded in)
+sigma1_Ka1_2p1: 6.89383e-8
+
+#Total photoionization cross section of the holed ions (as Cu-seed-mono-gaussian.yaml)
+sigma2_Ka1_1s: 6.53e-7
+sigma2_Ka1_2s: 4.05e-7          # unused (use_2s_pathway: False)
+sigma2_Ka1_2p3: 4.15e-7
+sigma2_Ka1_other: 5.0613e-7
+sigma2_Ka1_2p1: 4.98609e-7
+
+#Chemical composition of the sample
+#Cu
+compound:
+  O:
+    N_atoms: 0
+    sigma_compound_Ka1: 0
+
+#sample concentration in atoms per cubic nm (solid copper)
+n: 82.509
+
+#number of atomic levels in the calculation (8 with use_L2_pathway)
+nlevel: 6
+
+#radiative rates
+GammaKeVN: 1.49
+GammaL1eVN: 8.13
+GammaL2eVN: 1.04
+GammaL3eVN: 0.61
+GammarKalpha1eVN: 0.39375
+GammarKalpha2eVN: 0.202668
+GammaA_L1_to_L3M45eVN: 0.0      # unused (use_2s_pathway: False)
+
+# Fit knobs (see header)
+additional_dephasing: 3.2410    # fs^-1
+resonant_source_scale: 5.3193
+
+#K alpha atomic transitions photon energy
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+#simulation domain and padding parameters
+# t: 30 fs window, pulse centred at tmax/2 (+-5.9 sigma), dt = 0.0075 fs (as Cu-seed-mono-gaussian)
+# x, y: +-200 nm, 11 x 11 (40 nm): the focal average of the analytic model is reproduced to 0.5%
+#       on this grid (8 x 8 over +-250 nm: 5%); diffraction over 20 um is negligible
+#       (Rayleigh length ~150 um), so 20 pad cells are ample.
+tgrid: 4000
+zgrid: 15
+xgrid: 11
+ygrid: 11
+
+tmax: 30.
+
+zmax: 20.0e+3
+xmax: 200.0
+ymax: 200.0
+
+xpad: 20
+ypad: 20
+tpad: 0
+
+auto_grid: False
+
+#seed parameters
+seed_pulse_format: 'Gaussian_pulse_aniso_seed'
+E_seed_uJ: 1.0
+seed_duration_FWHM_t: 6.0
+t_peak: 15.0                    # unused by the Gaussian seed (centred at tmax/2)
+seed_width_FWHM_x: 100
+seed_width_FWHM_y: 170
+seed_center_E: 8047.91          # only sets lambdaCenter (Ocelot seeds); required by XLO_sim.__init__
+
+# Central photon energy of the Gaussian pulse (carrier exp(+i domega (t - t0))). Overridden per
+# sweep point by generate_gaussian_sweep_configs.py.
+monochromator_target_energy_eV: 8047.91
+
+#calculation regime
+is_spontaneous_only: False
+is_use_stochastic: False
+random_seed: -1
+enable_noise_mask: True
+Esxy_noise_cutoff: 2.0e-3
+# run_mode: 'simultaneous', 'consecutive'
+run_mode: 'simultaneous'
+enable_self_diffraction: True
+enable_self_absorption: True
+turn_off_coherences: False
+enable_kfilter: False
+is_Cartesian_pol: True
+use_rate_equations: False
+use_2s_pathway: False
+use_L2_pathway: True

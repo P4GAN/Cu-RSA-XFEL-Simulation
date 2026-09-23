@@ -132,6 +132,25 @@ Three-stage pipeline for cluster (SLURM) parameter sweeps, e.g. transmittance vs
    `OMP_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`MKL_NUM_THREADS`/`NUMEXPR_NUM_THREADS=1` before importing
    numpy, since each multiprocessing worker gets its own BLAS thread pool otherwise.
 
+### Gaussian-pulse mono sweeps and the fit knobs
+
+`tools.Gaussian_pulse_aniso_seed` is a deterministic coherent Gaussian pulse (no repetitions).
+`monochromator_target_energy_eV` sets its photon energy through a carrier exp(+iΔω(t − t0)), with
+the same sign as the DCM seed's `Roh`. `generate_gaussian_sweep_configs.py` →
+`submit_gaussian_sweep.sh` (40 single-process configs per array task, `MANIFEST`/`DATA_TAG` env
+vars) → `run_gaussian_sweep.py`. The latter also has `--check-only`: it builds the config and seed
+without running the solver and checks the photon count, T_cold and the seed's spectral centroid.
+Two non-physical fit knobs stand in for missing physics:
+
+- `additional_dephasing` (fs⁻¹, added to every Kα coherence rate)
+- `resonant_source_scale` (default 1, multiplies `field_source_factor`)
+
+The second is equivalent to scaling the 2p-hole production, without changing the cold absorption.
+`config/base/Cu-L2-mono-gaussian-fit.yaml` (L2 only, no 2s, no satellites) carries the values
+fitted in `../RSA-derivation-bloch/RSA_Ka2_fit.md`. Its comparison script is
+`../RSA-derivation-bloch/compare_xlo_l2fit.py`. `Cu-seed-mono-gaussian.yaml` lacks
+`seed_center_E` and cannot be loaded as is.
+
 ### Two-level solver for the analytic RSA comparison (`XLO_sim/twolevel.py`)
 
 A separate, standalone plane-wave Maxwell–Bloch solver, independent of the `XLO_sim` class. It
@@ -147,6 +166,11 @@ thickness in `grid.z_record_um`. The pipeline is `config/base/Cu-2level-analytic
 `submit_twolevel_sweep.sh` → `run_twolevel_sweep.py` → `plot_twolevel_vs_analytic.py`, which
 imports `rsa_transmittance.py` from `../RSA-derivation`, so plotting needs the local checkout. The
 runner runs `twolevel.self_check` (closed-form steady states, photon bookkeeping) before every sweep.
+`re` slaves the coherence to the instantaneous populations and lets the atoms absorb exactly what the
+field loses (q = Im(Ω* c)); `re` files saved before 2026-09-22 (no `re_closure` key) used a
+non-conserving closure and are skipped by the plot scripts. Attempt 2 of the analytic model (Bloch-
+vector derivation, closed forms for the weak and strong field) lives in `../RSA-derivation-bloch`
+(`RSA_derivation_attempt2.md`, `compare_numerics.py --data <this repo>/data/twolevel_<jobid>`).
 
 ### Notebooks (`notebooks/`)
 

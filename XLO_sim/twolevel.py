@@ -22,11 +22,15 @@ Per atom, in the frame rotating at the carrier omega_c (delta = omega_c - omega_
     kappa_nr = n_a (sig_g g + sig_l l + sig_u u + sig_x x)
 
 with c = rho_ul and q = Im(Om* c) (mode "mb", full Maxwell-Bloch). Mode "re" is the rate-
-equation limit: the coherence is slaved to the populations, c = (i/2)(l - u) K with
-dK/dt = Om - (gamma - i delta) K (the field filtered by the line's Lorentzian), and
-q = W (l - u) with W = gamma |K|^2 / 2. W is the positive-definite form of Im(Om* c) with the same
-time integral; for a stationary field it is derivation Eq. (8), and XLO_sim's use_rate_equations
-uses the same form.
+equation limit: the coherence is slaved to the instantaneous populations, c = (i/2)(l - u) K with
+dK/dt = Om - (gamma - i delta) K (the field filtered by the line's Lorentzian), and again
+q = Im(Om* c) = (l - u) Re(Om* K) / 2, so the atoms absorb exactly what the field loses. For a
+stationary field q = W (l - u) with W = derivation Eq. (8). (Before 2026-09-22 "re" used
+q = gamma |K|^2 (l - u) / 2, XLO_sim's use_rate_equations form. That has the same time integral
+only while l - u is constant: the field lost up to 7 % (mono, 100 uJ) and 65 % (SASE, 200 uJ) more
+resonant photons than the atoms absorbed. Runs saved with that form lack the key re_closure.)
+"re" relaxes l - u at up to Om^2/gamma, which exceeds Om once Om > gamma, so its time step is
+also bounded by that rate (choose_dt).
 
 x collects every atom that has left {g, l, u}: other-shell photoionisation, the non-Kalpha1 decay
 of the 1s hole, decay and photoionisation of both holes. It absorbs with sig_x, as in the
@@ -234,7 +238,7 @@ def _rhs(yg, yl, yu, yc, O, dlt, cpl, Gu, Gl, Gsp, gphi, sg, sL3, su, sl, inv_s0
     w = yl - yu
     Oc = cpl * O
     if re:
-        q = 0.5 * gam * (yc.real * yc.real + yc.imag * yc.imag) * w
+        q = 0.5 * w * (Oc.real * yc.real + Oc.imag * yc.imag)    # Im(conj(Om) c), c = (i/2) w K
         dc = Oc - (gam - 1j * dlt) * yc
     else:
         q = Oc.real * yc.imag - Oc.imag * yc.real          # Im(conj(Om) c)
@@ -280,10 +284,8 @@ def _plane(Om, dlt, cpl, dt, p, re, g, l, u, c, q):
         l[i + 1] = yl
         u[i + 1] = yu
         if re:
-            J1 = (O1.real * O1.real + O1.imag * O1.imag) * inv_s0G
-            gam1 = 0.5 * (Gu + Gl + (su + sl) * J1) + gphi
             c[i + 1] = 0.5j * (yl - yu) * yc
-            q[i + 1] = 0.5 * gam1 * (yc.real * yc.real + yc.imag * yc.imag) * (yl - yu)
+            q[i + 1] = 0.5 * (yl - yu) * cpl * (O1.real * yc.real + O1.imag * yc.imag)
         else:
             c[i + 1] = yc
             q[i + 1] = cpl * (O1.real * yc.imag - O1.imag * yc.real)
@@ -413,10 +415,23 @@ def march(Om_in, dlt, cpl, dt, dz_cm, n_z, rec, r, mode, keep_fields=False, src_
 # ----------------------------------------------------------------------------------------------
 # Experiments
 # ----------------------------------------------------------------------------------------------
-def choose_dt(grid, Om_ref):
-    """Largest step <= dt_fs that is an integer fraction of dt_fs with Om_ref dt <= rabi_step.
-    Returns (dt, m) with dt = dt_fs / m."""
-    m = max(1, int(np.ceil(grid["dt_fs"] * Om_ref / grid["rabi_step"])))
+RE_STEP = 1.0            # mode "re": relax_ref dt <= RE_STEP. RK4 is stable to 2.79 on a decaying
+                         # mode and within 2 % of exp(-x) at x = 1; the old Rabi-only step reached
+                         # 3.1 at 200 uJ (mono) and diverged
+
+
+def stiff_rate(r, Om_ref, mode):
+    """Fastest decay rate the RK4 step must resolve besides the Rabi frequency: in "re" the
+    populations relax toward the slaved coherence at 2W <= Om^2/gamma (resonant bound, J -> 0
+    gamma). Zero for "mb", where the stiffest scale is Om itself."""
+    return Om_ref**2 / weak_field_constants(r)["gamma"] if mode == "re" else 0.0
+
+
+def choose_dt(grid, Om_ref, relax_ref=0.0):
+    """Largest step <= dt_fs that is an integer fraction of dt_fs with Om_ref dt <= rabi_step and
+    relax_ref dt <= RE_STEP. Returns (dt, m) with dt = dt_fs / m."""
+    m = max(1, int(np.ceil(grid["dt_fs"] * Om_ref / grid["rabi_step"])),
+            int(np.ceil(grid["dt_fs"] * relax_ref / RE_STEP)))
     return grid["dt_fs"] / m, m
 
 
@@ -432,7 +447,8 @@ def run_mono(cfg, E_uJ, mode, log=print):
     n_v, n_dE = v.size, dE.size
     F_pk, J_pk = beam_peak(beam, E_uJ, E0)
     F_ref, J_ref = beam_peak(beam, E_uJ, r["E_ul"])
-    dt, _ = choose_dt(gr, np.sqrt(r["s0G"] * J_pk.max()))
+    Om_pk = np.sqrt(r["s0G"] * J_pk.max())
+    dt, _ = choose_dt(gr, Om_pk, stiff_rate(r, Om_pk, mode))
     t = time_grid(gr["t_half_window_fs"], dt)
     shape = tl_shape(t, beam["tau_fs"])
     n_z, dz_cm, rec, z_rec_um = z_plan(gr)
@@ -458,7 +474,7 @@ def run_mono(cfg, E_uJ, mode, log=print):
     Phi_in = out["int0"][:, 0]
     T = out["flu"] / Phi_in[:, None]
     return dict(
-        beam="mono", mode=mode, E_uJ=float(E_uJ), dt=dt, n_t=t.size, dz_um=gr["dz_um"],
+        beam="mono", mode=mode, re_closure="field", E_uJ=float(E_uJ), dt=dt, n_t=t.size, dz_um=gr["dz_um"],
         z_rec_um=z_rec_um, v=v, wv=wv, dE=dE, E0=E0, F_pk=F_pk, J_pk=J_pk,
         T=T[:nm].reshape(n_dE, n_v, -1), T_ref=T[nm:],
         int0=out["int0"][:nm].reshape(n_dE, n_v, 6), int0_ref=out["int0"][nm:],
@@ -492,7 +508,8 @@ def run_sase(cfg, E_uJ, mode, log=print):
     env = np.exp(-4.0 * np.log(2.0) * t0**2 / beam["tau_fs"]**2)
     Om_ref = np.sqrt(r["s0G"] * J_pk * np.percentile(I_rel[:, env > 0.5], 99.9))
     m_up = max(int(np.ceil(SASE_GEN_DT / gr["dt_fs"] - 1e-9)),
-               int(np.ceil(SASE_GEN_DT * Om_ref / gr["rabi_step"])))
+               int(np.ceil(SASE_GEN_DT * Om_ref / gr["rabi_step"])),
+               int(np.ceil(SASE_GEN_DT * stiff_rate(r, Om_ref, mode) / RE_STEP)))
     dt = SASE_GEN_DT / m_up
     n_t = t0.size * m_up
     t = -gr["t_half_window_fs"] + dt * np.arange(n_t)
@@ -586,7 +603,7 @@ def run_sase(cfg, E_uJ, mode, log=print):
     # -ln(T/T_nonres)/L at thin L subtracts two numbers close to 1)
     views = np.stack([np.eye(n_v)[n_v - 1], wv])                          # [axis, beam]
     return dict(
-        beam="sase", mode=mode, E_uJ=float(E_uJ), dt=dt, n_t=n_t, dz_um=gr["dz_um"],
+        beam="sase", mode=mode, re_closure="field", E_uJ=float(E_uJ), dt=dt, n_t=n_t, dz_um=gr["dz_um"],
         z_rec_um=z_rec_um, v=v, wv=wv, E_axis=E_axis, F_pk=F_pk, J_pk=J_pk,
         n_shots=n_shots, n_blocks=n_blocks, n_ref_shots=n_ref,
         den=den, num_out_view=np.einsum("bmrw,km->kbrw", num_out, views),
@@ -622,7 +639,10 @@ def self_check(cfg, log=print):
          populations equal the rate-equation steady state (derivation Eq. 12) and the coherence
          equals (i/2) Om w / (gamma - i delta) (the exact Bloch steady state).
       2. One z step: the fluence lost equals the photons absorbed at z = 0 (field bookkeeping).
-      3. Spectral convention: a pulse at carrier offset +5 eV peaks at E_frame + 5 eV."""
+      3. Spectral convention: a pulse at carrier offset +5 eV peaks at E_frame + 5 eV.
+      4. Both modes, smooth and chaotic pulse: the resonant photons the field loses equal those the
+         atoms absorb, and "re" stays bounded at the Rabi frequency of 500 uJ (mono, on axis) with
+         the step from choose_dt."""
     atom = dict(cfg["atom"])
     atom["sig_g"] = atom["sig_L3"] = 1e-25        # no depletion, so the plateau is a true steady state
     r = rates(atom)
@@ -670,6 +690,29 @@ def self_check(cfg, log=print):
     peak = E[np.argmax(np.abs(spectral_amplitude(f)))]
     log(f"  spectral convention: +5 eV carrier offset peaks at {peak - 8000.0:+.3f} eV")
     assert abs(peak - 8005.0) < 0.1, "spectral axis sign is wrong"
+
+    dt_s = 0.002
+    t = time_grid(25.0, dt_s)
+    chaotic = sase_shapes(1, t, tau, 15.0, np.random.default_rng(1))[0]
+    for label, shape in (("TL", tl_shape(t, tau)), ("chaotic", chaotic)):
+        Om = np.sqrt(r["s0G"] * 1e19) * shape
+        for mode in MODES:
+            out = march(Om[None, :], np.array([0.0]), np.array([1.0]), dt_s, 1e-9, 0, np.array([0]), r, mode)
+            Nres, Nq = out["int0"][0, 1], out["int0"][0, 5]
+            log(f"  {label} pulse, {mode}: field-side / atom-side resonant photons - 1 = {Nres / Nq - 1:.1e}")
+            assert abs(Nres / Nq - 1) < 1e-9, "resonant photons lost by the field != absorbed by the atoms"
+
+    J_pk = beam_peak(cfg["mono"], 500.0, r["E_ul"])[1]
+    Om_pk = np.sqrt(r["s0G"] * J_pk)
+    dt_s, m = choose_dt(cfg["grid"], Om_pk, stiff_rate(r, Om_pk, "re"))
+    t = time_grid(25.0, dt_s)
+    out = march((Om_pk * tl_shape(t, tau))[None, :], np.array([0.0]), np.array([1.0]), dt_s, 1e-9, 0,
+                np.array([0]), r, "re", ts_slot=np.array([0]), ts_stride=1)
+    pops = out["ts"][0, :3].astype(float)
+    ok = np.all(np.isfinite(pops)) and pops.min() > -1e-6 and pops.max() < 1 + 1e-6
+    log(f"  re at 500 uJ (Omega_pk/gamma0 = {Om_pk / weak_field_constants(r)['gamma']:.0f}, dt = {dt_s:.2e} fs): "
+        f"populations in [{pops.min():.2e}, {pops.max():.3f}]")
+    assert ok, "rate-equation mode is unstable at high field"
     return True
 
 

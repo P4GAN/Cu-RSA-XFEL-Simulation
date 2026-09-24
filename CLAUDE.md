@@ -229,7 +229,9 @@ Several things are easy to get wrong with these families:
 - The SASE base configs are 3×3. Use `xgrid=ygrid=5` for anything compared with experiment:
   `generate_coherence_sweeps.sh` does, and `SASE_GRID=... generate_bracket_sweeps.sh` can.
 - 5×5 SASE needs `sbatch --mem=64G`, and the generators print it.
-`scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families. The population-budget
+`scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families, and
+`scripts/plot_coherence_sweep.py` the coherence family. The latter reads its mono experiment from
+`../RSA-derivation-bloch/data/exp_mono_scatter_slide9bins.csv`. The population-budget
 family (`generate_population_budget.sh` → `submit_population_budget.sh <family dir>`, with `NREP`
 and `CONFIGS_PER_TASK` passed via `--export` → `run_population_budget.py` →
 `plot_population_budget.py`) records where atoms and electrons go during the pulse.

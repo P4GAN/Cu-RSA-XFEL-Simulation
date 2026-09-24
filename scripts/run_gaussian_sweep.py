@@ -55,7 +55,7 @@ def check_one(yaml_path):
     T_cold = np.exp(-X.n * sig_g * X.zmax)
     print(f"{os.path.basename(yaml_path)}: nlevel {X.nlevel}, 2s {X.use_2s_pathway}, L2 {X.use_L2_pathway}, "
           f"satellites {len(X.satellite_channel_params)}, additional_dephasing {X.additional_dephasing} fs^-1, "
-          f"resonant_source_scale {X.resonant_source_scale}\n"
+          f"sigma1 2p3/2p1/other {X.sigma1_Ka1_2p3:.4g}/{X.sigma1_Ka1_2p1:.4g}/{X.sigma1_Ka1_other:.4g}\n"
           f"  photons {N:.4e} (E/hw {X.E_seed_uJ * 1e-6 / (X.hwKalpha1N * 1.602176634e-19):.4e}), "
           f"peak fluence {F_xy.max():.4e} /nm^2, sigma_g {sig_g:.4e} nm^2 -> T_cold(L) {T_cold:.4f}\n"
           f"  target {X.monochromator_target_energy_eV:.2f} eV, seed spectral centroid {centroid:.2f} eV, "

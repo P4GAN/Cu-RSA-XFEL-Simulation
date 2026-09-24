@@ -15,7 +15,8 @@ the self-seeded 20 um measurement (Results_RSA_seeded.pdf slides 5-6), each + --
 where the measurement sampled the measured ones). Default: hwKalpha1N +- 15 eV.
 
 --set key=value overrides any top-level key of the base config (value parsed as YAML), e.g.
---set additional_dephasing=0 resonant_source_scale=1 for a nominal-parameter control sweep.
+--set additional_dephasing=0 sigma1_Ka1_2p3=1.52e-7 sigma1_Ka1_2p1=6.89383e-8 sigma1_Ka1_other=3.650617e-7
+for a nominal-parameter control sweep.
 
 Examples:
     python scripts/generate_gaussian_sweep_configs.py

@@ -94,13 +94,6 @@ class XLO_sim:
             
         self.flux_factor = 3.0 * self.lambdaKalpha1N ** 2 * self.Gamma_sp_fsm1N / 8.0 / np.pi
         self.field_source_factor = 1j * 3.0 * self.lambdaKalpha1N**2 * self.Gamma_sp_fsm1N * self.n / 16.0 / np.pi
-        # Non-physical fit knob (default 1): scales the resonant (Kalpha) field source, i.e. the
-        # density of resonant absorbers the field sees, without touching the per-atom populations,
-        # the ground-state photoabsorption (cold transmission) or population conservation. In the
-        # steady-state rate model kappa_res is linear in the 2p-hole source, so this equals scaling
-        # the 2p-hole production by the same factor (../RSA-derivation-bloch/RSA_Ka2_fit.md sec. 6).
-        self.resonant_source_scale = float(self.config.get('resonant_source_scale', 1.0))
-        self.field_source_factor *= self.resonant_source_scale
         self.Gamma_ij = 0.5 * (self.GammaKfsm1N + self.GammaL3fsm1N) + self.additional_dephasing
         self.convert_SF_phnm2fs_Wcm2   = (self.hwKalpha1N * 1.602e-19 / (1e-9)**2 / 1e-15) / (1 / (1e-2)**2)
                 

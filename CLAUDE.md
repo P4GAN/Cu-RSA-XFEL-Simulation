@@ -140,16 +140,11 @@ the same sign as the DCM seed's `Roh`. `generate_gaussian_sweep_configs.py` →
 `submit_gaussian_sweep.sh` (40 single-process configs per array task, `MANIFEST`/`DATA_TAG` env
 vars) → `run_gaussian_sweep.py`. The latter also has `--check-only`: it builds the config and seed
 without running the solver and checks the photon count, T_cold and the seed's spectral centroid.
-Two non-physical fit knobs stand in for missing physics:
-
-- `additional_dephasing` (fs⁻¹, added to every Kα coherence rate)
-- `resonant_source_scale` (default 1, multiplies `field_source_factor`)
-
-The second is equivalent to scaling the 2p-hole production, without changing the cold absorption.
-`config/base/Cu-L2-mono-gaussian-fit.yaml` (L2 only, no 2s, no satellites) carries the values
-fitted in `../RSA-derivation-bloch/RSA_Ka2_fit.md`. Its comparison script is
-`../RSA-derivation-bloch/compare_xlo_l2fit.py`. `Cu-seed-mono-gaussian.yaml` lacks
-`seed_center_E` and cannot be loaded as is.
+`config/base/Cu-L2-mono-{gaussian,dcm}-fit.yaml` (L2 only, no 2s, no satellites) carry the
+non-physical fit of `../RSA-derivation-bloch/RSA_Ka2_fit.md`: `additional_dephasing` (fs⁻¹) and the
+2p photoionisation cross sections × 5.32 with `sigma1_Ka1_other: 0` (cold T 0.144 instead of 0.380,
+treated as an offset). Comparison script: `../RSA-derivation-bloch/compare_xlo_l2fit.py`.
+`Cu-seed-mono-gaussian.yaml` lacks `seed_center_E` and cannot be loaded as is.
 
 ### Two-level solver for the analytic RSA comparison (`XLO_sim/twolevel.py`)
 

@@ -5,22 +5,22 @@
 # spectra by ../RSA-derivation-bloch/ka2_fit.py --no-ck (RSA_Ka2_fit.md sec. 5.3, "no 2s
 # Coster-Kronig feed", common f):
 #   additional_dephasing  = 2.1333 eV / hbar = 3.2410 fs^-1   (added to every Kalpha coherence rate)
-#   resonant_source_scale = 5.3193                            (f: scales the resonant field source,
-#                                                              == scaling the 2p-hole production in
-#                                                              the analytic model, cold T unchanged)
+#   f = 5.3193 on the 2p photoionisation cross sections sigma1_Ka1_2p3 / 2p1, with
+#   sigma1_Ka1_other = 0. This also raises the ground-state photoabsorption: sigma_g 5.86e-7 ->
+#   11.75e-7 nm^2, cold T of 20 um 0.380 -> 0.144 (taken as an offset via T/T_cold), and the ground
+#   state depletes 2x faster than in the analytic fit, which held sigma_g fixed.
 # Monochromatised self-seeded-like pulse: SASE realisation (6 fs, 1.5e-3 bandwidth) through the
 # simulated Si(111) DCM (tools.Ocelot_SASE_seed_111_dcm_pstxy), as Cu-seed-mono-SASE.yaml; 100 x 170
 # nm FWHM focus. Stochastic: average NREP repetitions per (E_seed_uJ, monochromator_target_energy_eV)
 # point; swept by scripts/generate_gaussian_sweep_configs.py (--base-yaml this) + submit_mono_sweep.sh.
 
 #Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
-# use_2s_pathway is False below, which zeroes the 2s column of S_ground_Fi: the 2s share is
-# folded into "other" so that the total ground-state photoabsorption stays 4.34e-7 + 1.52e-7 nm^2
-# (cold T of the 20 um foil unchanged).
+# use_2s_pathway is False below (2s column of S_ground_Fi zeroed). 2p cross sections x f = 5.3193,
+# "other" set to 0 (see header).
 sigma1_Ka1_2s: 2.45e-7          # unused (use_2s_pathway: False)
-sigma1_Ka1_2p3: 1.52e-7
-sigma1_Ka1_other: 3.650617e-7   # 4.34e-7 - 6.89383e-8 (2s folded in)
-sigma1_Ka1_2p1: 6.89383e-8
+sigma1_Ka1_2p3: 8.08534e-07       # 1.52e-7 x 5.3193
+sigma1_Ka1_other: 0.0
+sigma1_Ka1_2p1: 3.66703e-07       # 6.89383e-8 x 5.3193
 
 #Total photoionization cross section of the holed ions (as Cu-seed-mono-gaussian.yaml)
 sigma2_Ka1_1s: 6.53e-7
@@ -53,7 +53,6 @@ GammaA_L1_to_L3M45eVN: 0.0      # unused (use_2s_pathway: False)
 
 # Fit knobs (see header)
 additional_dephasing: 3.2410    # fs^-1
-resonant_source_scale: 5.3193
 
 #K alpha atomic transitions photon energy
 hwKalpha1N: 8047.91

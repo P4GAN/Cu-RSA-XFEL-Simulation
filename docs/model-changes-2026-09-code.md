@@ -284,3 +284,24 @@ Supporting changes:
 - **Exit plane.** Sweep population outputs are the exit plane only, where the pulse is attenuated. Use
   the population budget for depth-resolved or beam-averaged values.
 - **Recorders.** They work only on the lean path (`keep_z_history = False`).
+
+---
+
+## 8. Addendum, 26 September: EII ladder options and the progression family
+
+- `XLO_sim/eii.py`: `ladder_edges` (birth energies as level edges), `build_fixed_levels`
+  (no slowing down), `secondary_fractions` / `secondary_matrix` (binary-encounter δ electrons), and a
+  `photo_M` birth energy (7950 eV) for M-shell photoelectrons.
+- `eii:` keys `anchor_birth_energies`, `secondary_spectrum`, `slowing_down`. All are off by
+  default: the existing `*-middlemen-eii*.yaml` configs give bit-identical electron production
+  (checked against the previous `Model.electron_production_gxy` on the same state).
+- `XLO_sim` adds `eii_slowing_down`, `eii_secondary_matrix`, `eii_birth['secondary']`; `eii_G` is now
+  read off the ladder. `Model.electron_production_gxy` takes `rho_e_gxy`. `Model.MODEL_FEATURES` gains
+  `eii_nonthermal`, which `tools.verify_code` requires for those keys; the provenance file now has an
+  `eii:` line.
+- `scripts/derive_config.py`: transform `eii=<key>:<yaml>`. `scripts/run_population_budget.py` also
+  saves `E_centres_eV`, `eii_birth_names/_groups`, `eii_rates_by_subshell`, `eii_secondary_matrix`
+  and `eii_fixed_energy`.
+- New base configs `Cu-seed-mono-SASE-L2-original.yaml` (stage 1) and
+  `Cu-seed-mono-SASE-satellite-middlemen.yaml` (stage 2); family `scripts/generate_progression_sweeps.sh`.
+- The model and the numbers: `docs/theory-eii-electron-ladder-explained.md`.

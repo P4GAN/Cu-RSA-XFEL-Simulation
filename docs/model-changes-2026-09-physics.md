@@ -379,3 +379,21 @@ R after the J(z=0) fix, from the bracket sweep, against the digitised seeded dat
   8000/8048 eV, 1–50 µJ; SASE 2–40 µJ). The sweeps only ever kept the exit plane, where the pulse is
   already attenuated: in a test shot at 20 µJ the middleman fraction was 0.14 at the entrance against
   0.06 at the exit face.
+
+---
+
+## 12. Addendum, 26 September: a finer, non-thermal electron ladder
+
+Explained in full in `docs/theory-eii-electron-ladder-explained.md`. Available as options, with the
+reference configs unchanged:
+
+- **24 levels instead of 6, each source born at the top of its own level.** The 6-level ladder had
+  only 2 levels above the 2p threshold. Their exponential emptying pushed 2p EII holes late: 82% of
+  the in-pulse holes of the exact slowing-down, against 93% now.
+- **M-shell photoelectrons at 7.95 keV** instead of 7.09 keV (+17% 2p yield each).
+- **No cut-off above the lowest threshold.** The ladder runs down to 16.5 eV (3d).
+- **δ electrons.** Every ionisation by a ladder electron releases a secondary with a binary-encounter
+  energy spectrum, and that secondary slows down and ionises in turn. This adds +3% to the L-shell
+  EII. It closes energy to ~15%, at about one electron per 30 eV deposited.
+- **Fixed-energy bound.** One level per source, no slowing down. It makes 5× more 2p holes per
+  electron in total, but only ~10% more while a 6 fs pulse is present.

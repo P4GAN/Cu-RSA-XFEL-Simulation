@@ -113,7 +113,7 @@ class MovieRecorder:
             self.dsets['pop/satellite'].attrs['manifolds'] = ['2p3/2 (L3)', '1s (K)', '2p1/2 (L2)']
         if X.use_eii:
             self.dsets['electrons'].attrs['E_edges_eV'] = X.eii_ladder['E_edges']
-            self.dsets['electrons'].attrs['note'] = 'electrons per atom; last group = thermalised bin'
+            self.dsets['electrons'].attrs['note'] = 'electrons per atom; last group = bin below E_bottom (no longer ionises)'
         self.dsets['flux'].attrs['note'] = 'sum_s Re(Omega[0,s] Omega[1,s]) / flux_factor'
 
         self.f.attrs['flux_factor'] = X.flux_factor

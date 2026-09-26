@@ -15,7 +15,9 @@ Output .npz (plus the config and provenance next to it):
   t (ts,), z (z,), dz, depth_nm (z,)   sampled times (fs); plane positions; depth = max(iz-1, 0)*dz
   weights_xy (x, y)                    beam weights (shot mean)
   trace_centre_max_dev                 max |sum of populations - 1| over (z, t), worst shot (0 without middlemen means nothing)
-  satellite_channel_names, E_edges_eV, eii_rate_table (rows 2p3/2, 2p1/2, 2s, M; fs^-1 per electron per atom)
+  satellite_channel_names, E_edges_eV, E_centres_eV, eii_rate_table (rows 2p3/2, 2p1/2, 2s, M; fs^-1 per
+    electron per atom, x spatial_factor, M row x M_shell_scale), eii_rates_by_subshell (per eii_subshells,
+    unscaled n sigma v), eii_secondary_matrix, eii_birth_names/_groups, eii_fixed_energy
   womega_ar, I_int_thy_w_0, I_int_thy_w_last (shot sums), T_integrated (ratio of the sums; the mono T)
   n_shots, reps, stride, E_seed_uJ, target_energy_eV, seed_pulse_format, config_yaml, provenance
 
@@ -126,7 +128,16 @@ def main():
         weights_xy=np.mean(weights, axis=0), trace_centre_max_dev=float(max(devs)),
         satellite_channel_names=np.array([chan.name for chan in X.satellite_channel_params]),
         E_edges_eV=np.asarray(X.eii_ladder["E_edges"]) if X.use_eii else np.zeros(0),
+        E_centres_eV=np.asarray(X.eii_ladder["E_centres"]) if X.use_eii else np.zeros(0),
+        eii_fixed_energy=bool(X.use_eii and X.eii_ladder["fixed_energy"]),
+        eii_birth_names=np.array(sorted(X.eii_birth)) if X.use_eii else np.zeros(0, dtype=str),
+        eii_birth_groups=np.array([X.eii_birth[k] for k in sorted(X.eii_birth)]) if X.use_eii else np.zeros(0, int),
         eii_rate_table=np.asarray(X.eii_rate_table) if X.use_eii else np.zeros((4, 0)),
+        eii_rates_by_subshell=(np.stack([X.eii_ladder["rates_fs"][s] for s in sorted(X.eii_ladder["rates_fs"])])
+                               if X.use_eii else np.zeros((0, 0))),
+        eii_subshells=np.array(sorted(X.eii_ladder["rates_fs"])) if X.use_eii else np.zeros(0, dtype=str),
+        eii_secondary_matrix=(X.eii_secondary_matrix if X.use_eii and X.eii_secondary_matrix is not None
+                              else np.zeros((0, 0))),
         womega_ar=np.asarray(womega[0], float), I_int_thy_w_0=I0_sum, I_int_thy_w_last=Ilast_sum,
         T_integrated=float(Ilast_sum.sum() / I0_sum.sum()),
         n_shots=len(reps), reps=np.asarray(reps), stride=stride, dt=float(X.dt), E_seed_uJ=float(X.E_seed_uJ),

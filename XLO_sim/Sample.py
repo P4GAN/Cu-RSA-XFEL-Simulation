@@ -118,7 +118,7 @@ class XLO_sample:
             d_mid = tools.RK45_step(Model.MB_middleman_regular, rho_mid_xy, t0, X.dt, [gain_xy, loss_rate_xy])
         if X.use_eii:
             prod_gxy = Model.electron_production_gxy(X, rho_ground_xy, rho_other_xy, rho_2s_xy, mid_xy, rho_ijxy,
-                                                     rho_sat_ijxy, J_minus_xy, J_plus_xy, eii_R_xy)
+                                                     rho_sat_ijxy, J_minus_xy, J_plus_xy, eii_R_xy, rho_e_gxy)
             d_e = tools.RK45_step(Model.MB_electron_regular, rho_e_gxy, t0, X.dt, [X, prod_gxy])
         return d_rho, d_other, d_2s, d_ground, d_sat, d_mid, d_e
 

@@ -874,7 +874,7 @@ def compute_run_outputs(X, tpad, ypad):
 
     # Free-electron ladder (use_eii; docs/eii-free-electrons-implementation-plan.md), electrons per
     # atom at the centre pixel/exit face: still-hot electrons (every energy group) and all electrons
-    # ever produced (hot + thermalised bin, the electron-number bookkeeping total).
+    # ever produced (hot + the bin below E_bottom, the electron-number bookkeeping total).
     rho_e_gtxyz = getattr(X, 'rho_e_gtxyz', None)
     if rho_e_gtxyz is not None:
         n_e_hot_t_last = rho_e_gtxyz[:-1, :, cx, cy, -1].sum(axis=0)
@@ -1004,6 +1004,10 @@ _EXTENSION_INACTIVE_VALUE = {'L3_sublevel_mixing_coherence_factor': 1.0}
 # Model.MODEL_FEATURES entries a key needs beyond the base extension code.
 _EXTENSION_REQUIRED_FEATURE = {'L3_sublevel_mixing_coherence_factor': 'mixing_coherence_factor',
                                'sublevel_raman_dephasing_fs_inv': 'raman_dephasing'}
+# Keys inside the eii: block that need a Model feature. XLO_sim rejects unknown eii keys at load, but
+# only since that check existed; this names the missing feature instead.
+_EII_KEY_REQUIRED_FEATURE = {'slowing_down': 'eii_nonthermal', 'anchor_birth_energies': 'eii_nonthermal',
+                             'secondary_spectrum': 'eii_nonthermal'}
 
 
 def active_pathway_extensions(config):
@@ -1067,6 +1071,18 @@ def verify_code(X, repo_root):
         needed = _EXTENSION_REQUIRED_FEATURE.get(key)
         if needed and needed not in model_features:
             sys.exit(f"config sets {key} but the imported Model lacks the {needed!r} feature -- refusing to run")
+    eii_cfg = X.config.get("eii") or {}
+    for key in sorted(set(eii_cfg) & set(_EII_KEY_REQUIRED_FEATURE)):
+        if _EII_KEY_REQUIRED_FEATURE[key] not in model_features:
+            sys.exit(f"config sets eii.{key} but the imported Model lacks the "
+                     f"{_EII_KEY_REQUIRED_FEATURE[key]!r} feature -- refusing to run")
+    eii_line = ""
+    if getattr(X, "use_eii", False):
+        eii_line = (f"eii: {X.eii_G - 1} {'fixed-energy levels' if not X.eii_slowing_down else 'ladder groups'} "
+                    f"{np.round(X.eii_ladder['E_centres'], 1).tolist()} eV + bin below "
+                    f"{X.eii_ladder['E_edges'][-1]:g} eV; births {X.eii_birth}; secondary spectrum "
+                    f"{X.eii_secondary_matrix is not None}; spatial_factor {eii_cfg.get('spatial_factor', 0.5)}, "
+                    f"M_shell_scale {eii_cfg.get('M_shell_scale', 0.0)}\n")
 
     def git(*cmd):
         try:
@@ -1079,7 +1095,8 @@ def verify_code(X, repo_root):
     return (f"XLO_sim: {pkg_dir}\n"
             f"git commit: {git('rev-parse', 'HEAD')}{' (XLO_sim has uncommitted changes)' if dirty else ''}\n"
             f"use_rate_equations: {use_re} (kernel check {'passed' if use_re else 'n/a'})\n"
-            f"pathway extensions: {', '.join(extensions) if extensions else 'none'}\n")
+            f"pathway extensions: {', '.join(extensions) if extensions else 'none'}\n"
+            f"{eii_line}")
 
 
 def run_sweep_chunk(run_simulation, yaml_path, reps, run_path, output_stem, nproc,

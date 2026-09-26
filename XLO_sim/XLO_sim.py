@@ -674,29 +674,55 @@ class XLO_sim:
             # tau_th_fs / birth_energy_eV are the superseded Phase-A schema
             # (config/base/Cu-seed-satellite-eii.yaml): refuse rather than run the ladder on defaults.
             check_keys(e_cfg, 'eii', {'n_groups', 'E_top_eV', 'E_bottom_eV', 'subshells', 'birth_energies_eV',
-                                      'stopping', 'spatial_factor', 'M_shell_scale'})
-            n_groups = int(e_cfg.get('n_groups', 6))
+                                      'stopping', 'spatial_factor', 'M_shell_scale', 'slowing_down',
+                                      'anchor_birth_energies', 'secondary_spectrum'})
             subshells = e_cfg.get('subshells')
             if subshells is not None:
                 subshells = {k: tuple(v) for k, v in subshells.items()}
-            self.eii_ladder = eii.build_ladder(
-                self.n, n_groups=n_groups, E_top_eV=float(e_cfg.get('E_top_eV', 7100.0)),
-                E_bottom_eV=float(e_cfg.get('E_bottom_eV', 30.0)), subshells=subshells,
-                birth_energies_eV=e_cfg.get('birth_energies_eV'), stopping=e_cfg.get('stopping'))
-            self.eii_G = n_groups + 1  # + one thermalised bin that no longer ionises or moves
+            # slowing_down (default true): electrons lose energy down the ladder (Eq. VII.3). False is
+            # the fixed-energy bound: one level per birth energy, no transfer (n_groups, E_top_eV and
+            # anchor_birth_energies are then unused). secondary_spectrum (default false = the original
+            # ladder): one secondary per state-changing EII event, born at the CK energy; true: every
+            # ionisation of every subshell by a ladder electron sets a secondary into the group of its
+            # energy, from the binary-encounter spectrum (eii.secondary_matrix).
+            # docs/theory-eii-electron-ladder-explained.md.
+            self.eii_slowing_down = bool(e_cfg.get('slowing_down', True))
+            secondary_spectrum = bool(e_cfg.get('secondary_spectrum', False))
+            if self.eii_slowing_down:
+                self.eii_ladder = eii.build_ladder(
+                    self.n, n_groups=int(e_cfg.get('n_groups', 6)), E_top_eV=float(e_cfg.get('E_top_eV', 7100.0)),
+                    E_bottom_eV=float(e_cfg.get('E_bottom_eV', 30.0)), subshells=subshells,
+                    birth_energies_eV=e_cfg.get('birth_energies_eV'), stopping=e_cfg.get('stopping'),
+                    anchor_birth_energies=bool(e_cfg.get('anchor_birth_energies', False)))
+            else:
+                if secondary_spectrum:
+                    raise ValueError('eii.secondary_spectrum needs slowing_down: true -- a fixed-energy '
+                                     'secondary would keep ionising without ever paying for it')
+                self.eii_ladder = eii.build_fixed_levels(
+                    self.n, E_bottom_eV=float(e_cfg.get('E_bottom_eV', 30.0)), subshells=subshells,
+                    birth_energies_eV=e_cfg.get('birth_energies_eV'))
+            # + one bin below E_bottom that no longer ionises or moves
+            self.eii_G = len(self.eii_ladder['E_centres']) + 1
             self.eii_k_down = np.append(self.eii_ladder['k_down_fs'], 0.0)
             spatial = float(e_cfg.get('spatial_factor', 0.5))
             M_scale = float(e_cfg.get('M_shell_scale', 0.0))
             R = self.eii_ladder['rates_fs']
             # rows: EII into 2p3/2, 2p1/2, 2s, and the M shell (3s+3p+3d); a row whose destination
-            # isn't modelled by this config is zero. Last column (thermal bin) is zero.
+            # isn't modelled by this config is zero. Last column (the bin) is zero.
             table = np.zeros((4, self.eii_G))
             table[0, :-1] = spatial * R['2p3/2']
             table[1, :-1] = spatial * R['2p1/2'] * float(self.use_L2_pathway)
             table[2, :-1] = spatial * R['2s'] * float(self.use_2s_pathway)
             table[3, :-1] = spatial * M_scale * (R['3s'] + R['3p'] + R['3d'])
             self.eii_rate_table = table
-            self.eii_birth = self.eii_ladder['birth_group']
+            self.eii_birth = dict(self.eii_ladder['birth_group'])
+            # Without secondary_spectrum the secondary of a state-changing EII event is born at the CK
+            # energy (the original ladder); a fixed-energy secondary goes straight into the bin, since at
+            # a fixed energy it would ionise for the rest of the window.
+            self.eii_birth['secondary'] = self.eii_birth['CK'] if self.eii_slowing_down else self.eii_G - 1
+            # (G, G - 1): secondaries per unit time into each group from each active group, x spatial_factor
+            # (the events the factor drops happen outside the focus, secondaries included)
+            self.eii_secondary_matrix = spatial * eii.secondary_matrix(self.eii_ladder) if secondary_spectrum else None
 
     def configure(self, seed_field=None):
         """
@@ -735,7 +761,7 @@ class XLO_sim:
         self.rho_sat_ijtxyz = self.sample.rho_sat_ijtxyz
         self.Omega_pstxyz = self.sample.Omega_pstxyz
         # None unless use_middlemen / use_eii; same (t, x, y, z) layout as rho_ground_txyz, and a
-        # leading energy-group axis for the electron ladder (last group = thermalised bin).
+        # leading energy-group axis for the electron ladder (last group = the bin below E_bottom).
         self.rho_mid_txyz = self.sample.rho_mid_txyz
         self.rho_e_gtxyz = self.sample.rho_e_gtxyz
 

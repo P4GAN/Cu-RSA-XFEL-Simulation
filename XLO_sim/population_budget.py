@@ -18,7 +18,8 @@ Channels (the `names` array; every entry is a population per atom, except flux):
   ground, other, 2s, middlemen
   base/L3, base/K, base/L2  base block diagonal summed per manifold (2p3/2 hole, 1s hole, 2p1/2 hole)
   sat/<name>/L3, /K, /L2    each satellite block summed per manifold, in satellite_channel_params order
-  electrons/<g>             free-electron ladder group g (use_eii); the last group is the thermalised bin
+  electrons/<g>             free-electron ladder group g (use_eii); the last group is the bin below
+                            E_bottom, electrons too slow to ionise anything
 Unweighted diagonal sums, so ground + other + 2s + middlemen + base/* + sat/*/* = 1 to RK4 accuracy
 when use_middlemen is on.
 

@@ -7,7 +7,7 @@ XLO_sim/population_budget.py) and writes into figs/:
   budget_timeline_mono, budget_timeline_sase
         R, beam- and foil-averaged populations vs time for each pulse energy: everything that left the
         ground state, the middleman pool, 2p3/2 / 1s / 2p1/2 / 2s holes (base + every satellite block),
-        and the free electrons still hot vs already thermalised. Grey band: incident pulse FWHM.
+        and the free electrons still hot vs already below the ladder (too slow to ionise). Grey band: incident pulse FWHM.
   budget_vs_fluence
         end-of-pulse ionised fraction, middlemen, free electrons, and the peak 2p3/2-hole and 1s-hole
         populations vs pulse energy; R solid, raman10 dashed; mono on Kalpha1 / on the wing, SASE
@@ -157,7 +157,7 @@ def fig_timeline(runs, beam, energy=None):
         ax.set_ylabel(f"{r.E_seed:g} µJ\nper atom")
         ax = axes[row][1]
         ax.plot(r.t, r.foil("electrons_hot"), color=SLOTS[6], lw=1.5, label="hot (still slowing down)")
-        ax.plot(r.t, r.foil("electrons_thermal"), color=SLOTS[7], lw=1.5, label="thermalised (< 30 eV)")
+        ax.plot(r.t, r.foil("electrons_thermal"), color=SLOTS[7], lw=1.5, label=f"below {r.E_edges[-1]:g} eV (no longer ionising)" if len(r.E_edges) else "below the ladder")
         ax.plot(r.t, r.foil("electrons"), color=INK, lw=1.0, ls=":", label="all produced")
         ax.set_ylabel("free electrons per atom")
         for a in axes[row]:
@@ -271,7 +271,7 @@ def fig_electron_spectrum(mono, sase, mono_energy=8048.0):
             hot = np.array([r.foil(n)[-1] for n in groups[:-1]])
             # groups run from the highest energy down (XLO_sim/eii.py build_ladder); stairs wants rising edges
             ax.stairs(hot[::-1], r.E_edges[::-1], baseline=None, color=RAMP[min(i, len(RAMP) - 1)], lw=1.6,
-                      label=f"{r.E_seed:g} µJ (+{r.foil(groups[-1])[-1]:.3f} thermalised)")
+                      label=f"{r.E_seed:g} µJ (+{r.foil(groups[-1])[-1]:.3f} below {r.E_edges[-1]:g} eV)")
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xlabel("Electron energy group (eV)")

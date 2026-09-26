@@ -4,9 +4,10 @@ from . import tools
 
 # Model features a config may require; tools.verify_code refuses to run a config whose flags need a
 # feature the imported Model lacks (a stale import would otherwise ignore the flag silently).
-# ('raman_dephasing' is built in XLO_sim.__init__ as extra off-diagonal Mij; it is listed here because
-# a checkout that has it has both files.)
-MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor', 'raman_dephasing'})
+# ('raman_dephasing' is built in XLO_sim.__init__ as extra off-diagonal Mij, and 'eii_nonthermal' (the
+# eii: keys slowing_down / anchor_birth_energies / secondary_spectrum) mostly in eii.py; they are listed
+# here because a checkout that has them has every file.)
+MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor', 'raman_dephasing', 'eii_nonthermal'})
 
 
 @njit(cache=True, fastmath=True)
@@ -551,14 +552,19 @@ def MB_middleman_regular(t, rho_mid_xy, params):
 
 
 def electron_production_gxy(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_mid_xy, rho_base_ijxy,
-                            rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy):
+                            rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy, rho_e_gxy=None):
     """
     Free electrons produced per atom per fs, by ladder birth group (Part VII sec 1): one photoelectron
-    per photoabsorption event of any tracked population (top group), one fast electron per
-    non-radiative 1s-hole decay (KLL/KLM, top group), one ~0.9 keV electron per untracked L-type
-    Auger decay and per 2s L1-MM decay (LMM group), one slow electron per tracked Coster-Kronig /
-    spectator super-CK decay and per EII event (CK group). The electrons of the M-shell cascade
-    that follows an L-shell Auger decay are not counted (<1 3d ionisation each, Part VII sec 5).
+    per photoabsorption event of any tracked population (top group; M-shell photoelectrons of ground
+    atoms and middlemen in the photo_M group), one fast electron per non-radiative 1s-hole decay
+    (KLL/KLM, top group), one ~0.9 keV electron per untracked L-type Auger decay and per 2s L1-MM
+    decay (LMM group), one slow electron per tracked Coster-Kronig / spectator super-CK decay (CK
+    group), and the secondaries of electron-impact ionisation: with X.eii_secondary_matrix, one per
+    ionisation of any subshell, spread over the groups by the binary-encounter spectrum; without it,
+    one per state-changing EII event, in the 'secondary' group. Not counted: the further Auger
+    electrons of holes that go straight to the middleman pool (the two L vacancies a KLL decay leaves,
+    a further photoionisation of an ion) and the M-shell cascade after an L-shell Auger decay
+    (docs/theory-eii-electron-ladder-explained.md sec 4).
     """
     Jm, Jp = J_Omega_minus_xy, J_Omega_plus_xy
     birth = X.eii_birth
@@ -573,6 +579,15 @@ def electron_production_gxy(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_mid_x
     photo += (X.S_other_F[0] * Jm + X.S_other_F[1] * Jp) * rho_other_xy
     if rho_mid_xy is not None:
         photo += (X.sigma_mid_F[0] * Jm + X.sigma_mid_F[1] * Jp) * rho_mid_xy
+    # M-shell photoelectrons (~7.95 keV) have their own birth energy when "other" is the M shell alone,
+    # i.e. 2s and 2p1/2 are tracked; a middleman's cross section splits like the ground state's.
+    photo_M = 0.0
+    if birth['photo_M'] != birth['photo'] and X.use_2s_pathway and X.use_L2_pathway:
+        S_M = np.real(X.S_ground_Fi[:, -1])
+        photo_M = (S_M[0] * Jm + S_M[1] * Jp) * rho_ground_xy
+        if rho_mid_xy is not None:
+            f_M = S_M / np.real(S_ground_total)
+            photo_M = photo_M + (f_M[0] * X.sigma_mid_F[0] * Jm + f_M[1] * X.sigma_mid_F[1] * Jp) * rho_mid_xy
     fast = np.einsum('i,ixy->xy', X.e_emit_base['KLL'], diag)
     lmm = np.einsum('i,ixy->xy', X.e_emit_base['LMM'], diag) + X.twos_decay_untracked_fs * rho_2s_xy
     slow = np.einsum('i,ixy->xy', X.e_emit_base['CK'], diag) + X.twos_decay_tracked_fs * rho_2s_xy
@@ -582,19 +597,24 @@ def electron_production_gxy(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_mid_x
         fast += np.einsum('i,ixy->xy', chan.e_emit['KLL'], d)
         lmm += np.einsum('i,ixy->xy', chan.e_emit['LMM'], d)
         slow += np.einsum('i,ixy->xy', chan.e_emit['CK'], d)
-    targets = rho_ground_xy + (rho_mid_xy if rho_mid_xy is not None else 0.0)
-    slow += np.sum(eii_R_xy, axis=0) * targets
+    targets = np.real(rho_ground_xy + (rho_mid_xy if rho_mid_xy is not None else 0.0))
 
-    prod[birth['photo']] += np.real(photo)
+    prod[birth['photo']] += np.real(photo - photo_M)
+    prod[birth['photo_M']] += np.real(photo_M)
     prod[birth['KLL']] += fast
     prod[birth['LMM']] += lmm
     prod[birth['CK']] += slow
+    if X.eii_secondary_matrix is None:
+        prod[birth['secondary']] += np.sum(eii_R_xy, axis=0) * targets
+    else:
+        prod += np.einsum('dg,gxy->dxy', X.eii_secondary_matrix, np.real(rho_e_gxy[:-1])) * targets
     return prod
 
 
 def MB_electron_regular(t, rho_e_gxy, params):
     """Free-electron slowing-down ladder (Part VII Eq. VII.3): production, then transfer g -> g+1 at
-    the continuous-slowing-down rate; the last bin (thermalised) only accumulates."""
+    the continuous-slowing-down rate (0 for fixed-energy levels); the last bin (below E_bottom) only
+    accumulates."""
     X, prod_gxy = params
     flow = X.eii_k_down[:, None, None] * rho_e_gxy
     d = prod_gxy - flow

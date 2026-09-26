@@ -166,7 +166,11 @@ population-creating bug until 2026-09-15 (`docs/theory-middlemen-and-pathway-aud
   every optical coherence and to the 2p₃/₂–2p₁/₂ coherence.
 - **`use_eii: true`** + `eii: {...}` — free-electron slowing-down ladder (`XLO_sim/eii.py`:
   Burgess–Chidichimo cross sections, Joy–Luo stopping) whose EII rates feed base/2s/middleman
-  populations. `docs/eii-free-electrons-implementation-plan.md`.
+  populations. `docs/eii-free-electrons-implementation-plan.md`. `docs/theory-eii-electron-ladder-explained.md`
+  explains the model as built. The `eii:` keys `anchor_birth_energies`, `secondary_spectrum` and
+  `slowing_down` (all off by default, so old configs are unchanged) give the finer anchored ladder,
+  the δ-electron cascade and the fixed-energy bound. The low-energy electron counts with
+  `secondary_spectrum` measure deposited energy, not physical free electrons (that doc, §5).
 
 `config/base/Cu-seed-{SASE,mono-SASE}-middlemen.yaml` and `...-middlemen-eii.yaml` are the base
 configs: the double-satellite configs of the same name plus the extension blocks. The `eii:`,
@@ -229,6 +233,10 @@ Several things are easy to get wrong with these families:
 - The SASE base configs are 3×3. Use `xgrid=ygrid=5` for anything compared with experiment:
   `generate_coherence_sweeps.sh` does, and `SASE_GRID=... generate_bracket_sweeps.sh` can.
 - 5×5 SASE needs `sbatch --mem=64G`, and the generators print it.
+`generate_progression_sweeps.sh` (mono only, same submit script) runs the model one addition at a
+time: L2 only (`Cu-seed-mono-SASE-L2-original.yaml`), + single satellites and middlemen
+(`Cu-seed-mono-SASE-satellite-middlemen.yaml`), + double satellites, + EII in three forms. It also
+writes a population-budget family for the EII variants.
 `scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families, and
 `scripts/plot_coherence_sweep.py` the coherence family. The latter reads its mono experiment from
 `../RSA-derivation-bloch/data/exp_mono_scatter_slide9bins.csv`. The population-budget

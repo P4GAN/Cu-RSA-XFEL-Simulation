@@ -18,6 +18,8 @@ Transforms (KEY=VALUE, applied in order):
                         lines: detuning_eV = 0, detuning_eV_L2_split = hwKalpha1N - hwKalpha2N (the
                         "spectator hole delocalises before the 2p hole decays" picture)
   eii_spatial=<f>       eii.spatial_factor = f (requires an eii block)
+  eii=<key>:<yaml>      any key of the eii block (value parsed as YAML), e.g. eii=n_groups:24,
+                        eii=slowing_down:false; XLO_sim rejects keys the block doesn't know
   mixing=<rate>,<scope>,<coh>
                         L3 sublevel mixing at <rate> fs^-1 in scope 'sat' (satellite blocks) or
                         'all' (base too); <coh> = L3_sublevel_mixing_coherence_factor (1 Lindblad,
@@ -68,6 +70,11 @@ def apply(cfg, name, value):
         if not cfg.get('use_eii'):
             raise SystemExit('eii_spatial needs a config with use_eii: true')
         cfg['eii']['spatial_factor'] = float(value)
+    elif name == 'eii':
+        if not cfg.get('use_eii'):
+            raise SystemExit('eii=... needs a config with use_eii: true')
+        key, _, raw = value.partition(':')
+        cfg['eii'][key] = yaml.safe_load(raw)
     elif name == 'mixing':
         rate, scope, coh = value.split(',')
         rate, coh = float(rate), float(coh)

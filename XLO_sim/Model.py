@@ -8,7 +8,7 @@ from . import tools
 # eii: keys slowing_down / anchor_birth_energies / secondary_spectrum) mostly in eii.py; they are listed
 # here because a checkout that has them has every file.)
 MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor', 'raman_dephasing', 'eii_nonthermal',
-                            'eii_collisions', 'satellite_sign_fix', 'readout_fix'})
+                            'eii_collisions', 'satellite_sign_fix', 'readout_fix', 'raman_dephasing_satellite'})
 
 
 @njit(cache=True, fastmath=True)

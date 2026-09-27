@@ -999,14 +999,16 @@ def peak_memory_gb(who=resource.RUSAGE_SELF):
 PATHWAY_EXTENSION_KEYS = ('use_middlemen', 'use_eii', 'L2_CK_feed', 'L3_sublevel_mixing_fs_inv',
                           'L3_sublevel_mixing_satellite_fs_inv', 'L3_sublevel_mixing_coherence_factor',
                           'GammaA_L1_to_L2eVN', 'sublevel_raman_dephasing_fs_inv',
-                          'satellite_detuning_sign_fix', 'read_field_after_last_plane')
+                          'satellite_detuning_sign_fix', 'read_field_after_last_plane',
+                          'sublevel_raman_dephasing_satellite_fs_inv')
 # Keys that are "active" at a value other than the truthy/falsy split: (key, inactive value).
 _EXTENSION_INACTIVE_VALUE = {'L3_sublevel_mixing_coherence_factor': 1.0}
 # Model.MODEL_FEATURES entries a key needs beyond the base extension code.
 _EXTENSION_REQUIRED_FEATURE = {'L3_sublevel_mixing_coherence_factor': 'mixing_coherence_factor',
                                'sublevel_raman_dephasing_fs_inv': 'raman_dephasing',
                                'satellite_detuning_sign_fix': 'satellite_sign_fix',
-                               'read_field_after_last_plane': 'readout_fix'}
+                               'read_field_after_last_plane': 'readout_fix',
+                               'sublevel_raman_dephasing_satellite_fs_inv': 'raman_dephasing_satellite'}
 # Keys inside the eii: block that need a Model feature. XLO_sim rejects unknown eii keys at load, but
 # only since that check existed; this names the missing feature instead.
 _EII_KEY_REQUIRED_FEATURE = {'slowing_down': 'eii_nonthermal', 'anchor_birth_energies': 'eii_nonthermal',

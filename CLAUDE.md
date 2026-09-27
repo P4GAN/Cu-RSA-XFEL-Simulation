@@ -247,7 +247,15 @@ time: L2 only (`Cu-seed-mono-SASE-L2-original.yaml`), + single satellites and mi
 writes a population-budget family for the EII variants.
 `generate_gap_sweeps.sh` (mono + SASE + budget) stacks the two bug fixes and Bote–Salvat onto the
 progression's full model, then tests dephasing and core-hole EII on top (`submit_pathway_sweep_sase.sh`
-needs `--mem=64G --time=08:00:00` there). `scripts/plot_progression.py` plots the progression family.
+needs `--mem=64G --time=08:00:00` there); `scripts/plot_gap_sweep.py` plots it. `scripts/plot_progression.py`
+plots the progression family. Since `read_field_after_last_plane`, the 20 µm foil gives an off-resonant T of
+0.379 against the measured 0.413 (an 18.25 µm foil): compare absorbances divided by each curve's own cold
+absorbance, as plot_gap_sweep.py does.
+`generate_final_sweeps.sh` (mono only, 25 measured photon energies) is the presentation family: the model in
+five steps (bare lines, single satellites, double satellites, middlemen, electrons), every fix on, plus three
+final experiments (collisional dephasing, core-hole EII keeping triple holes in the double blocks, 2p-3d
+exchange as satellite-only Raman dephasing `sublevel_raman_dephasing_satellite_fs_inv`);
+`scripts/plot_final.py` plots it and `docs/final-model-progression.md` explains each step.
 `scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families, and
 `scripts/plot_coherence_sweep.py` the coherence family. The latter reads its mono experiment from
 `../RSA-derivation-bloch/data/exp_mono_scatter_slide9bins.csv`. The population-budget

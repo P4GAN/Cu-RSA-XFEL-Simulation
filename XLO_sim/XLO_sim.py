@@ -280,6 +280,13 @@ class XLO_sim:
             raise ValueError('sublevel_raman_dephasing_fs_inv must be >= 0')
         if self.raman_dephasing_fs:
             self.Mij = self.Mij + self.raman_dephasing_fs * raman_coherence_mask(self.ei_L3 + self.ei_L2, self.ei_K)
+        # The same, on the satellite blocks only: in an open-shell spectator state the 2p hole couples to the
+        # spectator by exchange (2p-3d multiplet splitting ~1-2 eV), so its sublevels are not eigenstates and
+        # precess at ~splitting/hbar whatever the fluence; the bare 2p hole of the closed-shell base block has
+        # no such partner. docs/final-model-progression.md, experiment E3.
+        self.raman_dephasing_sat_fs = float(self.config.get('sublevel_raman_dephasing_satellite_fs_inv', 0.0))
+        if self.raman_dephasing_sat_fs < 0.0:
+            raise ValueError('sublevel_raman_dephasing_satellite_fs_inv must be >= 0')
 
         # Sign convention reference for the base K<->L3 pair (+1 for i in K,j in L3; -1 reversed;
         # 0 within a manifold) -- not consumed elsewhere, the satellite channels use the equivalent
@@ -455,8 +462,9 @@ class XLO_sim:
 
                 S_ion_Fi_chan[:, ei_L2_sat.astype(bool)] = channel.get('sigma_ion_from_2p1', 0.0)
 
-            if self.raman_dephasing_fs:
-                Mij = Mij + self.raman_dephasing_fs * raman_coherence_mask(ei_L3_sat + ei_L2_sat, ei_K_sat)
+            if self.raman_dephasing_fs or self.raman_dephasing_sat_fs:
+                Mij = Mij + ((self.raman_dephasing_fs + self.raman_dephasing_sat_fs)
+                             * raman_coherence_mask(ei_L3_sat + ei_L2_sat, ei_K_sat))
 
             Delta_ij_chan = f_local[:, None] - f_local[None, :]
 

@@ -279,3 +279,45 @@ The 24-level ladder is stable on the SASE step too (dt = 0.042 fs, k·dt ≤ 1.4
   temperature broadening, and three-body recombination. This is the warm-dense-matter end of §5.
 - **Real transport** instead of `spatial_factor` (Part VII implementation plan step 6), only if a
   factor 0.44–0.69 matters.
+
+---
+
+## 11. Results (gap family: mono 24933261, SASE 24933282, budget 24933285)
+
+Plots: `scripts/plot_gap_sweep.py` → `figs/gap_*`. Provenance is clean for every variant (commit b4b8c21,
+flags as intended). The self-seeded numbers are divided by each curve's own cold absorbance (next item).
+
+**Readout.** Correct, but it exposes a foil mismatch. With every absorption step counted, the model's 8000 eV
+transmission at 1 µJ is 0.379 (20 µm at σ = 5.86 × 10⁻⁷ nm²). The measured 0.413 is an 18.25 µm foil at the
+same cross section. The off-by-one (18.6 µm effective) had hidden this. After dividing by the cold
+absorbance, the readout fix changes nothing (Kα1 at 20 µJ: 0.48 of experiment before and after). Future
+configs should use a foil that reproduces the measured cold transmission (zmax ≈ 18.25 µm), or compare
+normalised.
+
+**Satellite sign.** The line centroids move red by 0.7 eV (Kα1) and 0.4 eV (Kα2) at 1 µJ: 8048.45 → 8047.76
+eV, measured 8046.65. SASE moves 8048.47 → 8047.60 (measured 8045.7). The Kα1 peak drops 3–4% and Kα2 by 10–18% (least at high fluence);
+the area is unchanged (−1%).
+The measured centroids move *blue* with fluence (+1.0 eV Kα1, +1.3 eV Kα2 from 1 to 30 µJ). The model's
+barely move (−0.3 / +0.5 eV).
+
+**Bote–Salvat.** Kα1 depth +4–6% and area +4–5% at 5–30 µJ (b → c), close to the predicted 12% → 19% EII share.
+
+**Collisional dephasing (κ = 1).**
+- Self-seeded: the saturated Kα1 depth rises +11–15% (d) and +15–20% for the Raman half alone (e). The area
+  rises +20–26% (d), +8–11% (e). The model's 20 → 30 µJ decline in depth becomes flat. The 1s/2p₃/₂ hole
+  ratio rises 19–24% at 20–30 µJ: the dark state is partly released.
+- SASE: FWHM +0.5 eV at 40 µJ, against the +8 eV the data need. The peak drops 8% and the area barely
+  moves. At κ = 1, electron collisions are an order of magnitude too weak for the SASE width growth.
+
+**Core-hole EII (atomic picture).** At 20–30 µJ it moves ~45% of the base hole time into satellites. It also
+*loses* 30–37% of the total core-hole time: the doubles' next hit (a triple hole) and 3p hits on satellites
+have no block and go to the non-resonant pool. So the self-seeded depth is −4%, the area +6%, and the SASE
+peak −19% at 40 µJ.
+**This corrects §7.** With core-hole EII on, the flux into triple holes (0.06–0.13 per atom at the beam centre,
+20–30 µJ) is as large as the base → single step. A triple-hole block (2p⁻¹3d⁻³, ~−2.5 eV) and a 2p⁻¹3p⁻¹3d⁻¹
+block would return that absorption to the red side of Kα1.
+
+**Where the model stands:** at best 55–57% of the measured saturated Kα1 depth (e), 47–50% of Kα2, and 38–41% of
+the band area (d). The deficit is not the line peaks. It is the broad absorption that fills 8015–8060 eV and the valley
+between the lines: at 20 µJ, 8032–8040 eV, the measured A/A_cold is 0.25–0.30 against 0.06–0.10 in every
+variant. At SASE 2 µJ the area is 4.7× short, where the self-seeded 1 µJ area is 1.9× short.

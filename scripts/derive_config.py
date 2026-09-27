@@ -53,7 +53,7 @@ EXTENSION_KEYS = ('use_middlemen', 'middlemen', 'L2_CK_feed', 'GammaA_L1_to_L3M4
 # Top-level model flags flag= may add (mirrors XLO_sim/tools.PATHWAY_EXTENSION_KEYS; importing tools here
 # would pull in the whole simulation stack)
 FLAG_KEYS = ('sublevel_raman_dephasing_fs_inv', 'satellite_detuning_sign_fix', 'read_field_after_last_plane',
-             'L3_sublevel_mixing_coherence_factor')
+             'L3_sublevel_mixing_coherence_factor', 'sublevel_raman_dephasing_satellite_fs_inv')
 
 
 def _channels(cfg):

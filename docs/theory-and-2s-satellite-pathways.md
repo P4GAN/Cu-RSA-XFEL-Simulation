@@ -505,6 +505,12 @@ coupling or branching-ratio parameters are needed** — only rates:
 | Quantity | Count | Notes |
 |---|---|---|
 | Detunings $\Delta_k$ | 3 | satellite transition energy − Kα1 energy, converted via $/\hbar$ |
+
+> **Erratum (2026-09-27).** The code put these satellites at the mirror image: a feature sits at
+> $-(f_{upper}-f_{lower})$ in the frame (the base block's $f_{L2}=-\Delta\omega_{L2-L3}$ puts Kα2 at
+> −19.93 eV), but the satellite blocks used $f_{U_k}=+\Delta_k$. So a satellite absorbed at Kα1 − Δ_k, and
+> its Kα2 partner at Kα1 − Δ_{L2,k} instead of Kα1 + Δ_k − Δ_{L2,k}. `satellite_detuning_sign_fix: true`
+> uses $f_{U_k}=-\Delta_k$, $f_{L2_k}=-\Delta_{L2,k}$. Check and evidence: `docs/eii-model-evaluation.md` §6.
 | Auger split $\Gamma_A^{(2s\to L_k)}$ | 3 (2 from splitting M45, 1 new L3M23 total + split) | §12.1(a); statistical-weight defaults proposed |
 | Spectator photoionization $\sigma^{(2p\to L_k)}_{\mathcal P,\mathcal E}$ | 6 (2 fields × 3 channels) | §12.1(b), sublevel-preserving |
 | Spectator photoionization $\sigma^{(1s\to U_k)}_{\mathcal P,\mathcal E}$ | 6 (2 fields × 3 channels) | §12.2, sublevel-preserving |

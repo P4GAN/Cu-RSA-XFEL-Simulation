@@ -7,14 +7,15 @@ from . import tools
 # ('raman_dephasing' is built in XLO_sim.__init__ as extra off-diagonal Mij, and 'eii_nonthermal' (the
 # eii: keys slowing_down / anchor_birth_energies / secondary_spectrum) mostly in eii.py; they are listed
 # here because a checkout that has them has every file.)
-MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor', 'raman_dephasing', 'eii_nonthermal'})
+MODEL_FEATURES = frozenset({'pathway_extensions', 'mixing_coherence_factor', 'raman_dephasing', 'eii_nonthermal',
+                            'eii_collisions', 'satellite_sign_fix', 'readout_fix'})
 
 
 @njit(cache=True, fastmath=True)
 def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus, Tijs_minus,
                              Mij, Gamma_sp_Gij, S_ion_Fif, feed_diag_ixy, Delta_ij,
                              J_Omega_minus_xy, J_Omega_plus_xy, rate_equations, mix_mask, gamma_mix,
-                             mix_coh):
+                             mix_coh, coll_rate_xy, coll_deph_ij):
     nlevel = rho_ijxy.shape[0]
     s_dim = Tijs_plus.shape[2]
     nx = rho_ijxy.shape[2]
@@ -32,6 +33,9 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
 
     # Gamma_sp_Gij feeds each level from this block's own diagonal; feed_diag_ixy carries external
     # population feed (ground pump, 2s-Auger, spectator photoionization, ...) precomputed by the caller.
+    # coll_rate_xy (fs^-1, valence collisions of free electrons per atom) times coll_deph_ij damps each
+    # coherence (eii.dephasing, and the coherence half of eii.core_hole_EII, whose population loss arrives
+    # frozen in feed_diag_ixy like every other feed); all zeros leave the equations unchanged.
     diag_feed = np.zeros((nlevel, nx, ny), dtype=np.complex128)
     gamma_ion = np.zeros((nlevel, nx, ny), dtype=np.complex128)
     for i in range(nlevel):
@@ -94,7 +98,8 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                             for s in range(nlevel):
                                 if s != i:
                                     K_is = rho_ijxy[i, s, x, y]
-                                    g_is = Mij[i, s] + 0.5 * (gamma_ion[i, x, y].real + gamma_ion[s, x, y].real)
+                                    g_is = Mij[i, s] + 0.5 * (gamma_ion[i, x, y].real + gamma_ion[s, x, y].real) \
+                                        + coll_deph_ij[i, s] * coll_rate_xy[x, y]
                                     if mixing:
                                         g_is += 0.5 * gamma_mix * mix_coh * (mix_mask[i] + mix_mask[s])
                                     W_is = 2.0 * g_is * (K_is.real * K_is.real + K_is.imag * K_is.imag)
@@ -110,6 +115,7 @@ def _MB_nlevel_regular_core(rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, Tijs_plus
                         val += diag_feed[i, x, y]
                     else:
                         val += -1j * Delta_ij[i, j] * rho_ijxy[i, j, x, y]
+                        val += -coll_deph_ij[i, j] * coll_rate_xy[x, y] * rho_ijxy[i, j, x, y]
                     val += -0.5 * (gamma_ion[i, x, y] + gamma_ion[j, x, y]) * rho_ijxy[i, j, x, y]
                     if mixing:
                         if i == j:
@@ -171,19 +177,44 @@ def MB_nlevel_regular(t, rho_ijxy, params):
 
     """    
     
-    X, Omega_psxy, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy = params
+    X, Omega_psxy, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy = params[:7]
+    val_R_xy = params[7] if len(params) > 7 else None   # valence collision rates (eii_valence_rates_xy)
 
     Omega_plus_sxy = Omega_psxy[0, :, :, :]
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
     feed_diag_ixy = feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy)
+    if len(params) > 8 and params[8] is not None:
+        feed_diag_ixy = feed_diag_ixy - params[8]   # core_hole_EII loss, frozen at the start of the step
+    coll_rate_xy, coll_deph_ij = collision_terms(X, val_R_xy, rho_ijxy, base=True)
 
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus, X.Tijs_minus,
         X.Mij, X.Gamma_sp_Gij, X.S_ion_Fi[:, :], feed_diag_ixy, X.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy, X.use_rate_equations,
         X.mix_mask_base, X.L3_mixing_base_fs, X.L3_mixing_coh,
+        coll_rate_xy, coll_deph_ij,
     )
+
+
+def collision_terms(X, val_R_xy, rho_ijxy, base):
+    """(rate_xy, deph_ij) for _MB_nlevel_regular_core: the valence collision rate per atom summed over
+    3s/3p/3d, and the damping it causes on each coherence of this block: eii.dephasing's mask, plus
+    eii.core_hole_EII's scale on every coherence (a level emptied at rate r takes its coherences with it at
+    r/2 + r/2). Zeros when neither option is on."""
+    n = rho_ijxy.shape[0]
+    if val_R_xy is None or not (X.eii_core_on or X.eii_deph_on):
+        return np.zeros(rho_ijxy.shape[2:]), np.zeros((n, n))
+    deph = (X.eii_deph_mask_base if base else X.eii_deph_mask_sat) if X.eii_deph_on else np.zeros((n, n))
+    if X.eii_core_on:
+        deph = deph + X.eii_core_scale * (1.0 - np.eye(n))
+    return np.real(np.sum(val_R_xy, axis=0)), deph
+
+
+def core_hole_eii_loss_ixy(X, val_R_xy, rho_ijxy):
+    """eii.core_hole_EII population loss of one block per level (ixy), from start-of-step populations:
+    exactly what feed_diag_satellite_block and middleman_gain_loss hand on, so population is conserved."""
+    return X.eii_core_scale * np.real(np.einsum('iixy->ixy', rho_ijxy)) * np.real(np.sum(val_R_xy, axis=0))
 
 
 def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy=None):
@@ -229,7 +260,7 @@ def feed_diag_base_block(X, rho_ground_xy, rho_2s_xy, J_Omega_minus_xy, J_Omega_
 
 
 def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy,
-                              rho_mid_xy=None, eii_R_xy=None):
+                              rho_mid_xy=None, eii_R_xy=None, val_R_xy=None):
     """
     External population feed into one 2s-hole satellite channel's local block diagonal
     (docs/theory-and-2s-satellite-pathways.md, Part II): 2s-hole Auger decay (Eq. S2) plus
@@ -356,6 +387,15 @@ def feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J
             if eii_R_xy is not None:
                 feed[n_base:] += np.einsum('i,xy->ixy', (w / n_L2) * np.ones(n_L2), eii_R_xy[1] * rho_mid_xy)
 
+    # eii.core_hole_EII: a valence collision leaves a spectator hole on an atom that already has a core
+    # hole; the source block's sublevel i lands on this block's sublevel i (the same local layout). The
+    # sources lose the whole rate (core_hole_eii_loss_ixy); middleman_gain_loss takes the rest.
+    if chan.core_feeds and val_R_xy is not None and X.eii_core_on:
+        for src, sub, weight in chan.core_feeds:
+            src_rho = rho_base_ijxy if src < 0 else rho_sat_ijxy[src]
+            rate_xy = X.eii_core_scale * weight * np.real(val_R_xy[sub])
+            feed += np.einsum('ixy,xy->ixy', np.real(np.einsum('iixy->ixy', src_rho)), rate_xy)
+
     return feed
 
 
@@ -385,13 +425,17 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
     """
 
     (X, chan, Omega_psxy, rho_base_ijxy, rho_2s_xy, rho_sat_ijxy, J_Omega_minus_xy, J_Omega_plus_xy,
-     rho_mid_xy, eii_R_xy) = params
+     rho_mid_xy, eii_R_xy) = params[:10]
+    val_R_xy = params[10] if len(params) > 10 else None
 
     Omega_plus_sxy = Omega_psxy[0, :, :, :]
     Omega_minus_sxy = Omega_psxy[1, :, :, :]
 
     feed_diag_ixy = feed_diag_satellite_block(X, chan, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy, J_Omega_minus_xy,
-                                              J_Omega_plus_xy, rho_mid_xy, eii_R_xy)
+                                              J_Omega_plus_xy, rho_mid_xy, eii_R_xy, val_R_xy)
+    if len(params) > 11 and params[11] is not None:
+        feed_diag_ixy = feed_diag_ixy - params[11]   # core_hole_EII loss, frozen at the start of the step
+    coll_rate_xy, coll_deph_ij = collision_terms(X, val_R_xy, rho_ijxy, base=False)
 
     return _MB_nlevel_regular_core(
         rho_ijxy, Omega_plus_sxy, Omega_minus_sxy, X.Tijs_plus_satellite, X.Tijs_minus_satellite,
@@ -399,6 +443,7 @@ def MB_satellite_block_regular(t, rho_ijxy, params):
         feed_diag_ixy, chan.Delta_ij,
         J_Omega_minus_xy, J_Omega_plus_xy, X.use_rate_equations,
         X.mix_mask_sat, X.L3_mixing_sat_fs, X.L3_mixing_coh,
+        coll_rate_xy, coll_deph_ij,
     )
 
 
@@ -504,8 +549,14 @@ def eii_rates_xy(X, rho_e_gxy):
     return np.einsum('rg,gxy->rxy', X.eii_rate_table, rho_e_gxy)
 
 
+def eii_valence_rates_xy(X, rho_e_gxy):
+    """Valence (3s, 3p, 3d) collision rate per atom (fs^-1), (3, x, y), from the ladder populations
+    (x spatial_factor, not x M_shell_scale): the rate of eii.dephasing and eii.core_hole_EII."""
+    return np.einsum('sg,gxy->sxy', X.eii_valence_table, np.real(rho_e_gxy))
+
+
 def middleman_gain_loss(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_base_ijxy, rho_sat_ijxy,
-                        J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy=None):
+                        J_Omega_minus_xy, J_Omega_plus_xy, eii_R_xy=None, val_R_xy=None):
     """
     Feed into and loss rate out of the middleman pool (docs/middlemen-implementation-plan.md steps
     1-2), from start-of-step populations. The gain is the untracked outflow of every tracked
@@ -532,6 +583,15 @@ def middleman_gain_loss(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_base_ijxy
     gain += (X.twos_decay_untracked_fs + X.S_2s_F[0] * Jm + X.S_2s_F[1] * Jp) * rho_2s_xy
     gain += (X.S_other_F[0] * Jm + X.S_other_F[1] * Jp) * rho_other_xy
     gain += (X.S_ground_Fi[0, -1] * Jm + X.S_ground_Fi[1, -1] * Jp) * rho_ground_xy
+
+    if val_R_xy is not None and X.eii_core_on:
+        # core_hole_EII events without a tracked destination (3s holes, 3p holes on satellites, a third
+        # spectator on the double satellites, ...): the atom joins the pool
+        R = np.real(val_R_xy)
+        blocks = [(-1, diag)] + [(k, np.real(np.einsum('iixy->ixy', rho))) for k, rho in enumerate(rho_sat_ijxy)]
+        for src, d in blocks:
+            u = X.eii_core_untracked[src]
+            gain += X.eii_core_scale * np.sum(d, axis=0) * (u[0] * R[0] + u[1] * R[1] + u[2] * R[2])
 
     loss_rate = X.mid_S_out[0] * Jm + X.mid_S_out[1] * Jp
     if eii_R_xy is not None:

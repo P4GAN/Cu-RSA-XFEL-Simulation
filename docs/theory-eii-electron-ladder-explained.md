@@ -123,7 +123,9 @@ $$
 $$
 
 (`Model.eii_rates_xy`). σ_i is the Burgess–Chidichimo cross section with XATOM binding energies
-(`eii.bcf_cross_section_nm2`, Part VII Eq. VII.1). s is the `spatial_factor`, explained below. The
+(`eii.bcf_cross_section_nm2`, Part VII Eq. VII.1). It is 35–45% low for the 2p shell against the
+Bote–Salvat reference; `eii.cross_section: bote_salvat` switches (Part IX,
+`docs/eii-model-evaluation.md` §2). s is the `spatial_factor`, explained below. The
 table's rows are 2p₃/₂, 2p₁/₂, 2s and the M shell (3s + 3p + 3d, times `M_shell_scale`). Like J, the
 rates are frozen over one time step.
 
@@ -341,7 +343,8 @@ L shell, levels 1–8 are all of it.
   their energy quickly and form a hot electron gas. That gas can ionise and recombine (three-body
   recombination) and lowers the continuum. None of this is modelled: the non-thermal ladder is the
   requested picture.
-- **EII of atoms with a core hole** (§3 table).
+- **EII of atoms with a core hole** (§3 table). Optional since 27 September: `eii.core_hole_EII`, and
+  the matching collisional dephasing `eii.dephasing` (Part IX §§4–5).
 - **The later electrons of shortcut cascades** (§4).
 - **Continuum lowering** (R₀ = 1 in the cross section). It would lower the M-shell thresholds in the
   heated focus.
@@ -374,6 +377,9 @@ L shell, levels 1–8 are all of it.
 | `M_shell_scale` | 0 | M-shell EII of neutral atoms → middlemen, in units of the atomic BCF rate |
 | `birth_energies_eV` | photo 7090, photo_M 7950, KLL 7100, LMM 870, CK 60 | per source |
 | `subshells`, `stopping` | XATOM neutral Cu; Joy–Luo Cu | overrides |
+| `cross_section` | `bcf` | `bote_salvat`: Bote–Salvat for 2s/2p/3s/3p (Part IX §2) |
+| `dephasing` | off | `{optical: κ_o, raman: κ_r}`: collisional dephasing κ × valence collision rate (Part IX §5) |
+| `core_hole_EII` | off | `{scale, base: {3d: {...}, 3p: {...}}, <channel>: {...}}`: spectator holes on core-holed atoms (Part IX §4) |
 
 With the defaults, the configs written before 26 September (`Cu-seed-*-middlemen-eii*.yaml`) give
 bit-identical electron production to the code they were run with. That was checked by calling

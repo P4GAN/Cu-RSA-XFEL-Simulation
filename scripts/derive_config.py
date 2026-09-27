@@ -34,6 +34,9 @@ Transforms (KEY=VALUE, applied in order):
                         eii) from another config, e.g. onto the GRASP-recomputed double-satellite
                         config
   set=<key>:<yaml>      any top-level scalar, value parsed as YAML
+  flag=<key>:<yaml>     a model flag the base config may not carry yet (one of FLAG_KEYS, the
+                        switchable keys of tools.PATHWAY_EXTENSION_KEYS), e.g.
+                        flag=satellite_detuning_sign_fix:true
 """
 
 import argparse
@@ -45,6 +48,12 @@ EXTENSION_KEYS = ('use_middlemen', 'middlemen', 'L2_CK_feed', 'GammaA_L1_to_L3M4
                   'GammaA_L1_to_L2eVN', 'L3_sublevel_mixing_fs_inv',
                   'L3_sublevel_mixing_satellite_fs_inv', 'L3_sublevel_mixing_coherence_factor',
                   'sublevel_raman_dephasing_fs_inv', 'use_eii', 'eii')
+
+
+# Top-level model flags flag= may add (mirrors XLO_sim/tools.PATHWAY_EXTENSION_KEYS; importing tools here
+# would pull in the whole simulation stack)
+FLAG_KEYS = ('sublevel_raman_dephasing_fs_inv', 'satellite_detuning_sign_fix', 'read_field_after_last_plane',
+             'L3_sublevel_mixing_coherence_factor')
 
 
 def _channels(cfg):
@@ -102,6 +111,11 @@ def apply(cfg, name, value):
                 missing = sorted(set(targets) - names)
                 if missing:
                     raise SystemExit(f"{key}.targets names channels {missing} that {value} has but the base lacks")
+    elif name == 'flag':
+        key, _, raw = value.partition(':')
+        if key not in FLAG_KEYS:
+            raise SystemExit(f"flag={key}: not one of {FLAG_KEYS} (use set= for keys the base already has)")
+        cfg[key] = yaml.safe_load(raw)
     elif name == 'set':
         key, _, raw = value.partition(':')
         if key not in cfg:

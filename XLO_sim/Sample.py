@@ -93,9 +93,18 @@ class XLO_sample:
         t0 = it * X.dt
         mid_xy = rho_mid_xy if X.use_middlemen else None
         eii_R_xy = Model.eii_rates_xy(X, rho_e_gxy) if X.use_eii else None
+        # valence collision rates of the ladder electrons (eii.dephasing / eii.core_hole_EII), frozen over the step
+        val_R_xy = (Model.eii_valence_rates_xy(X, rho_e_gxy)
+                    if X.use_eii and (X.eii_deph_on or X.eii_core_on) else None)
+
+        # eii.core_hole_EII population loss of every block, frozen at the start of the step
+        core_loss = [None] * (1 + len(rho_sat_ijxy))
+        if val_R_xy is not None and X.eii_core_on:
+            core_loss = [Model.core_hole_eii_loss_ixy(X, val_R_xy, r) for r in [rho_ijxy] + list(rho_sat_ijxy)]
 
         d_rho = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, t0, X.dt,
-                                [X, Omega_it, rho_ground_xy, rho_2s_xy, J_minus_xy, J_plus_xy, eii_R_xy])
+                                [X, Omega_it, rho_ground_xy, rho_2s_xy, J_minus_xy, J_plus_xy, eii_R_xy, val_R_xy,
+                                 core_loss[0]])
         d_other = tools.RK45_step(Model.MB_other_regular, rho_other_xy, t0, X.dt,
                                   [X, rho_ground_xy, J_minus_xy, J_plus_xy, eii_R_xy])
         d_2s = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, t0, X.dt,
@@ -107,14 +116,15 @@ class XLO_sample:
         d_sat = [
             tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], t0, X.dt,
                             [X, chan, Omega_it, rho_ijxy, rho_2s_xy, rho_sat_ijxy, J_minus_xy, J_plus_xy,
-                             mid_xy, eii_R_xy])
+                             mid_xy, eii_R_xy, val_R_xy, core_loss[1 + k]])
             for k, chan in enumerate(X.satellite_channel_params)
         ]
 
         d_mid = d_e = None
         if X.use_middlemen:
             gain_xy, loss_rate_xy = Model.middleman_gain_loss(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_ijxy,
-                                                              rho_sat_ijxy, J_minus_xy, J_plus_xy, eii_R_xy)
+                                                              rho_sat_ijxy, J_minus_xy, J_plus_xy, eii_R_xy,
+                                                              val_R_xy)
             d_mid = tools.RK45_step(Model.MB_middleman_regular, rho_mid_xy, t0, X.dt, [gain_xy, loss_rate_xy])
         if X.use_eii:
             prod_gxy = Model.electron_production_gxy(X, rho_ground_xy, rho_other_xy, rho_2s_xy, mid_xy, rho_ijxy,
@@ -224,6 +234,10 @@ class XLO_sample:
 
             if (iz != X.zgrid-1):
                 Omega_pstxyz[:, :, :, :, :, iz + 1] = Omega_pstxy
+            elif getattr(X, 'read_field_after_last_plane', False):
+                # the field after every absorption step; by default the last slot keeps the field after
+                # the second-to-last plane (the old off-by-one, see _evaluate_n_level_3D_lean)
+                Omega_pstxyz[:, :, :, :, :, iz] = Omega_pstxy
 
         ######################
         # Main loop ends
@@ -251,7 +265,8 @@ class XLO_sample:
 
         Deliberately reproduces _evaluate_n_level_3D_full's off-by-one for Omega_pstxyz (index -1
         there is the state after the *second-to-last* iz, not the true final one) so lean and full
-        mode agree exactly -- do not "fix" this without also changing the full-history path.
+        mode agree exactly. X.read_field_after_last_plane (config key) reads the true final field in
+        both paths.
 
         Not used for interactive/notebook work -- Plot.py needs the full z/x/y profile.
 
@@ -420,8 +435,9 @@ class XLO_sample:
             if recorder is not None:
                 recorder.end_plane(iz, Omega_pstxy)
 
-            # Reproduces the full-history path's off-by-one (see docstring).
-            if iz == zgrid - 2:
+            # Reproduces the full-history path's off-by-one (see docstring) unless
+            # X.read_field_after_last_plane, which both paths honour.
+            if iz == (zgrid - 1 if getattr(X, 'read_field_after_last_plane', False) else zgrid - 2):
                 Omega_pstxyz_zlast = Omega_pstxy.copy()
 
             prev_rho_ground_txy = curr_rho_ground_txy

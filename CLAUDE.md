@@ -171,6 +171,14 @@ population-creating bug until 2026-09-15 (`docs/theory-middlemen-and-pathway-aud
   `slowing_down` (all off by default, so old configs are unchanged) give the finer anchored ladder,
   the δ-electron cascade and the fixed-energy bound. The low-energy electron counts with
   `secondary_spectrum` measure deposited energy, not physical free electrons (that doc, §5).
+  `docs/eii-model-evaluation.md` (Part IX) evaluates the model and adds three more `eii:` keys:
+  `cross_section: bote_salvat` (BCF is 35–45% low for 2p), `dephasing` (collisional dephasing at the
+  valence collision rate) and `core_hole_EII` (spectator holes on core-holed atoms → satellites).
+- **Two old bugs, fixed behind flags** (both off by default; Part IX §§6, 8):
+  `satellite_detuning_sign_fix` (satellites used to absorb at Kα1 − detuning_eV, the mirror image; 3d
+  satellites were on the blue side), and `read_field_after_last_plane` (the transmitted field was read
+  after N−2 of N−1 absorption steps). Any satellite result without the first flag has its satellite
+  lines mirrored.
 
 `config/base/Cu-seed-{SASE,mono-SASE}-middlemen.yaml` and `...-middlemen-eii.yaml` are the base
 configs: the double-satellite configs of the same name plus the extension blocks. The `eii:`,
@@ -237,6 +245,9 @@ Several things are easy to get wrong with these families:
 time: L2 only (`Cu-seed-mono-SASE-L2-original.yaml`), + single satellites and middlemen
 (`Cu-seed-mono-SASE-satellite-middlemen.yaml`), + double satellites, + EII in three forms. It also
 writes a population-budget family for the EII variants.
+`generate_gap_sweeps.sh` (mono + SASE + budget) stacks the two bug fixes and Bote–Salvat onto the
+progression's full model, then tests dephasing and core-hole EII on top (`submit_pathway_sweep_sase.sh`
+needs `--mem=64G --time=08:00:00` there). `scripts/plot_progression.py` plots the progression family.
 `scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families, and
 `scripts/plot_coherence_sweep.py` the coherence family. The latter reads its mono experiment from
 `../RSA-derivation-bloch/data/exp_mono_scatter_slide9bins.csv`. The population-budget

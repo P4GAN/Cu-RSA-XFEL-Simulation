@@ -397,3 +397,18 @@ reference configs unchanged:
   EII. It closes energy to ~15%, at about one electron per 30 eV deposited.
 - **Fixed-energy bound.** One level per source, no slowing down. It makes 5× more 2p holes per
   electron in total, but only ~10% more while a 6 fs pulse is present.
+
+## 13. Addendum, 27 September: evaluation of the EII model, and two bugs
+
+Detail in `docs/eii-model-evaluation.md` (Part IX):
+
+- **The satellites have been on the wrong side of Kα1.** A satellite of detuning d absorbed at −d; the 3d
+  spectators (−0.8, −1.7 eV) sat on the blue side. Fixed behind `satellite_detuning_sign_fix`.
+- **The readout** used 13 of 14 absorption steps; fixed behind `read_field_after_last_plane` (+7.7% on
+  every absorbance).
+- **The L-shell EII cross section** (Burgess–Chidichimo) is 35–45% below Bote–Salvat, the DWBA reference:
+  +58% L-shell EII per primary with `cross_section: bote_salvat`.
+- **Electron collisions with core-holed atoms** were missing. At 20 µJ the valence collision rate
+  reaches ~1–2 fs⁻¹, comparable with the 2p decay. As population transfer they feed the satellite ladder
+  (`core_hole_EII`); as pure dephasing they broaden the line by an amount that grows with fluence (+1.4 eV
+  at 20 µJ) and scramble the 2p₃/₂ sublevels (`dephasing`).

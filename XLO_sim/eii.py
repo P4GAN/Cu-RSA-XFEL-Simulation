@@ -14,6 +14,7 @@ Pure-Python formulas, evaluated once in `XLO_sim.__init__` from the `eii:` confi
 - `build_fixed_levels`: the no-slowing-down bound: one level per birth energy, no transfer.
 - `secondary_matrix`: where the secondary (delta) electron of each ionisation is born, from the
   binary-encounter spectrum dsigma/dW ~ 1/(W + I)^2 on 0 <= W <= (E - I)/2.
+- `bote_salvat_cross_section_nm2`: the DWBA-fitted inner-shell reference (`cross_section: bote_salvat`).
 
 The model these build is explained in docs/theory-eii-electron-ladder-explained.md.
 Units match the rest of the code: nm, fs, eV; cross sections in nm^2, rates in fs^-1.
@@ -71,6 +72,49 @@ def bcf_cross_section_nm2(E_eV, I_eV, zeta, n, l, R0=1.0, rn=1.0):
     return np.where(E > Ip, sigma, 0.0)
 
 
+# Bote, Salvat, Jablonski & Powell, At. Data Nucl. Data Tables 95, 871 (2009): analytic fits to DWBA
+# (overvoltage U = E/edge <= 16) and PWBA (U > 16) inner-shell EII cross sections, the reference the
+# measured K/L/M data are compared with (Llovet et al., J. Phys. Chem. Ref. Data 43, 013102 (2014)).
+# Cu (Z = 29) row of NIST's BoteSalvatICX.jl (src/xione.jl): subshells K, L1, L2, L3, M1, M2, M3; the 3d
+# is a valence shell in Cu and has no entry. Per subshell: edge (eV), A[5] (U <= 16), G[4], Anlj, Be.
+BOTE_SALVAT_CU = {
+    'K': (8950.25, (0.003, 5.0e-5, -0.00348, 0.00334, -0.00368), (0.302, 6.26, -1.02, 0.454), 6.49e-8, 0.765),
+    '2s': (1093.70, (0.0237, 0.000123, -0.0273, 0.0163, 0.00688), (0.0494, 8.23, -0.173, 0.0823), 4.59e-7, 1.02),
+    '2p1/2': (966.028, (0.0307, 0.000197, -0.037, 0.06, -0.0988), (0.0401, 7.26, -0.151, 0.0813), 8.76e-7, 0.959),
+    '2p3/2': (944.886, (0.0446, 0.000283, -0.0537, 0.0872, -0.144), (0.0361, 7.25, -0.0956, 0.0668), 1.8e-6, 0.959),
+    '3s': (127.925, (0.149, 0.000706, -0.181, -0.197, 1.08), (0.0219, 11.1, -0.102, 0.0657), 2.02e-6, 1.69),
+    '3p1/2': (87.0366, (0.231, 0.000892, -0.352, 0.387, -0.24), (0.0245, 12.5, -0.124, 0.0793), 2.66e-6, 1.34),
+    '3p3/2': (84.3061, (0.339, 0.0013, -0.526, 0.609, -0.464), (0.0235, 12.4, -0.119, 0.0771), 5.67e-6, 1.33),
+}
+# model subshell -> Bote-Salvat subshells summed (3p is one subshell in DEFAULT_SUBSHELLS)
+BOTE_SALVAT_MAP = {'2p3/2': ('2p3/2',), '2p1/2': ('2p1/2',), '2s': ('2s',), '3s': ('3s',), '3p': ('3p1/2', '3p3/2')}
+
+
+def bote_salvat_cross_section_nm2(E_eV, subshell):
+    """Bote-Salvat EII cross section (nm^2) of one model subshell of Cu (BOTE_SALVAT_MAP); same formula as
+    NIST's BoteSalvatICX.jl. Against it, the BCF formula is 35-45% low for 2p at 3-8 keV (0.109 instead
+    of 0.173 2p3/2 holes per 7.09 keV primary) and ~15% high for 3s/3p
+    (docs/eii-model-evaluation.md sec 2)."""
+    E = np.atleast_1d(np.asarray(E_eV, dtype=float))
+    out = np.zeros_like(E)
+    rev = 5.10998918e5
+    for name in BOTE_SALVAT_MAP[subshell]:
+        edge, A, G, Anlj, Be = BOTE_SALVAT_CU[name]
+        U = E / edge
+        lo = (U > 1.0) & (U <= 16.0)
+        opu = 1.0 / (1.0 + U[lo])
+        f = A[0] + A[1] * U[lo] + opu * (A[2] + opu ** 2 * (A[3] + opu ** 2 * A[4]))
+        out[lo] += (U[lo] - 1.0) * (f / U[lo]) ** 2
+        hi = U > 16.0
+        Eh = E[hi]
+        beta2 = Eh * (Eh + 2.0 * rev) / (Eh + rev) ** 2
+        x = np.sqrt(Eh * (Eh + 2.0 * rev)) / rev
+        fu = (2.0 * np.log(x) - beta2) * (1.0 + G[0] / x) + G[1] + G[2] * np.sqrt(rev / (Eh + rev)) + G[3] / x
+        out[hi] += Anlj / beta2 * U[hi] / (U[hi] + Be) * fu
+    out *= 4.0 * np.pi * BOHR_NM ** 2
+    return out if np.ndim(E_eV) else float(out[0])
+
+
 def speed_nm_fs(E_eV):
     """Relativistic electron speed (nm/fs) at kinetic energy E_eV."""
     gamma = 1.0 + np.asarray(E_eV, dtype=float) / ME_C2_EV
@@ -120,13 +164,23 @@ def ladder_edges(E_top_eV, E_bottom_eV, n_groups, anchors_eV=()):
     return np.array(edges)
 
 
-def _group_rates(n_atoms_nm3, E_eV, subshells):
-    return {name: n_atoms_nm3 * bcf_cross_section_nm2(E_eV, I_eV, zeta, n, l) * speed_nm_fs(E_eV)
-            for name, (I_eV, zeta, n, l) in subshells.items()}
+def cross_section_nm2(E_eV, name, subshell, cross_section='bcf'):
+    """EII cross section of one model subshell: 'bcf' (Burgess-Chidichimo, every subshell) or
+    'bote_salvat' (Bote-Salvat where it exists, i.e. 2s, 2p, 3s, 3p of Cu; BCF for the 3d)."""
+    if cross_section == 'bote_salvat' and name in BOTE_SALVAT_MAP:
+        return bote_salvat_cross_section_nm2(E_eV, name)
+    if cross_section not in ('bcf', 'bote_salvat'):
+        raise ValueError(f"eii.cross_section must be 'bcf' or 'bote_salvat', got {cross_section!r}")
+    return bcf_cross_section_nm2(E_eV, *subshell)
+
+
+def _group_rates(n_atoms_nm3, E_eV, subshells, cross_section='bcf'):
+    return {name: n_atoms_nm3 * cross_section_nm2(E_eV, name, sub, cross_section) * speed_nm_fs(E_eV)
+            for name, sub in subshells.items()}
 
 
 def build_ladder(n_atoms_nm3, n_groups=6, E_top_eV=7100.0, E_bottom_eV=30.0, subshells=None,
-                 birth_energies_eV=None, stopping=None, anchor_birth_energies=False):
+                 birth_energies_eV=None, stopping=None, anchor_birth_energies=False, cross_section='bcf'):
     """Discrete slowing-down ladder (Part VII section 4).
 
     Groups g = 0..n_groups-1 cover [E_bottom, E_top] (group 0 highest); a final bin g = n_groups
@@ -171,11 +225,12 @@ def build_ladder(n_atoms_nm3, n_groups=6, E_top_eV=7100.0, E_bottom_eV=30.0, sub
         birth_group[name] = g
 
     return {'E_edges': E_edges, 'E_centres': E_centres, 'k_down_fs': k_down,
-            'rates_fs': _group_rates(n_atoms_nm3, E_centres, subshells), 'birth_group': birth_group,
-            'subshells': subshells, 'fixed_energy': False}
+            'rates_fs': _group_rates(n_atoms_nm3, E_centres, subshells, cross_section),
+            'birth_group': birth_group, 'subshells': subshells, 'fixed_energy': False}
 
 
-def build_fixed_levels(n_atoms_nm3, E_bottom_eV=16.5, subshells=None, birth_energies_eV=None):
+def build_fixed_levels(n_atoms_nm3, E_bottom_eV=16.5, subshells=None, birth_energies_eV=None,
+                       cross_section='bcf'):
     """Fixed-energy electrons, the no-slowing-down bound: one level per distinct birth energy (energies
     within MERGE_LOG_TOL share a level, at the higher one), k_down = 0, so every electron keeps its
     birth energy and keeps ionising for the rest of the window. Sources born below E_bottom go
@@ -193,8 +248,8 @@ def build_fixed_levels(n_atoms_nm3, E_bottom_eV=16.5, subshells=None, birth_ener
     birth_group = {name: (G if E < E_bottom_eV else int(np.argmin(np.abs(np.log(E_centres / E)))))
                    for name, E in birth.items()}
     return {'E_edges': E_edges, 'E_centres': E_centres, 'k_down_fs': np.zeros(G),
-            'rates_fs': _group_rates(n_atoms_nm3, E_centres, subshells), 'birth_group': birth_group,
-            'subshells': subshells, 'fixed_energy': True}
+            'rates_fs': _group_rates(n_atoms_nm3, E_centres, subshells, cross_section),
+            'birth_group': birth_group, 'subshells': subshells, 'fixed_energy': True}
 
 
 def secondary_fractions(E_eV, I_eV, W_edges_eV):

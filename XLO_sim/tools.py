@@ -998,16 +998,20 @@ def peak_memory_gb(who=resource.RUSAGE_SELF):
 # (docs/middlemen-implementation-plan.md, docs/eii-free-electrons-implementation-plan.md).
 PATHWAY_EXTENSION_KEYS = ('use_middlemen', 'use_eii', 'L2_CK_feed', 'L3_sublevel_mixing_fs_inv',
                           'L3_sublevel_mixing_satellite_fs_inv', 'L3_sublevel_mixing_coherence_factor',
-                          'GammaA_L1_to_L2eVN', 'sublevel_raman_dephasing_fs_inv')
+                          'GammaA_L1_to_L2eVN', 'sublevel_raman_dephasing_fs_inv',
+                          'satellite_detuning_sign_fix', 'read_field_after_last_plane')
 # Keys that are "active" at a value other than the truthy/falsy split: (key, inactive value).
 _EXTENSION_INACTIVE_VALUE = {'L3_sublevel_mixing_coherence_factor': 1.0}
 # Model.MODEL_FEATURES entries a key needs beyond the base extension code.
 _EXTENSION_REQUIRED_FEATURE = {'L3_sublevel_mixing_coherence_factor': 'mixing_coherence_factor',
-                               'sublevel_raman_dephasing_fs_inv': 'raman_dephasing'}
+                               'sublevel_raman_dephasing_fs_inv': 'raman_dephasing',
+                               'satellite_detuning_sign_fix': 'satellite_sign_fix',
+                               'read_field_after_last_plane': 'readout_fix'}
 # Keys inside the eii: block that need a Model feature. XLO_sim rejects unknown eii keys at load, but
 # only since that check existed; this names the missing feature instead.
 _EII_KEY_REQUIRED_FEATURE = {'slowing_down': 'eii_nonthermal', 'anchor_birth_energies': 'eii_nonthermal',
-                             'secondary_spectrum': 'eii_nonthermal'}
+                             'secondary_spectrum': 'eii_nonthermal', 'cross_section': 'eii_collisions',
+                             'dephasing': 'eii_collisions', 'core_hole_EII': 'eii_collisions'}
 
 
 def active_pathway_extensions(config):
@@ -1082,7 +1086,9 @@ def verify_code(X, repo_root):
                     f"{np.round(X.eii_ladder['E_centres'], 1).tolist()} eV + bin below "
                     f"{X.eii_ladder['E_edges'][-1]:g} eV; births {X.eii_birth}; secondary spectrum "
                     f"{X.eii_secondary_matrix is not None}; spatial_factor {eii_cfg.get('spatial_factor', 0.5)}, "
-                    f"M_shell_scale {eii_cfg.get('M_shell_scale', 0.0)}\n")
+                    f"M_shell_scale {eii_cfg.get('M_shell_scale', 0.0)}; cross_section "
+                    f"{eii_cfg.get('cross_section', 'bcf')}; dephasing {eii_cfg.get('dephasing') or 'off'}; "
+                    f"core_hole_EII {eii_cfg.get('core_hole_EII') or 'off'}\n")
 
     def git(*cmd):
         try:

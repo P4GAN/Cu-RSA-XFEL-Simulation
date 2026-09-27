@@ -329,6 +329,18 @@ class XLO_sim:
         for idx, channel in enumerate(self.satellite_channels):
             _satellite_name_to_index.setdefault(channel['name'], []).append(idx)
 
+        # Satellite line positions. The base block puts a level at f = minus its physical energy offset
+        # (f[L2] = -DeltaomegaL2mL3A puts Kalpha2 at -19.93 eV, verified), and a feature then sits at
+        # -(f_upper - f_lower). The satellite f-vector below used +detuning_eV instead, which puts a
+        # satellite of detuning_eV = d at Kalpha1 - d (3d spectators on the blue side) and its Kalpha2
+        # partner at Kalpha1 - split instead of Kalpha1 + d - split. satellite_detuning_sign_fix: true
+        # uses the base convention (f[Uk] = -d, f[L2k] = -split); the default keeps the old placement so
+        # older runs reproduce. 0D kernel check and evidence: docs/eii-model-evaluation.md sec 6.
+        self.satellite_sign_fix = bool(self.config.get('satellite_detuning_sign_fix', False))
+        # Readout of the transmitted field after the last plane's absorption step (true) instead of the
+        # second-to-last (false, the old off-by-one: 13 of 14 steps at zgrid 15). Sample.py.
+        self.read_field_after_last_plane = bool(self.config.get('read_field_after_last_plane', False))
+
         self.satellite_channel_params = []
         for channel in self.satellite_channels:
             Delta_fs = channel['detuning_eV'] / self.hbar
@@ -384,7 +396,7 @@ class XLO_sim:
             # Per-level detuning from the shared Kalpha1 frame (f=0 for Lk, f=Delta_fs for Uk),
             # same f-vector construction as the base block's Delta_ij (theory doc Eq. K4) -- reduces
             # to Delta_fs*sign_ij_block, so this is a no-op generalization when L2k is absent.
-            f_local = Delta_fs * ei_K_sat
+            f_local = (-Delta_fs if self.satellite_sign_fix else Delta_fs) * ei_K_sat
 
             # Further-ionization loss (theory doc sec 12.4, Eq. S8): one cross section per manifold,
             # applied uniformly across its msublevels. Optional, defaults to 0 (no loss).
@@ -430,7 +442,10 @@ class XLO_sim:
 
                 # f[L2k] = f[Uk] - Delta_L2_split: per-channel analogue of the base block's
                 # f[L2]=f[K]-DeltaomegaL2mL3A, using this channel's own satellite splitting.
-                f_local = f_local + ei_L2_sat * (Delta_fs - Delta_L2_split_fs)
+                if self.satellite_sign_fix:
+                    f_local = f_local - ei_L2_sat * Delta_L2_split_fs
+                else:
+                    f_local = f_local + ei_L2_sat * (Delta_fs - Delta_L2_split_fs)
 
                 Gamma_coh_L2K_fs = 0.5 * (GammaL2_fs + GammaK_fs) + self.additional_dephasing
                 Gamma_coh_L2L3_fs = 0.5 * (GammaL2_fs + GammaL_fs) + self.additional_dephasing
@@ -675,7 +690,9 @@ class XLO_sim:
             # (config/base/Cu-seed-satellite-eii.yaml): refuse rather than run the ladder on defaults.
             check_keys(e_cfg, 'eii', {'n_groups', 'E_top_eV', 'E_bottom_eV', 'subshells', 'birth_energies_eV',
                                       'stopping', 'spatial_factor', 'M_shell_scale', 'slowing_down',
-                                      'anchor_birth_energies', 'secondary_spectrum'})
+                                      'anchor_birth_energies', 'secondary_spectrum', 'cross_section',
+                                      'dephasing', 'core_hole_EII'})
+            cross_section = e_cfg.get('cross_section', 'bcf')
             subshells = e_cfg.get('subshells')
             if subshells is not None:
                 subshells = {k: tuple(v) for k, v in subshells.items()}
@@ -693,14 +710,15 @@ class XLO_sim:
                     self.n, n_groups=int(e_cfg.get('n_groups', 6)), E_top_eV=float(e_cfg.get('E_top_eV', 7100.0)),
                     E_bottom_eV=float(e_cfg.get('E_bottom_eV', 30.0)), subshells=subshells,
                     birth_energies_eV=e_cfg.get('birth_energies_eV'), stopping=e_cfg.get('stopping'),
-                    anchor_birth_energies=bool(e_cfg.get('anchor_birth_energies', False)))
+                    anchor_birth_energies=bool(e_cfg.get('anchor_birth_energies', False)),
+                    cross_section=cross_section)
             else:
                 if secondary_spectrum:
                     raise ValueError('eii.secondary_spectrum needs slowing_down: true -- a fixed-energy '
                                      'secondary would keep ionising without ever paying for it')
                 self.eii_ladder = eii.build_fixed_levels(
                     self.n, E_bottom_eV=float(e_cfg.get('E_bottom_eV', 30.0)), subshells=subshells,
-                    birth_energies_eV=e_cfg.get('birth_energies_eV'))
+                    birth_energies_eV=e_cfg.get('birth_energies_eV'), cross_section=cross_section)
             # + one bin below E_bottom that no longer ionises or moves
             self.eii_G = len(self.eii_ladder['E_centres']) + 1
             self.eii_k_down = np.append(self.eii_ladder['k_down_fs'], 0.0)
@@ -723,6 +741,69 @@ class XLO_sim:
             # (G, G - 1): secondaries per unit time into each group from each active group, x spatial_factor
             # (the events the factor drops happen outside the focus, secondaries included)
             self.eii_secondary_matrix = spatial * eii.secondary_matrix(self.eii_ladder) if secondary_spectrum else None
+
+            # Valence (M-shell) collisions of the ladder electrons with atoms that already carry a core
+            # hole (docs/eii-model-evaluation.md secs 4-5). Their rate per atom, R_s = sum_g
+            # eii_valence_table[s, g] n_g for s = 3s, 3p, 3d (x spatial_factor, not x M_shell_scale), drives
+            # two options, each off by default:
+            #   dephasing: {optical: k_o, raman: k_r} -- extra pure dephasing k R_tot of every 1s-2p
+            #     coherence (line broadening that grows with the electron density) and of every 2p-2p /
+            #     1s-1s coherence (removes the 2p3/2 dark state), in every block. k = 1: every valence
+            #     collision randomises the phase (a localised spectator, the atomic picture).
+            #   core_hole_EII: {scale: s, base: {3d: {3d+: w, ...}, 3p: {...}}, <channel>: {3d: {...}}} --
+            #     the collision leaves a spectator hole: a block loses s R_tot of each level's population
+            #     (its coherences decay with it), and the listed fractions of s R_sub land on the same
+            #     sublevels of the target satellite blocks; the rest (3s, and every subshell or block
+            #     without a target, e.g. 2p^-1 3d^-3) goes to the middleman pool.
+            self.eii_valence_table = np.zeros((3, self.eii_G))
+            for k, s in enumerate(('3s', '3p', '3d')):
+                self.eii_valence_table[k, :-1] = spatial * R[s]
+            deph = e_cfg.get('dephasing') or {}
+            check_keys(deph, 'eii.dephasing', {'optical', 'raman'})
+            k_opt, k_raman = float(deph.get('optical', 0.0)), float(deph.get('raman', 0.0))
+            if min(k_opt, k_raman) < 0:
+                raise ValueError('eii.dephasing factors must be >= 0')
+
+            def deph_mask(ei_L, ei_K):
+                optical = np.outer(ei_K, ei_L) + np.outer(ei_L, ei_K)
+                return k_opt * optical + k_raman * raman_coherence_mask(ei_L, ei_K)
+
+            self.eii_deph_mask_base = deph_mask(self.ei_L3 + self.ei_L2, self.ei_K)
+            self.eii_deph_mask_sat = deph_mask(self.ei_L3_satellite + self.ei_L2_satellite, self.ei_K_satellite)
+            self.eii_deph_on = bool(k_opt or k_raman)
+
+            core = e_cfg.get('core_hole_EII') or {}
+            self.eii_core_scale = float(core.get('scale', 0.0))
+            self.eii_core_on = self.eii_core_scale > 0.0
+            sub_index = {'3s': 0, '3p': 1, '3d': 2}
+            for chan in params:
+                chan.core_feeds = []                      # (source block: -1 = base, subshell index, weight)
+            self.eii_core_untracked = {}                  # source block -> (3,) untracked fraction per subshell
+            if self.eii_core_on:
+                if self.nlevel != self.satellite_nlevel:
+                    raise ValueError('eii.core_hole_EII maps base sublevels onto satellite sublevels one to one; '
+                                     'it needs base and satellite blocks of the same size (use_L2_pathway on '
+                                     'with satellite channels, or off)')
+                for source, routes in core.items():
+                    if source == 'scale':
+                        continue
+                    src = -1 if source == 'base' else channel_index(source, 'eii.core_hole_EII')
+                    check_keys(routes, f'eii.core_hole_EII.{source}', set(sub_index))
+                    untracked = np.ones(3)
+                    for sub, targets in routes.items():
+                        for name, weight in targets.items():
+                            params[channel_index(name, f'eii.core_hole_EII.{source}.{sub}')].core_feeds.append(
+                                (src, sub_index[sub], float(weight)))
+                            untracked[sub_index[sub]] -= float(weight)
+                    if untracked.min() < -1e-9:
+                        raise ValueError(f'eii.core_hole_EII.{source}: weights of one subshell sum to more than 1')
+                    self.eii_core_untracked[src] = np.maximum(untracked, 0.0)
+                for src in [-1] + list(range(len(params))):
+                    self.eii_core_untracked.setdefault(src, np.ones(3))
+        else:
+            self.eii_deph_on = self.eii_core_on = False
+            for chan in params:
+                chan.core_feeds = []
 
     def configure(self, seed_field=None):
         """

@@ -305,3 +305,21 @@ Supporting changes:
 - New base configs `Cu-seed-mono-SASE-L2-original.yaml` (stage 1) and
   `Cu-seed-mono-SASE-satellite-middlemen.yaml` (stage 2); family `scripts/generate_progression_sweeps.sh`.
 - The model and the numbers: `docs/theory-eii-electron-ladder-explained.md`.
+
+## 9. Addendum, 27 September: collisions, cross sections, two bug fixes
+
+- `eii.py`: `BOTE_SALVAT_CU`, `bote_salvat_cross_section_nm2`, `cross_section_nm2`; `build_ladder` /
+  `build_fixed_levels` take `cross_section`.
+- `_MB_nlevel_regular_core` takes `coll_rate_xy, coll_deph_ij`: a per-pixel rate times a coherence-damping
+  mask. Callers pass zeros unless `eii.dephasing` or `eii.core_hole_EII` is on (numba's fastmath then
+  reorders sums: old configs agree to ~1e-16, not bit for bit).
+- `Model`: `eii_valence_rates_xy`, `collision_terms`, `core_hole_eii_loss_ixy` (frozen at the start of the
+  step); `feed_diag_satellite_block` routes core-hole EII; `middleman_gain_loss` takes the untracked part.
+  `MB_nlevel_regular` params [7] = valence rates, [8] = frozen loss; `MB_satellite_block_regular` [10], [11].
+- `XLO_sim`: `satellite_detuning_sign_fix`, `read_field_after_last_plane`; `eii:` keys `cross_section`,
+  `dephasing`, `core_hole_EII` (routing validated, weights per subshell <= 1). `Sample` honours the readout
+  flag in both paths. `MODEL_FEATURES` += `eii_collisions`, `satellite_sign_fix`, `readout_fix`.
+- `derive_config.py`: `flag=<key>:<yaml>` for model flags a base config lacks.
+- Checks (no XLO_sim run): Bote-Salvat port = NIST's implementation; one RK4 step old vs new code, 4a
+  config, agrees to 2e-16; core-hole EII bookkeeping exact to 2e-16; single-atom line positions with the
+  sign fix within the 0.25 eV scan step. Family: `scripts/generate_gap_sweeps.sh`.

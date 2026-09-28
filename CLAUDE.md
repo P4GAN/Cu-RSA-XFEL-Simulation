@@ -255,7 +255,11 @@ absorbance, as plot_gap_sweep.py does.
 five steps (bare lines, single satellites, double satellites, middlemen, electrons), every fix on, plus three
 final experiments (collisional dephasing, core-hole EII keeping triple holes in the double blocks, 2p-3d
 exchange as satellite-only Raman dephasing `sublevel_raman_dephasing_satellite_fs_inv`);
-`scripts/plot_final.py` plots it and `docs/final-model-progression.md` explains each step.
+`scripts/plot_final.py` plots it and `docs/final-model-progression.md` explains each step;
+`docs/bote-salvat-and-final-experiments.md` (Part X) gives the Bote–Salvat formula and the physics of the three
+experiments (`scripts/plot_eii_cross_sections.py` plots the cross sections). `scripts/plot_eii_diagnostics.py`
+illustrates step 5's electrons from a population budget. `generate_eii_scale_sweeps.sh` (mono + budget) scales the
+L-shell EII rates of step 5 by 2-16 (`eii.L_shell_scale`, Part C of that doc); `scripts/plot_eii_scale.py` plots it.
 `scripts/plot_bracket_sweep.py` plots the bracket (mono) and B1 families, and
 `scripts/plot_coherence_sweep.py` the coherence family. The latter reads its mono experiment from
 `../RSA-derivation-bloch/data/exp_mono_scatter_slide9bins.csv`. The population-budget

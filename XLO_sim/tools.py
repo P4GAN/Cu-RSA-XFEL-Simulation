@@ -1013,7 +1013,8 @@ _EXTENSION_REQUIRED_FEATURE = {'L3_sublevel_mixing_coherence_factor': 'mixing_co
 # only since that check existed; this names the missing feature instead.
 _EII_KEY_REQUIRED_FEATURE = {'slowing_down': 'eii_nonthermal', 'anchor_birth_energies': 'eii_nonthermal',
                              'secondary_spectrum': 'eii_nonthermal', 'cross_section': 'eii_collisions',
-                             'dephasing': 'eii_collisions', 'core_hole_EII': 'eii_collisions'}
+                             'dephasing': 'eii_collisions', 'core_hole_EII': 'eii_collisions',
+                             'L_shell_scale': 'eii_L_shell_scale'}
 
 
 def active_pathway_extensions(config):
@@ -1088,7 +1089,7 @@ def verify_code(X, repo_root):
                     f"{np.round(X.eii_ladder['E_centres'], 1).tolist()} eV + bin below "
                     f"{X.eii_ladder['E_edges'][-1]:g} eV; births {X.eii_birth}; secondary spectrum "
                     f"{X.eii_secondary_matrix is not None}; spatial_factor {eii_cfg.get('spatial_factor', 0.5)}, "
-                    f"M_shell_scale {eii_cfg.get('M_shell_scale', 0.0)}; cross_section "
+                    f"M_shell_scale {eii_cfg.get('M_shell_scale', 0.0)}, L_shell_scale {eii_cfg.get('L_shell_scale', 1.0)}; cross_section "
                     f"{eii_cfg.get('cross_section', 'bcf')}; dephasing {eii_cfg.get('dephasing') or 'off'}; "
                     f"core_hole_EII {eii_cfg.get('core_hole_EII') or 'off'}\n")
 

@@ -87,15 +87,23 @@ plt.rcParams.update({
 # --------------------------------------------------------------------------- loading
 
 def _npz_mean(run_dir, key):
-    """Repetition-averaged output `key`, summed over the chunk files of one run folder."""
-    out = None
-    for path in glob.glob(os.path.join(run_dir, "*.npz")):
-        with np.load(path) as d:
-            if key + "_sum" not in d.files:
-                return None
-            x = np.real(d[key + "_sum"]) / np.maximum(d[key + "_count"], 1)
-        out = x if out is None else out + x
-    return out
+    """Repetition-averaged output `key` over the chunk files of one run folder (sums / counts pooled).
+
+    A '.partial.npz' checkpoint is only used when the folder has no finished chunk file, and unreadable or
+    incomplete files (copied while being written) are skipped. None if nothing usable holds `key`."""
+    paths = glob.glob(os.path.join(run_dir, "*.npz"))
+    final = [p for p in paths if not p.endswith(".partial.npz")]
+    total = count = None
+    for path in final or paths:
+        try:
+            with np.load(path) as d:
+                if key + "_sum" not in d.files:
+                    continue
+                s, c = np.real(d[key + "_sum"]), d[key + "_count"]
+        except Exception:
+            continue
+        total, count = (s, c) if total is None else (total + s, count + c)
+    return None if total is None else total / np.maximum(count, 1)
 
 
 DIAG_KEYS = ("rho_mid_t_last", "n_e_total_t_last", "total_population_t_last",

@@ -82,6 +82,8 @@ def load_mono_family(root):
             if not m or not glob.glob(os.path.join(run, "*.npz")):
                 continue
             I_last, I_0 = pps._npz_mean(run, "I_int_thy_w_last"), pps._npz_mean(run, "I_int_thy_w_0")
+            if I_last is None or I_0 is None:
+                continue
             out.setdefault(os.path.basename(vdir), {}).setdefault(float(m.group(1)), {})[float(m.group(2))] = \
                 float(I_last.sum() / I_0.sum())
     return out

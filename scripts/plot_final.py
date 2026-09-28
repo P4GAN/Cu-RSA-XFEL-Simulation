@@ -53,6 +53,7 @@ EXP_LABEL = "experiment"
 INK, INK_2, MUTED, GRIDC = ppb.INK, ppb.INK_2, ppb.MUTED, ppb.GRIDC
 UJ = [1.0, 5.0, 20.0, 30.0]
 XLIM = (8000, 8070)
+N_ENERGIES = 25   # photon energies per pulse energy in generate_final_sweeps.sh
 FOOTNOTE = ("Model: 20 µm Cu foil, self-seeded pulse, 10 shots per point, on the measured photon energies. "
             "Experiment: scatter-panel bins, ±1 standard error.")
 
@@ -161,10 +162,17 @@ if __name__ == "__main__":
     root = args.data or newest_family()
     if not root:
         raise SystemExit("no data/final_sweep_mono_* folder; pass --data")
-    fam = {v: d for v, d in pbs.load_mono_family(root).items() if v in STEPS + EXPERIMENTS and set(d) >= set(UJ)}
-    missing = [v for v in STEPS + EXPERIMENTS if v not in fam]
-    if missing:
-        print(f"not plotted (missing or incomplete): {missing}")
+    loaded = pbs.load_mono_family(root)
+    n_points = N_ENERGIES
+    # a variant is plotted once every pulse energy has the full photon-energy grid
+    fam = {v: d for v, d in loaded.items()
+           if v in STEPS + EXPERIMENTS and all(len(d.get(u, {})) == n_points for u in UJ)}
+    for v in STEPS + EXPERIMENTS:
+        if v not in fam:
+            done = sum(len(loaded.get(v, {}).get(u, {})) for u in UJ)
+            print(f"not plotted: {v} ({done}/{len(UJ) * n_points} points finished)")
+    if not fam:
+        raise SystemExit(f"no complete variant in {root} (still running, or copied mid-run?)")
     exp = pcs.exp_mono(args.exp_mono)
     os.makedirs(FIGS, exist_ok=True)
     steps = [v for v in STEPS if v in fam]

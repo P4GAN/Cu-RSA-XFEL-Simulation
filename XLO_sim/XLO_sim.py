@@ -697,9 +697,9 @@ class XLO_sim:
             # tau_th_fs / birth_energy_eV are the superseded Phase-A schema
             # (config/base/Cu-seed-satellite-eii.yaml): refuse rather than run the ladder on defaults.
             check_keys(e_cfg, 'eii', {'n_groups', 'E_top_eV', 'E_bottom_eV', 'subshells', 'birth_energies_eV',
-                                      'stopping', 'spatial_factor', 'M_shell_scale', 'slowing_down',
-                                      'anchor_birth_energies', 'secondary_spectrum', 'cross_section',
-                                      'dephasing', 'core_hole_EII'})
+                                      'stopping', 'spatial_factor', 'M_shell_scale', 'L_shell_scale',
+                                      'slowing_down', 'anchor_birth_energies', 'secondary_spectrum',
+                                      'cross_section', 'dephasing', 'core_hole_EII'})
             cross_section = e_cfg.get('cross_section', 'bcf')
             subshells = e_cfg.get('subshells')
             if subshells is not None:
@@ -732,13 +732,20 @@ class XLO_sim:
             self.eii_k_down = np.append(self.eii_ladder['k_down_fs'], 0.0)
             spatial = float(e_cfg.get('spatial_factor', 0.5))
             M_scale = float(e_cfg.get('M_shell_scale', 0.0))
+            # L_shell_scale (default 1): a test multiplier on the L-shell EII cross sections, i.e. on the rates
+            # that make 2p3/2 / 2p1/2 / 2s holes (docs/bote-salvat-and-final-experiments.md, Part C). It
+            # changes nothing else: the stopping power, the secondaries and the valence collisions stay as
+            # they are, so a large value makes holes without paying their ~1 keV each.
+            L_scale = float(e_cfg.get('L_shell_scale', 1.0))
+            if L_scale < 0.0:
+                raise ValueError('eii.L_shell_scale must be >= 0')
             R = self.eii_ladder['rates_fs']
             # rows: EII into 2p3/2, 2p1/2, 2s, and the M shell (3s+3p+3d); a row whose destination
             # isn't modelled by this config is zero. Last column (the bin) is zero.
             table = np.zeros((4, self.eii_G))
-            table[0, :-1] = spatial * R['2p3/2']
-            table[1, :-1] = spatial * R['2p1/2'] * float(self.use_L2_pathway)
-            table[2, :-1] = spatial * R['2s'] * float(self.use_2s_pathway)
+            table[0, :-1] = spatial * L_scale * R['2p3/2']
+            table[1, :-1] = spatial * L_scale * R['2p1/2'] * float(self.use_L2_pathway)
+            table[2, :-1] = spatial * L_scale * R['2s'] * float(self.use_2s_pathway)
             table[3, :-1] = spatial * M_scale * (R['3s'] + R['3p'] + R['3d'])
             self.eii_rate_table = table
             self.eii_birth = dict(self.eii_ladder['birth_group'])

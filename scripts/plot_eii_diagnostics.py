@@ -1,27 +1,25 @@
-"""Illustrations of the free-electron (EII) model of step 5, from its population budget: where the electrons are,
-which of them make the 2p holes, when those holes arrive, and how often a core-holed ion is hit.
+"""Illustrations of the free electrons of the final model (step 5), from its population budget
+(scripts/generate_population_budget.sh): where the electrons are, which of them make the 2p holes, and when.
 
-Reads a population-budget folder of the step-5 model (default data/gap_budget_mono_24933285/c-bs: the 24-level
-ladder, delta electrons, Bote-Salvat, both fixes -- the same physics and flags as 5-electrons of the final
-family) at 8048 eV and 1/5/20/30 uJ, and writes into figs/ (PNG + PDF):
-  eii_cascade_20uJ        (a) electrons per atom in each energy level vs time; (b) the electron spectrum at five
-                          times; (c) which levels make the 2p3/2 EII holes; (d) 2p3/2 holes made per fs by
+Reads data/population_budget_mono_<job id>/5-electrons/ (default: the newest) at 8048 eV and 1/5/20/30 uJ, and
+writes into figs/ (PNG + PDF):
+  eii_cascade_20uJ        (a) electrons per atom in each energy group vs time; (b) the electron spectrum at five
+                          times; (c) which groups make the 2p3/2 EII holes; (d) 2p3/2 holes made per fs by
                           photoionisation and by EII
-  eii_vs_pulse_energy     (a) 2p3/2 holes per atom from each source; (b) EII's share of them; (c) the valence
-                          collision rate R(t) that drives the final experiments E1-E3
+  eii_vs_pulse_energy     (a) 2p3/2 holes per atom from each source; (b) EII's share of them; (c) the rate at which
+                          an ion is hit in its valence shell, R(t)
 
-Definitions (docs/theory-eii-electron-ladder-explained.md, docs/bote-salvat-and-final-experiments.md):
-- electrons: incident-fluence-weighted beam average, averaged over the foil (planes 1..14);
-- 2p3/2 hole rates count *direct* 2p3/2 holes on ground atoms and middlemen (a middleman's 2p hole goes to the
-  satellites it routes to): photo = sigma(2p3/2) J (ground + middlemen), EII = sum_g table[2p3/2, g] n_g
-  (ground + middlemen), per plane in the beam view, then foil-averaged (the targets stay near 1, so products of
-  beam averages are fair). 2s holes that Coster-Kronig into 2p3/2 are left out of both;
-- R(t) = spatial_factor sum_g n_g n_at v_g [sigma_3s + sigma_3p + sigma_3d](E_g) at the beam centre, foil average
-  (the rate of E1-E3; zero effect in step 5 itself).
-No simulation: this only reads saved budgets. Run from the repo root:
+Definitions:
+- electrons: incident-fluence-weighted beam average, averaged over the foil (planes 1..zgrid-1);
+- 2p3/2 hole rates count direct 2p3/2 holes on ground atoms and middlemen: photo = sigma(2p3/2) J, EII =
+  sum_g table[2p3/2, g] n_g, per plane in the beam view, then foil-averaged. 2s holes that Coster-Kronig decay
+  into 2p3/2 are left out of both;
+- R(t) = spatial_factor sum_g n_g n_at v_g [sigma_3s + sigma_3p + sigma_3d](E_g) at the beam centre, foil average.
+It only reads saved budgets. Run from the repo root:
   python scripts/plot_eii_diagnostics.py [--budget DIR]
 """
 
+import glob
 import os
 import argparse
 
@@ -36,7 +34,8 @@ from matplotlib.colors import LogNorm, LinearSegmentedColormap
 import plot_population_budget as ppb
 
 DATA, FIGS = ppb.DATA, ppb.FIGS
-BUDGET_DIR = os.path.join(DATA, "gap_budget_mono_24933285", "c-bs")
+BUDGETS = sorted(glob.glob(os.path.join(DATA, "population_budget_mono_*", "5-electrons")), key=os.path.getmtime)
+BUDGET_DIR = BUDGETS[-1] if BUDGETS else None
 INK, INK_2, MUTED, GRIDC = ppb.INK, ppb.INK_2, ppb.MUTED, ppb.GRIDC
 UJ = [1.0, 5.0, 20.0, 30.0]
 ENERGY = 8048.0
@@ -244,7 +243,7 @@ def fig_vs_pulse_energy(runs):
     ax.set_ylim(0, None)
     ax.set_xlabel("Time (fs)")
     ax.set_ylabel("valence hits per atom per fs")
-    ax.set_title("(c) Valence hits per ion (beam centre): the rate of E1–E3")
+    ax.set_title("(c) Valence hits per ion (beam centre)")
     ax.legend(frameon=False, loc="upper left", title="pulse energy")
 
     for ax in axes[:2]:
@@ -277,6 +276,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--budget", default=BUDGET_DIR, help="population-budget folder of one step-5 variant")
     args = parser.parse_args()
+    if not args.budget:
+        raise SystemExit("no data/population_budget_mono_*/5-electrons folder; pass --budget")
     runs = load(args.budget)
     os.makedirs(FIGS, exist_ok=True)
     fig_cascade(runs)

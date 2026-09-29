@@ -1,17 +1,11 @@
 #!/bin/bash
 # SLURM array job: population budget runs (scripts/run_population_budget.py) for a family written by
-# scripts/generate_population_budget.sh. $1 is the family directory holding a "<variant> <yaml>"
-# manifest.txt. Each array task runs CONFIGS_PER_TASK consecutive manifest entries concurrently, each
-# with cpus-per-task / CONFIGS_PER_TASK workers and NREP shots (one shot per worker, so NREP should not
-# exceed that). Output: data/<family>_<jobid>/<variant>/<config stem>.npz, config and provenance
-# alongside. The generator prints the exact sbatch lines (memory, NREP, CONFIGS_PER_TASK, array range).
-#
-# Before submitting:
-#   1. mkdir -p logs
-#   2. bash scripts/generate_population_budget.sh
+# scripts/generate_population_budget.sh, which prints the sbatch command. Each array task runs CONFIGS_PER_TASK
+# manifest entries side by side, each with NREP shots on cpus-per-task / CONFIGS_PER_TASK processes.
+# Output: data/<family>_<array job id>/<variant>/<config name>.npz, with the config and provenance alongside.
 
 #SBATCH --partition=allcpu
-#SBATCH --job-name=xlo-population-budget
+#SBATCH --job-name=xraymb-population-budget
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=40

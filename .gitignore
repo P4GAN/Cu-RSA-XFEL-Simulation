@@ -1,25 +1,14 @@
 **/.DS_Store
-
+**/__pycache__/
 *.egg-info/
-
 .vscode
+.claude/
 
-XLO_sim/__pycache__/
-
-__pycache__/
-
-data/
-
+# simulation outputs, figures and generated sweep configs stay local
+data/*
+!data/experiment/
 figs/
-
-profiling/
-
-config/generated/
-
 logs/
-
+profiling/
+config/generated/
 xatom/results.dat
-
-Report/
-
-Presentation/

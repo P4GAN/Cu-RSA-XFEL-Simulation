@@ -54,13 +54,84 @@ class XLO_sample:
         rho_sat_ijtxyz = [np.zeros((X.satellite_nlevel, X.satellite_nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid), dtype=complex)
                           for _ in X.satellite_channel_params]
 
+        # Plane 0 is driven by the incident field, so its photoionisation flux must come from that
+        # field too. The t-loop only writes J at the end of each step, from the field handed on to
+        # the next plane, so zeros here left plane 0 un-ionised while the seed still drove its
+        # coherent coupling.
         J_Omega_minus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
         J_Omega_plus_txy = np.zeros((X.tgrid, X.xgrid, X.ygrid))
+        J_Omega_minus_txy[:], J_Omega_plus_txy[:] = self._photon_flux(X, Omega_pstxyz[:, :, :, :, :, 0])
 
         return rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, rho_sat_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy
 
 
   
+    @staticmethod
+    def _photon_flux(X, Omega_ps):
+        """
+        Photon fluxes (J_Omega-, J_Omega+) from a field whose leading axes are (p, s), i.e.
+        (2, 2, t, x, y) or (2, 2, x, y) (PDF Eq. 9). Used for the z=0 initialisation and the
+        per-step update in both _evaluate_n_level_3D_full and _lean.
+        """
+        J_minus = np.real(Omega_ps[0, 0] * Omega_ps[1, 0] / X.flux_factor)
+        J_plus = np.real(Omega_ps[0, 1] * Omega_ps[1, 1] / X.flux_factor)
+        return J_minus, J_plus
+
+    @staticmethod
+    def _step_increments(X, it, Omega_it, rho_ijxy, rho_sat_ijxy, rho_ground_xy, rho_other_xy, rho_2s_xy,
+                         rho_mid_xy, rho_e_gxy, J_minus_xy, J_plus_xy):
+        """
+        RK4 increments of every population over time step `it`, all driven by start-of-step values
+        (the convention every feed term uses). Shared by _evaluate_n_level_3D_full and _lean so the
+        two can't drift apart. rho_mid_xy / rho_e_gxy are ignored unless X.use_middlemen /
+        X.use_eii (docs/middlemen-implementation-plan.md, docs/eii-free-electrons-implementation-plan.md).
+
+        Returns
+        -------
+        (d_rho, d_other, d_2s, d_ground, d_sat list, d_mid or None, d_e or None)
+        """
+        t0 = it * X.dt
+        mid_xy = rho_mid_xy if X.use_middlemen else None
+        eii_R_xy = Model.eii_rates_xy(X, rho_e_gxy) if X.use_eii else None
+        # valence collision rates of the ladder electrons (eii.dephasing / eii.core_hole_EII), frozen over the step
+        val_R_xy = (Model.eii_valence_rates_xy(X, rho_e_gxy)
+                    if X.use_eii and (X.eii_deph_on or X.eii_core_on) else None)
+
+        # eii.core_hole_EII population loss of every block, frozen at the start of the step
+        core_loss = [None] * (1 + len(rho_sat_ijxy))
+        if val_R_xy is not None and X.eii_core_on:
+            core_loss = [Model.core_hole_eii_loss_ixy(X, val_R_xy, r) for r in [rho_ijxy] + list(rho_sat_ijxy)]
+
+        d_rho = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, t0, X.dt,
+                                [X, Omega_it, rho_ground_xy, rho_2s_xy, J_minus_xy, J_plus_xy, eii_R_xy, val_R_xy,
+                                 core_loss[0]])
+        d_other = tools.RK45_step(Model.MB_other_regular, rho_other_xy, t0, X.dt,
+                                  [X, rho_ground_xy, J_minus_xy, J_plus_xy, eii_R_xy])
+        d_2s = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, t0, X.dt,
+                               [X, rho_ground_xy, J_minus_xy, J_plus_xy, eii_R_xy])
+        eii_ground_loss_xy = np.sum(eii_R_xy, axis=0) * rho_ground_xy if X.use_eii else None
+        d_ground = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, t0, X.dt,
+                                   [X, J_minus_xy, J_plus_xy, eii_ground_loss_xy])
+        # One block per satellite channel, fed from the base block's/rho_2s_xy's pre-update values.
+        d_sat = [
+            tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], t0, X.dt,
+                            [X, chan, Omega_it, rho_ijxy, rho_2s_xy, rho_sat_ijxy, J_minus_xy, J_plus_xy,
+                             mid_xy, eii_R_xy, val_R_xy, core_loss[1 + k]])
+            for k, chan in enumerate(X.satellite_channel_params)
+        ]
+
+        d_mid = d_e = None
+        if X.use_middlemen:
+            gain_xy, loss_rate_xy = Model.middleman_gain_loss(X, rho_ground_xy, rho_other_xy, rho_2s_xy, rho_ijxy,
+                                                              rho_sat_ijxy, J_minus_xy, J_plus_xy, eii_R_xy,
+                                                              val_R_xy)
+            d_mid = tools.RK45_step(Model.MB_middleman_regular, rho_mid_xy, t0, X.dt, [gain_xy, loss_rate_xy])
+        if X.use_eii:
+            prod_gxy = Model.electron_production_gxy(X, rho_ground_xy, rho_other_xy, rho_2s_xy, mid_xy, rho_ijxy,
+                                                     rho_sat_ijxy, J_minus_xy, J_plus_xy, eii_R_xy, rho_e_gxy)
+            d_e = tools.RK45_step(Model.MB_electron_regular, rho_e_gxy, t0, X.dt, [X, prod_gxy])
+        return d_rho, d_other, d_2s, d_ground, d_sat, d_mid, d_e
+
     def evaluate_n_level_3D(self, X):
         """
         Perform calculation of the ASE field generation and ionic density matrices evolution, with and without field absorption.
@@ -75,6 +146,8 @@ class XLO_sample:
 
         """
         if getattr(X, "keep_z_history", True):
+            if getattr(X, "movie_recorder", None) is not None:
+                raise ValueError("X.movie_recorder is only driven by the lean path: set X.keep_z_history = False")
             self._evaluate_n_level_3D_full(X)
         else:
             self._evaluate_n_level_3D_lean(X)
@@ -90,8 +163,12 @@ class XLO_sample:
         rho_ground_txyz, rho_other_txyz, rho_2s_txyz, rho_ijtxyz, rho_sat_ijtxyz, Omega_pstxyz, J_Omega_minus_txy, J_Omega_plus_txy = self.init_n_level_3D(X)
 
         Omega_pstxy = Omega_pstxyz[:, :, :, :, :, 0].copy()
-        
+
         n_sat = len(X.satellite_channel_params)
+
+        # Part VI/VII populations (None when their flag is off): middleman pool, free-electron ladder.
+        rho_mid_txyz = np.zeros((X.tgrid, X.xgrid, X.ygrid, X.zgrid)) if X.use_middlemen else None
+        rho_e_gtxyz = np.zeros((X.eii_G, X.tgrid, X.xgrid, X.ygrid, X.zgrid)) if X.use_eii else None
 
         # Main loop begins. Iterate over longitudinal coordinate
         for iz in range(0, X.zgrid):
@@ -102,28 +179,27 @@ class XLO_sample:
             rho_ground_xy = rho_ground_txyz[0, :, :, iz].copy()
             rho_other_xy = rho_other_txyz[0, :, :, iz].copy()
             rho_2s_xy = rho_2s_txyz[0, :, :, iz].copy()
+            rho_mid_xy = np.zeros((X.xgrid, X.ygrid)) if X.use_middlemen else None
+            rho_e_gxy = np.zeros((X.eii_G, X.xgrid, X.ygrid)) if X.use_eii else None
 
             ######################
             # Loop over simulation time window begins
             for it in range(0, X.tgrid):
-                d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], rho_ground_xy, rho_2s_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-
-                # One block per satellite channel, fed from the base block's/rho_2s_xy's pre-update
-                # (start-of-step) values, same convention as the other blocks above.
-                d_rho_sat_it = [
-                    tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
-                                     [X, chan, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_2s_xy, rho_sat_ijxy,
-                                      J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                    for k, chan in enumerate(X.satellite_channel_params)
-                ]
+                (d_rho_it_reg, d_rho_other_it, d_rho_2s_it, d_rho_ground_it, d_rho_sat_it, d_rho_mid_it,
+                 d_rho_e_it) = self._step_increments(
+                    X, it, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_sat_ijxy, rho_ground_xy, rho_other_xy,
+                    rho_2s_xy, rho_mid_xy, rho_e_gxy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :])
 
                 rho_ijxy += d_rho_it_reg
                 rho_ground_xy += d_rho_ground_it
                 rho_other_xy += d_rho_other_it
                 rho_2s_xy += d_rho_2s_it
+                if X.use_middlemen:
+                    rho_mid_xy = rho_mid_xy + d_rho_mid_it
+                    rho_mid_txyz[it, :, :, iz] = rho_mid_xy
+                if X.use_eii:
+                    rho_e_gxy = rho_e_gxy + d_rho_e_it
+                    rho_e_gtxyz[:, it, :, :, iz] = rho_e_gxy
                 # History (and hence the field source term below, which reads it) stores the
                 # physical density matrix; rho_ijxy/rho_sat_ijxy stay the integrator state, which
                 # differs from it only in rate-equation mode (Model.physical_rho).
@@ -142,7 +218,8 @@ class XLO_sample:
                     kappa_Omega_psxyz = Model.absorption(X, rho_ground_txyz[it, :, :, iz-1:iz+1], rho_other_txyz[it, :, :, iz-1:iz+1],
                                                          rho_2s_txyz[it, :, :, iz-1:iz+1],
                                                          rho_ijtxyz[:, :, it, :, :, iz-1:iz+1],
-                                                         rho_sat_ijxyz_list)
+                                                         rho_sat_ijxyz_list,
+                                                         rho_mid_txyz[it, :, :, iz-1:iz+1] if X.use_middlemen else None)
                     Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
 
                 Omega_pstxy[:, :, it, :, :] +=  1.0 * X.dz * Model.Omega_source_regular(X, rho_ijtxyz[:, :, it, :, :, iz])
@@ -150,14 +227,17 @@ class XLO_sample:
                     Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
                         X, rho_sat_ijtxyz[k][:, :, it, :, :, iz], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
-                J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
-                J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
+                J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :] = self._photon_flux(X, Omega_pstxy[:, :, it, :, :])
 
             # ######################
             # Loop over simulation time window ends
 
             if (iz != X.zgrid-1):
                 Omega_pstxyz[:, :, :, :, :, iz + 1] = Omega_pstxy
+            elif getattr(X, 'read_field_after_last_plane', False):
+                # the field after every absorption step; by default the last slot keeps the field after
+                # the second-to-last plane (the old off-by-one, see _evaluate_n_level_3D_lean)
+                Omega_pstxyz[:, :, :, :, :, iz] = Omega_pstxy
 
         ######################
         # Main loop ends
@@ -170,6 +250,8 @@ class XLO_sample:
 
         self.rho_2s_txyz = np.real(rho_2s_txyz)
         self.rho_other_txyz = np.real(rho_other_txyz)
+        self.rho_mid_txyz = rho_mid_txyz
+        self.rho_e_gtxyz = rho_e_gtxyz
 
     def _evaluate_n_level_3D_lean(self, X):
         """
@@ -183,12 +265,17 @@ class XLO_sample:
 
         Deliberately reproduces _evaluate_n_level_3D_full's off-by-one for Omega_pstxyz (index -1
         there is the state after the *second-to-last* iz, not the true final one) so lean and full
-        mode agree exactly -- do not "fix" this without also changing the full-history path.
+        mode agree exactly. X.read_field_after_last_plane (config key) reads the true final field in
+        both paths.
 
         Not used for interactive/notebook work -- Plot.py needs the full z/x/y profile.
+
+        An optional X.movie_recorder (XLO_sim/movie.py) is handed every step's state and streams a
+        reduced full-grid history to HDF5; it only reads, so the numerics are unchanged.
         """
 
         nlevel, tgrid, xgrid, ygrid, zgrid = X.nlevel, X.tgrid, X.xgrid, X.ygrid, X.zgrid
+        recorder = getattr(X, "movie_recorder", None)
         cx, cy = int(X.xgrid / 2), int(X.ygrid / 2)  # matches tools.compute_run_outputs exactly
 
         # t=0 initial-condition template, identical for every z -- re-copied into the rolling "xy"
@@ -212,19 +299,23 @@ class XLO_sample:
         Omega_pstxyz_z0 = Omega_pstxy.copy()
         Omega_pstxyz_zlast = Omega_pstxyz_z0
 
+        # Plane 0 sees the incident field's flux, as in init_n_level_3D (full path).
         J_Omega_minus_txy = np.zeros((tgrid, xgrid, ygrid))
         J_Omega_plus_txy = np.zeros((tgrid, xgrid, ygrid))
+        J_Omega_minus_txy[:], J_Omega_plus_txy[:] = self._photon_flux(X, Omega_pstxy)
 
         diag_idx = np.arange(nlevel)
         sat_diag_idx = np.arange(satellite_nlevel)
 
         prev_rho_ground_txy = prev_rho_other_txy = prev_rho_2s_txy = prev_rho_diag_txy = None
         prev_rho_sat_diag_txy = [None for k in range(n_sat)]
+        prev_rho_mid_txy = curr_rho_mid_txy = None
 
         # Populated only during the FINAL iz (see docstring) -- the full (off-diagonal included)
         # but center-pixel-only history that becomes self.rho_ijtxyz/rho_sat_ijtxyz.
         final_rho_ijt_center = None
         final_rho_sat_ijt_center = [None for k in range(n_sat)]
+        final_rho_e_gt_center = None
 
         for iz in range(0, zgrid):
 
@@ -233,6 +324,8 @@ class XLO_sample:
             rho_ground_xy = rho_ground_ic_xy.copy()
             rho_other_xy = rho_other_ic_xy.copy()
             rho_2s_xy = rho_2s_ic_xy.copy()
+            rho_mid_xy = np.zeros((xgrid, ygrid)) if X.use_middlemen else None
+            rho_e_gxy = np.zeros((X.eii_G, xgrid, ygrid)) if X.use_eii else None
 
             # float32/complex64: these buffers only ever get read back through Model.absorption()'s
             # lookback window (upcast to complex there), never fed into the RK4 state itself, so
@@ -244,34 +337,36 @@ class XLO_sample:
             curr_rho_diag_txy = np.empty((nlevel, tgrid, xgrid, ygrid), dtype=np.complex64)
             curr_rho_sat_diag_txy = [np.empty((satellite_nlevel, tgrid, xgrid, ygrid), dtype=np.complex64)
                                      for k in range(n_sat)]
+            if X.use_middlemen:
+                curr_rho_mid_txy = np.empty((tgrid, xgrid, ygrid), dtype=np.float32)
 
             is_final_iz = (iz == zgrid - 1)
             if is_final_iz:
                 final_rho_ijt_center = np.empty((nlevel, nlevel, tgrid), dtype=complex)
                 final_rho_sat_ijt_center = [np.empty((satellite_nlevel, satellite_nlevel, tgrid), dtype=complex)
                                             for k in range(n_sat)]
+                if X.use_eii:
+                    final_rho_e_gt_center = np.empty((X.eii_G, tgrid))
 
             ######################
             # Loop over simulation time window begins
             for it in range(0, tgrid):
-                d_rho_it_reg = tools.RK45_step(Model.MB_nlevel_regular, rho_ijxy, it * X.dt, X.dt, [X, Omega_pstxy[:, :, it, :, :], rho_ground_xy, rho_2s_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_other_it = tools.RK45_step(Model.MB_other_regular, rho_other_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_2s_it = tools.RK45_step(Model.MB_2s_regular, rho_2s_xy, it * X.dt, X.dt, [X, rho_ground_xy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                d_rho_ground_it = tools.RK45_step(Model.MB_ground_regular, rho_ground_xy, it * X.dt, X.dt, [X, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-
-                # One block per satellite channel, fed from the base block's/rho_2s_xy's pre-update
-                # (start-of-step) values, same convention as the other blocks above.
-                d_rho_sat_it = [
-                    tools.RK45_step(Model.MB_satellite_block_regular, rho_sat_ijxy[k], it * X.dt, X.dt,
-                                     [X, chan, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_2s_xy, rho_sat_ijxy,
-                                      J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :]])
-                    for k, chan in enumerate(X.satellite_channel_params)
-                ]
+                (d_rho_it_reg, d_rho_other_it, d_rho_2s_it, d_rho_ground_it, d_rho_sat_it, d_rho_mid_it,
+                 d_rho_e_it) = self._step_increments(
+                    X, it, Omega_pstxy[:, :, it, :, :], rho_ijxy, rho_sat_ijxy, rho_ground_xy, rho_other_xy,
+                    rho_2s_xy, rho_mid_xy, rho_e_gxy, J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :])
 
                 rho_ijxy += d_rho_it_reg
                 rho_ground_xy += d_rho_ground_it
                 rho_other_xy += d_rho_other_it
                 rho_2s_xy += d_rho_2s_it
+                if X.use_middlemen:
+                    rho_mid_xy = rho_mid_xy + d_rho_mid_it
+                    curr_rho_mid_txy[it, :, :] = rho_mid_xy
+                if X.use_eii:
+                    rho_e_gxy = rho_e_gxy + d_rho_e_it
+                    if is_final_iz:
+                        final_rho_e_gt_center[:, it] = rho_e_gxy[:, cx, cy]
 
                 # Physical density matrix for everything downstream of the integrator (field source
                 # term, stored centre-pixel history); same array as the state except in
@@ -292,6 +387,11 @@ class XLO_sample:
                 curr_rho_diag_txy[:, it, :, :] = rho_ijxy[diag_idx, diag_idx, :, :]
                 if is_final_iz:
                     final_rho_ijt_center[:, :, it] = rho_phys_ijxy[:, :, cx, cy]
+                if recorder is not None:
+                    # Before the propagation below overwrites Omega_pstxy[:, :, it]: this is still the
+                    # field that drove the step just taken.
+                    recorder.record_step(it, Omega_pstxy[:, :, it, :, :], rho_phys_ijxy, rho_sat_phys_ijxy,
+                                         rho_ground_xy, rho_other_xy, rho_2s_xy, rho_mid_xy, rho_e_gxy)
 
                 if iz != 0:
                     # Same [iz-1, iz] window Model.absorption() reads in the full-history path.
@@ -313,8 +413,13 @@ class XLO_sample:
                         w[sat_diag_idx, sat_diag_idx, :, :, 1] = curr_rho_sat_diag_txy[k][:, it, :, :]
                         window_sat_ij.append(w)
 
+                    window_mid = None
+                    if X.use_middlemen:
+                        window_mid = np.stack([prev_rho_mid_txy[it, :, :],
+                                               curr_rho_mid_txy[it, :, :]], axis=-1).astype(complex)
+
                     kappa_Omega_psxyz = Model.absorption(X, window_ground, window_other,
-                                                         window_2s, window_ij, window_sat_ij)
+                                                         window_2s, window_ij, window_sat_ij, window_mid)
                     Omega_pstxy[:, :, it, :, :] = self.optics.Fresnel_propagator_with_absorption(X, Omega_pstxy[:, :, it, :, :], X.dz, iz * X.dz, kappa_Omega_psxyz, X.lambdaKalpha1N)
 
                 Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(X, rho_phys_ijxy)
@@ -322,14 +427,17 @@ class XLO_sample:
                     Omega_pstxy[:, :, it, :, :] += 1.0 * X.dz * Model.Omega_source_regular(
                         X, rho_sat_phys_ijxy[k], X.Tijs_plus_satellite, X.Tijs_minus_satellite)
 
-                J_Omega_minus_txy[it, :, :] = np.real(Omega_pstxy[0, 0, it, :, :] * Omega_pstxy[1, 0, it, :, :] / X.flux_factor)
-                J_Omega_plus_txy[it, :, :] = np.real(Omega_pstxy[0, 1, it, :, :] * Omega_pstxy[1, 1, it, :, :] / X.flux_factor)
+                J_Omega_minus_txy[it, :, :], J_Omega_plus_txy[it, :, :] = self._photon_flux(X, Omega_pstxy[:, :, it, :, :])
 
             # ######################
             # Loop over simulation time window ends
 
-            # Reproduces the full-history path's off-by-one (see docstring).
-            if iz == zgrid - 2:
+            if recorder is not None:
+                recorder.end_plane(iz, Omega_pstxy)
+
+            # Reproduces the full-history path's off-by-one (see docstring) unless
+            # X.read_field_after_last_plane, which both paths honour.
+            if iz == (zgrid - 1 if getattr(X, 'read_field_after_last_plane', False) else zgrid - 2):
                 Omega_pstxyz_zlast = Omega_pstxy.copy()
 
             prev_rho_ground_txy = curr_rho_ground_txy
@@ -337,6 +445,7 @@ class XLO_sample:
             prev_rho_2s_txy = curr_rho_2s_txy
             prev_rho_diag_txy = curr_rho_diag_txy
             prev_rho_sat_diag_txy = curr_rho_sat_diag_txy
+            prev_rho_mid_txy = curr_rho_mid_txy
 
         ######################
         # Main loop ends
@@ -357,3 +466,7 @@ class XLO_sample:
 
         self.rho_2s_txyz = curr_rho_2s_txy[:, cx, cy][:, np.newaxis, np.newaxis, np.newaxis]
         self.rho_other_txyz = curr_rho_other_txy[:, cx, cy][:, np.newaxis, np.newaxis, np.newaxis]
+        self.rho_mid_txyz = (curr_rho_mid_txy[:, cx, cy][:, np.newaxis, np.newaxis, np.newaxis]
+                             if X.use_middlemen else None)
+        self.rho_e_gtxyz = (final_rho_e_gt_center[:, :, np.newaxis, np.newaxis, np.newaxis]
+                            if X.use_eii else None)

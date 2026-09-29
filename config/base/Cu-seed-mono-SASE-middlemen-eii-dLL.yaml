@@ -1,0 +1,352 @@
+#units: nm, fs
+
+#photoionization crosssections of Cu
+
+#Cross section of photoionization from ground state to 1s, 2s, 2p_3/2 and other levels
+#Original-paper (GRASP/RATIP) values, kept as-is 2026-09-03 -- an XATOM recompute of this base
+#cross-section set drifted 10-20% from these (see xatom/recomputed_parameters.json), but GRASP/RATIP
+#is trusted more for these than XATOM. XATOM is still used for the satellite/double-satellite/2p_1/2
+#pathway blocks below (no GRASP/RATIP equivalent exists for those).
+sigma1_Ka1_2s: 2.45e-7
+sigma1_Ka1_2p3: 1.52e-7
+sigma1_Ka1_other: 1.2006e-7 # 4.34e-7 - 2.45e-7 - 6.89383e-8
+
+#Total photoionization cross section of 1s, 2s, 2p_3/2, 2p_3/2 3d_5/2 and other levels
+#sigma2_Ka1_1s/2p3/2p1 are NOT carved out for the satellite_channels below (theory doc §12.7,
+#corrected 2026-09: this file previously subtracted sigma_Ka1_from_2p/1s/2p1 here, which was wrong).
+#sigma2_Ka1_* is a total further-photoionization cross section of the already-holed ion; sigma_Ka1_from_*
+#(per satellite channel) is a different-class "sudden approximation" spectator-photoabsorption quantity
+#(xatom_tools.py's spectator_ionization_cross_section_nm2) -- no verified relationship makes one a
+#sub-component of the other's measured total, unlike a genuine branching-ratio split (contrast the
+#Gamma_A_2s_eV/GammaA_L1_to_L3M45eVN carve-out below, which IS a verified split of one measurement and
+#DOES need the subtraction). The base population already loses the full sigma2_Ka1_* amount regardless
+#of whether this sub-process is separately tracked as a satellite feed, so no subtraction is applied.
+sigma2_Ka1_1s: 6.53e-7 # original-paper GRASP/RATIP total, not carved out (theory doc §12.7 -- corrected 2026-09)
+sigma2_Ka1_2s: 4.05e-7
+sigma2_Ka1_2p3: 4.15e-7 # original-paper GRASP/RATIP total, not carved out (theory doc §12.7 -- corrected 2026-09)
+sigma2_Ka1_other: 5.0613e-7 # sigma1-weighted avg of remaining "other" subshells' sigma2 (xatom_tools.other_state_parameters)
+
+#2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III, section 20),
+#computed via xatom/recompute_all_parameters.py -> xatom_tools.l2_pathway_parameters(). No
+#GRASP/RATIP equivalent (this pathway didn't exist in the original paper), so kept as fresh XATOM.
+sigma1_Ka1_2p1: 6.89383e-8
+#Not carved (theory doc §12.7 -- corrected 2026-09, see sigma2_Ka1_1s/2p3 above).
+sigma2_Ka1_2p1: 4.98609e-7
+
+
+#Chemical composition of the sample
+#Cu
+compound:
+  O:
+    N_atoms: 0
+    sigma_compound_Ka1: 0
+
+    
+#sample concentration in atoms per cubic nm
+#solid copper:  84, nitrate 4M solution: 2.509
+n: 82.509
+
+#number of atomic levels in the calculation
+nlevel: 6
+
+#radiative rates
+GammaKeVN: 1.49
+GammaL1eVN: 8.13
+GammaL2eVN: 1.04
+GammaL3eVN: 0.61
+GammarKalpha1eVN: 0.39375
+GammarKalpha2eVN: 0.202668
+# Fully carved out (theory doc §12.7): the 4 satellite_channels below (3d+/3d-/3p+/3p-) now
+# explicitly track the entire 2s-hole Auger -> 2p_3/2+spectator (M45+M23) branching via their own
+# Gamma_A_2s_eV, replacing rather than adding to this generic feed -- was 5.07 (M45-only estimate,
+# pre-satellite-channels), briefly left at a stale 1.57 which double-counted against the satellite
+# feed instead of zeroing it out.
+# GammaA_L1_to_L3M45eVN: set in the Part VI block at the end of this file
+
+additional_dephasing: 0
+
+#K alpha atomic transitions photon energy
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+
+#simulation domain and padding parameters
+tgrid: 12000
+zgrid: 15
+xgrid: 11
+ygrid: 11
+
+tmax: 45.0
+
+zmax: 20.0e+3
+xmax: 200.0
+ymax: 200.0
+
+xpad: 60
+ypad: 60
+tpad: 0
+
+
+auto_grid: False
+
+#seed parameters
+seed_pulse_format: 'Ocelot_SASE_seed_111_dcm_pstxy'
+E_seed_uJ: 40
+seed_duration_FWHM_t: 6.0
+t_peak: 10
+seed_width_FWHM_x: 100
+seed_width_FWHM_y: 170
+seed_FEL_bandwidth: 1.5e-3
+seed_center_E: 8045
+monochromator_target_energy_eV: 8047.91
+seed_delay: 0
+
+#calculation regime
+is_spontaneous_only: False
+is_use_stochastic: False
+random_seed: -1
+enable_noise_mask: True
+Esxy_noise_cutoff: 2.0e-3
+# run_mode: 'simultaneous', 'consecutive'
+run_mode: 'simultaneous'
+enable_self_diffraction: True
+enable_self_absorption: True
+turn_off_coherences: False
+enable_kfilter: False
+is_Cartesian_pol: True
+use_2s_pathway: True
+use_L2_pathway: True
+
+satellite_channels:
+- name: 3d+
+  detuning_eV: -0.8
+  Gamma_A_2s_eV: 1.5733
+  Gamma_A_K_eV: 0.00259
+  Gamma_L_eV: 0.60698
+  Gamma_K_eV: 1.54468
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.715170000000001e-07
+  detuning_eV_L2_split: 21.27
+  Gamma_A_2s_to_L2_eV: 0.7137
+  Gamma_A_K_to_L2_eV: 0.002064
+  Gamma_L2_eV: 0.6559
+  sigma_Ka1_from_2p1: 7.41039e-10
+- name: 3d-
+  detuning_eV: -0.8
+  Gamma_A_2s_eV: 1.3121
+  Gamma_A_K_eV: 0.003083
+  Gamma_L_eV: 0.63478
+  Gamma_K_eV: 1.54468
+  sigma_Ka1_from_2p: 5.93e-10
+  sigma_Ka1_from_1s: 6.434600000000001e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.715170000000001e-07
+  detuning_eV_L2_split: 21.26
+  Gamma_A_2s_to_L2_eV: 0.5309
+  Gamma_A_K_to_L2_eV: 0.000637
+  Gamma_L2_eV: 0.60921
+  sigma_Ka1_from_2p1: 5.93e-10
+- name: 3p+
+  detuning_eV: 2.76
+  Gamma_A_2s_eV: 1.4535
+  Gamma_A_K_eV: 0.034001
+  Gamma_L_eV: 2.63249  # total incl. 1.7398 eV fed to double_satellite_channels (was 0.89272, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  Gamma_K_eV: 3.85241  # total incl. 2.0390 eV fed to double_satellite_channels (was 1.81341, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 4.97595e-07
+  sigma_ion_from_1s: 5.67499e-07
+  detuning_eV_L2_split: 21.31
+  Gamma_A_2s_to_L2_eV: 0.7902
+  Gamma_A_K_to_L2_eV: 0.028999
+  Gamma_L2_eV: 2.72355  # total incl. 1.7397 eV fed to double_satellite_channels (was 0.98385, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  sigma_Ka1_from_2p1: 1.88202e-08
+- name: 3p-
+  detuning_eV: 2.93
+  Gamma_A_2s_eV: 0.6458
+  Gamma_A_K_eV: 0.028913
+  Gamma_L_eV: 3.17930  # total incl. 2.1897 eV fed to double_satellite_channels (was 0.98956, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  Gamma_K_eV: 4.36488  # total incl. 2.5302 eV fed to double_satellite_channels (was 1.83468, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 4.97588e-07
+  sigma_ion_from_1s: 5.67491e-07
+  detuning_eV_L2_split: 21.31
+  Gamma_A_2s_to_L2_eV: 0.5062
+  Gamma_A_K_to_L2_eV: 0.002563
+  Gamma_L2_eV: 3.05814  # total incl. 2.1898 eV fed to double_satellite_channels (was 0.86834, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
+  sigma_Ka1_from_2p1: 9.4244e-09
+
+# ============================================================================================
+# Double-L-hole absorbers (Batch B1, xatom/double_L_hole_parameters.py, XATOM Delta-SCF shifts,
+# feeds = XATOM branching fractions x the config's sigma2_Ka1_* totals): 2s^-1 2p^-1 and 2p^-2
+# atoms, made by the K hole's KLL Auger decay (Gamma_A_K*) and by a second photoionisation of a
+# 2p-hole atom (sigma_Ka1_from_2p*). They absorb at 8054/8075 eV (2s2p, ~6 eV wide) and 8063/8083 eV
+# (2p2): the blue-side features the seeded data show switching on above ~10 uJ. Radiative rates and
+# dipoles are the base ones (spectator approximation; XATOM's own Kalpha1-type rates: 0.455, 0.344 eV).
+# ============================================================================================
+- name: 2s2p
+  detuning_eV: 26.88
+  Gamma_A_2s_eV: 0.0
+  Gamma_A_K_eV: 0.105415
+  Gamma_L_eV: 5.87881
+  Gamma_K_eV: 5.69637
+  sigma_Ka1_from_2p: 2.09409e-07
+  sigma_Ka1_from_1s: 2.997433e-07
+  sigma_ion_from_2p: 3.8602e-07
+  sigma_ion_from_1s: 4.5272e-07
+  detuning_eV_L2_split: 20.43
+  Gamma_A_2s_to_L2_eV: 0.0
+  Gamma_A_K_to_L2_eV: 0.052808
+  Gamma_L2_eV: 6.40825
+  sigma_Ka1_from_2p1: 2.51805e-07
+  sigma_ion_from_2p1: 3.85589e-07
+- name: 2p2
+  detuning_eV: 35.44
+  Gamma_A_2s_eV: 0.0
+  Gamma_A_K_eV: 0.149075
+  Gamma_L_eV: 1.515
+  Gamma_K_eV: 2.0127
+  sigma_Ka1_from_2p: 8.806148e-08
+  sigma_Ka1_from_1s: 1.788394e-07
+  sigma_ion_from_2p: 4.81555e-07
+  sigma_ion_from_1s: 5.50054e-07
+  detuning_eV_L2_split: 20.61
+  Gamma_A_2s_to_L2_eV: 0.0
+  Gamma_A_K_to_L2_eV: 0.25801
+  Gamma_L2_eV: 1.53928
+  sigma_Ka1_from_2p1: 1.41186e-07
+  sigma_ion_from_2p1: 4.81116e-07
+  sigma_Ka1_from_2p_to_L2: 5.938964e-08
+double_satellite_channels:
+- name: 3d+3d+
+  detuning_eV: -1.7
+  Gamma_L_eV: 0.572227
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.651793
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.6349831403273791
+  - channel: 3p-
+    Gamma_feed_eV: 0.04626534312315371
+  - channel: 3p+
+    Gamma_feed_eV: 0.7303
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.0499
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.6350
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.0463
+    manifold: L2
+  sigma_ion_from_2p: 5.042530e-07
+  sigma_ion_from_1s: 5.743150e-07
+- name: 3d-3d+
+  detuning_eV: -1.69
+  Gamma_L_eV: 0.602927
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.609449
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241386173085028
+  - channel: 3p-
+    Gamma_feed_eV: 1.6840555508530808
+  - channel: 3p+
+    Gamma_feed_eV: 1.2235
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 1.9699
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 1.0241
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 1.6841
+    manifold: L2
+  sigma_ion_from_2p: 5.042530e-07
+  sigma_ion_from_1s: 5.743150e-07
+- name: 3d-3d-
+  detuning_eV: -1.68
+  Gamma_L_eV: 0.627541
+  Gamma_K_eV: 1.55265
+  detuning_eV_L2_split: 21.26
+  Gamma_L2_eV: 0.555031
+  feed_from:
+  - channel: 3p+
+    Gamma_feed_eV: 0.08064992289744662
+  - channel: 3p-
+    Gamma_feed_eV: 0.45942343968413835
+  - channel: 3p+
+    Gamma_feed_eV: 0.0852
+    manifold: upper
+  - channel: 3p-
+    Gamma_feed_eV: 0.5104
+    manifold: upper
+  - channel: 3p+
+    Gamma_feed_eV: 0.0806
+    manifold: L2
+  - channel: 3p-
+    Gamma_feed_eV: 0.4594
+    manifold: L2
+  sigma_ion_from_2p: 5.042530e-07
+  sigma_ion_from_1s: 5.743150e-07
+
+# ============================================================================================
+# Part VI pathway extensions (docs/theory-middlemen-and-pathway-audit.md,
+# docs/middlemen-implementation-plan.md). Everything above is Cu-seed-mono-SASE-double-satellite.yaml.
+# ============================================================================================
+
+# Middleman pool: every decay/ionisation that previously had no destination (L3/L2/K Auger,
+# satellite core Auger, 2s L1-MM remainder, further photoionisation of every ion, and the old
+# ground -> "other" M-shell pump) lands in one scalar population of 3d^-n ions. It keeps absorbing
+# like a neutral atom (XATOM: 1.00-1.03x) and its 2p/2s photoionisation feeds satellite blocks.
+use_middlemen: true
+middlemen:
+  # Where middleman 2p holes resonate. Middlemen carry ~3 3d holes (Part VI sec 3.2); the closest
+  # existing blocks are the double-3d channels, split by statistical weight 15:24:6 (option A, upper
+  # bound on line-centre depth). 'none' makes them non-resonant (option B, lower bound); the two
+  # differ by < 0.006 in T(8048) in the estimator (Part VI sec 6.2).
+  targets: {3d+3d+: 0.3333, 3d-3d+: 0.5333, 3d-3d-: 0.1334}
+  # 2s holes on a middleman Coster-Kronig in 0.08 fs; 'auto' uses the same L3/L2 fractions as the
+  # tracked 2s -> single-satellite CK (sum of Gamma_A_2s_eV / GammaL1eVN).
+  twos_ck: auto
+  # sigma_Ka1_total defaults to the ground-state total (sum of sigma1_Ka1_*).
+
+# Base L2 -> 2p3/2 + 3d-hole Coster-Kronig (L2-L3M45), open in the metal, closed in the free atom:
+# rate = GammaL2eVN (1.04, literature, metal) - XATOM atomic Gamma_L2 (0.666 eV). A branch of the
+# existing Gamma_L2 (no carve-out), split over 3d5/2 : 3d3/2 by statistical weight.
+L2_CK_feed:
+  rate_eV: 0.374
+  targets: {3d+: 0.6, 3d-: 0.4}
+
+# 2s -> 2p + 4s-hole Coster-Kronig (XATOM '2s0 - 2p+/2p- 4s0' rows): the 4s spectator is refilled
+# from the conduction band, so these land on the bare base L3/L2 holes.
+GammaA_L1_to_L3M45eVN: 0.0903
+GammaA_L1_to_L2eVN: 0.0508
+
+# Dark-state test (Part VI sec 1.5, plan step 5): depolarising mixing of the 2p3/2 sublevels, fs^-1.
+# 0 = off. Physically motivated for satellites (2p-3d exchange ~1-2 eV); base block kept separate.
+L3_sublevel_mixing_fs_inv: 0.0
+L3_sublevel_mixing_satellite_fs_inv: 0.0
+
+# ============================================================================================
+# Part VII: electron-impact ionisation by the photo- and Auger electrons
+# (docs/theory-eii-and-free-electrons.md, docs/eii-free-electrons-implementation-plan.md).
+# ============================================================================================
+use_eii: true
+eii:
+  n_groups: 6            # slowing-down ladder 7.1 keV -> 30 eV (+ a thermalised bin); 4-6 groups
+                         # reproduce the continuous yields to 2-7% (Part VII sec 4)
+  E_top_eV: 7100.0
+  E_bottom_eV: 30.0
+  spatial_factor: 0.5    # fraction of EII events that land inside the focus (transport, VII sec 6.1)
+  M_shell_scale: 0.0     # 0..1 x atomic BCF rate for 3s/3p/3d EII (VII sec 6.3): 0 = L-shell EII only.
+                         # In the metal single valence-3d excitations delocalise, so bracket 0 and 1.
+  # birth_energies_eV: {photo: 7090, KLL: 7100, LMM: 870, CK: 60}   # defaults (XATOM)
+  # subshells: {2p3/2: [951.6, 4, 2, 1], ...}                        # defaults: XATOM neutral Cu

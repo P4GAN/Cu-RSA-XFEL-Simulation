@@ -153,12 +153,12 @@ satellite_channels:
   # here: 1.7398 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries in
   # double_satellite_channels below (0.6350 -> 3d+3d+, 1.0241 -> 3d-3d+, 0.0806 -> 3d-3d-).
   # Budget check: 0.8927 + 1.7398 = 2.6325 (exact, modulo rounding).
-  Gamma_L_eV: 0.8927
+  Gamma_L_eV: 2.63247  # total incl. 1.7398 eV fed to double_satellite_channels (was 0.8927, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   # WAS 3.8524 eV (bare/uncarved total decay width of the 1s3p+ configuration, U_k). Carved out
   # here: 2.0390 eV = sum of this channel's manifold: upper Gamma_feed_eV entries below (0.7303 ->
   # 3d+3d+, 1.2235 -> 3d-3d+, 0.0852 -> 3d-3d-). Budget check: 1.8134 + 2.0390 = 3.8524 (exact,
   # modulo rounding).
-  Gamma_K_eV: 1.8134
+  Gamma_K_eV: 3.85240  # total incl. 2.0390 eV fed to double_satellite_channels (was 1.8134, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p: 1.88202e-08
   sigma_Ka1_from_1s: 2.02344e-08
   sigma_ion_from_2p: 4.97595e-07
@@ -176,7 +176,7 @@ satellite_channels:
   # genuinely doesn't resolve which j the *other* core hole has (spectator approximation holding
   # essentially exactly, not just approximately, here). Budget check: 0.98392 + 1.7397 = 2.72362
   # (exact, modulo rounding).
-  Gamma_L2_eV: 0.98392
+  Gamma_L2_eV: 2.72362  # total incl. 1.7397 eV fed to double_satellite_channels (was 0.98392, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p1: 1.88202e-08
 - name: 3p-
   detuning_eV: 2.9300
@@ -186,12 +186,12 @@ satellite_channels:
   # 2.1897 eV = sum of this channel's manifold: lower (default) Gamma_feed_eV entries below
   # (0.0463 -> 3d+3d+, 1.6841 -> 3d-3d+, 0.4594 -> 3d-3d-). Budget check: 0.9896 + 2.1897 = 3.1793
   # (exact, modulo rounding).
-  Gamma_L_eV: 0.9896
+  Gamma_L_eV: 3.17934  # total incl. 2.1897 eV fed to double_satellite_channels (was 0.9896, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   # WAS 4.3649 eV (bare/uncarved total decay width of the 1s3p- configuration, U_k). Carved out
   # here: 2.5302 eV = sum of this channel's manifold: upper Gamma_feed_eV entries below (0.0499
   # -> 3d+3d+, 1.9699 -> 3d-3d+, 0.5104 -> 3d-3d-). Budget check: 1.8347 + 2.5302 = 4.3649 (exact,
   # modulo rounding).
-  Gamma_K_eV: 1.8347
+  Gamma_K_eV: 4.36490  # total incl. 2.5302 eV fed to double_satellite_channels (was 1.8347, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p: 9.4244e-09
   sigma_Ka1_from_1s: 1.01334e-08
   sigma_ion_from_2p: 4.97588e-07
@@ -204,7 +204,7 @@ satellite_channels:
   # entries below (0.0463 -> 3d+3d+, 1.6841 -> 3d-3d+, 0.4594 -> 3d-3d-) -- again numerically
   # identical to the lower-manifold branching, see 3p+'s comment above. Budget check: 0.86828 +
   # 2.1898 = 3.05808 (exact, modulo rounding).
-  Gamma_L2_eV: 0.86828
+  Gamma_L2_eV: 3.05808  # total incl. 2.1898 eV fed to double_satellite_channels (was 0.86828, carved: created population -- docs/theory-middlemen-and-pathway-audit.md sec 2.3)
   sigma_Ka1_from_2p1: 9.4244e-09
 
 # Double-M-shell-spectator channels (docs/double-spectator-satellite-implementation-plan.md).

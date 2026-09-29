@@ -1,7 +1,32 @@
 # Middlemen and missing pathways: implementation plan
 
 Companion to `docs/theory-middlemen-and-pathway-audit.md` (Part VI). Section numbers "VI §x" refer to
-that document. Nothing here has been implemented yet.
+that document.
+
+> **Implementation status (2026-09-15): steps 0, 1, 2, 4 and 5 are implemented; step 3 (the M₁…M₅₊
+> ladder) and option C are not.** Where the code lives:
+>
+> - Step 0: every `config/base/*double-satellite*.yaml` (and `-duration`) carries the 3p± total widths;
+>   `XLO_sim._build_pathway_extensions` raises if a manifold's summed `feed_from` exceeds its width.
+> - Bookkeeping: `_build_pathway_extensions` precomputes `decay_untracked_base` / `S_untracked_base`,
+>   and per channel `chan.decay_untracked` / `chan.S_untracked`, i.e. every level's outflow with no
+>   other destination. Negative entries (a feed exceeding its source) raise.
+> - Steps 1–2: `use_middlemen` + `middlemen: {targets, twos_ck, sigma_Ka1_total}`;
+>   `Model.middleman_gain_loss` / `MB_middleman_regular`; the routing into the targets is in
+>   `feed_diag_satellite_block`; absorption is in `Model.absorption(..., rho_mid_xyz)`; with
+>   `use_middlemen`, "other" is no longer pumped. Outputs: `X.rho_mid_txyz`, and `rho_mid_t_last`
+>   (included in `total_population_t_last`).
+> - Step 4: `L2_CK_feed: {rate_eV, targets}` and `GammaA_L1_to_L2eVN`.
+> - Step 5: `L3_sublevel_mixing_fs_inv` (base block) and `L3_sublevel_mixing_satellite_fs_inv`,
+>   a trace-preserving depolarising Lindblad term in `_MB_nlevel_regular_core` (also in rate-equation
+>   mode).
+> - `Sample._step_increments` holds every per-step RK4 call and is shared by the full and lean loops.
+> - `tools.verify_code` (used by `run_intensity_sweep.py` and now also `run_mono_sweep.py`) refuses
+>   configs with these flags on a stale import and writes them into `*.provenance.txt`.
+> - Example configs: `config/base/Cu-seed-mono-SASE-middlemen.yaml` (steps 1, 2 and 4) and
+>   `...-middlemen-eii.yaml` (+ Part VII).
+>
+> Validation results are in the "Validation" section at the end.
 
 Goal: route every decay and ionisation channel that currently leaves the model ("vanish") into
 explicit populations, let those populations keep absorbing and be photoionised into the existing
@@ -215,6 +240,42 @@ raises η instead of f.
 5. **Cluster provenance:** port the `verify_code` / provenance guard from `run_intensity_sweep.py` to
    `run_mono_sweep.py` before the first cluster run with `use_middlemen` (memory note
    `project_cluster_stale_code_new_flags`: new flags have been silently ignored three times).
+
+### Results (2026-09-15)
+
+1. **Reduction.** With every new flag off, the double-satellite, `original` and rate-equation configs
+   match the pre-extension code (a worktree of commit ff828c4, on feed-fixed copies of the configs),
+   in lean and full mode. T agrees to 6 digits, and the worst relative difference over all saved
+   outputs is 4.8×10⁻¹⁶. The `rho_eg_*` coherence outputs are excluded because they are pure
+   round-off in both versions. The result is round-off level, not bit-for-bit: the numba kernel is
+   compiled with `fastmath`, and the new terms change the order of its sums.
+2. **Trace.** With middlemen on, `total_population_t_last` stays within [0.99970, 1.00003] in the
+   MB shots below (dt = 0.015 fs). On a small test grid the deviation shrinks with the step:
+   1×10⁻³ at dt = 0.03 fs, 1.5×10⁻⁴ at 0.0075 fs. Without middlemen the trace drops to 0.868, the
+   fraction that vanishes.
+3. **Full vs lean** (all extensions on, including EII and mixing) agree to 4×10⁻¹⁰ relative in the
+   transmitted spectrum and 6×10⁻⁸ in the middleman population. Lean mode keeps the pool's z buffer
+   in float32.
+4. **MB vs estimator.** One mono shot at 20 µJ and 8048 eV (seed 0, tgrid 3000, 7×7 pixels). Each row
+   adds to the one above, except the last. ΔT is relative to the feed-fixed baseline:
+
+   | Variant | MB T | MB ΔT | Estimator ΔT |
+   |---|---|---|---|
+   | feed bug fixed (baseline) | 0.3632 | — | — |
+   | + middlemen, option A (double-satellite targets) | 0.3446 | −0.0186 | −0.019 |
+   | + middlemen, option B (non-resonant), instead of A | 0.3479 | −0.0153 | −0.016 |
+   | + middlemen (A) + L2 CK + 2s→bare-2p CK | 0.3396 | −0.0236 | −0.025 |
+   | + L-shell EII, spatial factor 0.5 | 0.3341 | −0.0291 | −0.029 |
+   | + dark-state mixing 2 fs⁻¹, base and satellite blocks | 0.3202 | −0.0430 | −0.046 |
+   | dark-state mixing 2 fs⁻¹ alone | 0.3508 | −0.0124 | −0.016 |
+
+   Every row lands within 0.004 of the estimator. The digitised experiment is at 0.278, so the
+   no-free-parameter additions (through EII) close 34% of the gap at 20 µJ, and adding the mixing
+   closes 50%.
+5. **Provenance.** `tools.verify_code` guards both `run_intensity_sweep.py` and `run_mono_sweep.py`.
+
+The follow-up sweeps (SASE intensity and mono, five variants from the baseline to full mixing) are
+`scripts/generate_pathway_sweeps.sh` → `scripts/submit_pathway_sweep_{sase,mono}.sh`.
 
 ## Cost
 

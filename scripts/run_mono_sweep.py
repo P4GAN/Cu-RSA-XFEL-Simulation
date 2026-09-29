@@ -39,7 +39,13 @@ for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUME
 
 import argparse  # noqa: E402
 import shutil  # noqa: E402
+import sys  # noqa: E402
 import time  # noqa: E402
+
+# Always run THIS checkout's XLO_sim (see scripts/run_intensity_sweep.py): `python scripts/<this>.py`
+# puts scripts/ first on sys.path, so the import could otherwise fall through to a stale pip install.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, REPO_ROOT)
 
 from XLO_sim.XLO_sim import XLO_sim  # noqa: E402
 from XLO_sim import tools  # noqa: E402
@@ -74,13 +80,23 @@ def main():
     parser.add_argument("--rep-end", type=int, required=True, help="Last repetition index (exclusive)")
     parser.add_argument("--nproc", type=int, default=None,
                          help="Worker processes (default: cores actually available to this job)")
-    parser.add_argument("--data-path", required=True,
+    parser.add_argument("--data-path", default=None,
                          help="Top-level output directory (shared across array tasks for the same config)")
+    parser.add_argument("--check-only", action="store_true",
+                        help="Run the code/flag checks (tools.verify_code) and exit without simulating")
     args = parser.parse_args()
+
+    X = XLO_sim(args.yaml)
+    provenance = tools.verify_code(X, REPO_ROOT)
+    print(provenance, end="", flush=True)
+    if args.check_only:
+        print("check passed", flush=True)
+        return
+    if args.data_path is None:
+        parser.error("--data-path is required unless --check-only")
 
     nproc = args.nproc or len(os.sched_getaffinity(0))
 
-    X = XLO_sim(args.yaml)
     target_energy_eV = X.monochromator_target_energy_eV
     run_path = os.path.join(args.data_path, f"runs_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV")
     os.makedirs(run_path, exist_ok=True)
@@ -92,6 +108,8 @@ def main():
 
     output_stem = (f"run_at_seed_{X.E_seed_uJ:.1f}_uJ__energy_{target_energy_eV:.2f}_eV"
                     f"__reps_{args.rep_start}-{args.rep_end}")
+    with open(os.path.join(run_path, f"{output_stem}.provenance.txt"), "w") as f:
+        f.write(provenance)
     final_path = tools.run_sweep_chunk(run_simulation, args.yaml, reps, run_path, output_stem, nproc)
     print(f"Saved {final_path}", flush=True)
 

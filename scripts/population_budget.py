@@ -2,14 +2,13 @@
 Where the atoms and electrons are during a pulse: every tracked population, at every z plane, vs time,
 for sweep-sized runs (scripts/run_population_budget.py).
 
-The sweep outputs (analysis.compute_run_outputs) keep the exit plane's centre pixel only, the satellite
-blocks only as Tijs-weighted dipole contractions (not populations) and the free electrons only as two
-totals. The movie recorder (movie.py) keeps everything at every (t, x, y, z) point for one shot, far
-too much to repeat for a sweep. This recorder sits in between. It rides on
-Sample._run_lean like the movie recorder, so the numerics are unchanged. Per z plane,
-every `stride` time steps, it keeps two reductions of each population:
+The sweep outputs (xraymb_sim.analysis.compute_run_outputs) keep only the exit plane's centre pixel, the
+satellite blocks as dipole contractions rather than populations, and two electron totals. The movie
+recorder (movie.py) keeps every (t, x, y, z) point of one shot, far too much for a sweep. This recorder sits
+in between; like the movie recorder it only reads the state of the lean path (X.recorder), so the numerics
+are unchanged. Per z plane, every `stride` time steps, it keeps two reductions of each population:
 
-  centre   the centre pixel (the pixel compute_run_outputs and run_population_record.py use)
+  centre   the centre pixel (the pixel compute_run_outputs uses)
   beam     the average over (x, y) weighted by the incident fluence of each pixel, i.e. the
            population seen by the average incident photon, which is what a transmission measures
 
@@ -23,9 +22,8 @@ Channels (the `names` array; every entry is a population per atom, except flux):
 Unweighted diagonal sums, so ground + other + 2s + middlemen + base/* + sat/*/* = 1 to RK4 accuracy
 when use_middlemen is on.
 
-Plane iz is driven by the field after max(iz - 1, 0) absorption steps (the solver's readout convention,
-see Sample._run_lean), so its depth is max(iz - 1, 0) * dz. Populations at time index it
-are the state after the RK4 step that starts at t[it].
+Plane iz is driven by the field after max(iz - 1, 0) absorption steps, so its depth is max(iz - 1, 0) * dz.
+Populations at time index it are the state after the RK4 step that starts at t[it].
 """
 
 import numpy as np

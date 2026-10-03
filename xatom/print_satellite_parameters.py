@@ -1,9 +1,7 @@
 """
-Run XATOM for all four 2s-hole satellite channels (docs/theory-and-2s-satellite-pathways.md, Part
-II), the 2p1/2 (L2, Kalpha2) pathway (Part III/IV), and the double-M-shell-spectator
-("double-satellite") channels (docs/double-spectator-satellite-implementation-plan.md, Part V) --
-and print the resulting parameters, both as readable tables and as ready-to-paste YAML blocks for
-config/base/*.yaml.
+Run XATOM for the four single-spectator satellite channels, their 2p1/2 extension, the base 2p1/2 (Kalpha2)
+pathway and the double-spectator channels, and print the parameters as tables and as YAML blocks ready to
+paste into config/mono/*.yaml. Needs XATOM_PATH (see xatom_tools.py).
 
 Usage
 -----
@@ -30,7 +28,7 @@ def main():
     parser.add_argument(
         '--Ka1-energy-eV', type=float, default=8047.91,
         help='Reference Kalpha1 diagram-line energy in eV (must match hwKalpha1N in the target '
-             'config/base/*.yaml). Default: 8047.91.',
+             'config/mono/*.yaml). Default: 8047.91.',
     )
     args = parser.parse_args()
 
@@ -63,30 +61,30 @@ def main():
     print('Auger branching budget check (theory doc section 14):')
     total_Gamma_A = sum(c['Gamma_A_2s_eV'] for c in channels)
     print(f'  sum of Gamma_A_2s_eV over all 4 channels = {total_Gamma_A:.4f} eV')
-    print('  (compare against GammaL1eVN in config/base/*.yaml -- the remainder is the '
+    print('  (compare against GammaL1eVN in config/mono/*.yaml -- the remainder is the '
           'still-unmodeled L1 decay budget, e.g. L1-L2 Coster-Kronig and other channels)')
     print()
 
     print('=' * 70)
-    print('Ready to paste into config/base/*.yaml:')
+    print('Ready to paste into config/mono/*.yaml:')
     print()
     yaml_block = {'satellite_channels': channels}
     print(yaml.dump(yaml_block, sort_keys=False, default_flow_style=False))
 
     print('=' * 70)
-    print('2p1/2 (L2, Kalpha2) pathway (docs/theory-and-2s-satellite-pathways.md, Part III):')
+    print('2p1/2 (L2, Kalpha2) pathway (theory doc, Part III):')
     l2_params = xt.l2_pathway_parameters(args.Ka1_energy_eV)
     for key, value in l2_params.items():
         print(f'  {key:20s} = {value:.6g}')
     print()
-    print('Ready to paste into config/base/*.yaml (alongside the existing GammaL2eVN literature '
+    print('Ready to paste into config/mono/*.yaml (alongside the existing GammaL2eVN literature '
           'value, use_L2_pathway: True):')
     print()
     print(yaml.dump(l2_params, sort_keys=False, default_flow_style=False))
 
     print('=' * 70)
     print('Double-M-shell-spectator ("double-satellite") channels '
-          '(docs/double-spectator-satellite-implementation-plan.md):')
+          '(double-satellite plan):')
     print('(slow -- each parent/manifold pair needs a live XATOM -decay call on a double-hole')
     print(' configuration, order 1-10 minutes each; not cached across runs of this script)')
     print()
@@ -98,7 +96,7 @@ def main():
         print(f'  {parent} ({manifold}): carve out {total:.4f} eV')
     print()
 
-    print('Ready to paste into config/base/*.yaml:')
+    print('Ready to paste into config/mono/*.yaml:')
     print()
     print(yaml.dump({'double_satellite_channels': double_channels}, sort_keys=False, default_flow_style=False))
 

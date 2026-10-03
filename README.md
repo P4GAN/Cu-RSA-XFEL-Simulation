@@ -8,6 +8,8 @@ core-hole states of every ion, coupled to the propagation of the X-ray field thr
 
 ![A SASE pulse crossing a 20 µm copper foil, with the ionised wake it leaves behind](docs/media/hero.gif)
 
+**[Interactive write-up with the full animations →](https://p4gan.github.io/Cu-RSA-XFEL-Simulation/)**  ·  **[Usage guide](docs/usage.md)**
+
 ## What the model contains
 
 - **Maxwell–Bloch core**: the 2p₃/₂, 2p₁/₂ and 1s holes of each ion in one sublevel-resolved density matrix, so
@@ -73,6 +75,7 @@ python scripts/plot_final.py             # once data/final_sweep_mono_<job id>/ 
 
 `generate_sase_sweep.sh`, `generate_convergence_sweep.sh` and `generate_population_budget.sh` follow the same
 pattern. Every output folder carries a copy of its config and the git commit it ran with.
+[docs/usage.md](docs/usage.md) covers the config keys, the sweep families and reading the results.
 
 ## Requirements
 

@@ -5,14 +5,13 @@ Companion to scripts/render_movie.py, from the same scripts/run_movie.py HDF5 fi
 schematic (not to scale) level scheme whose bars glow with each population on a log scale,
 photoionisation arrows that glow with the instantaneous flux, and the Kalpha resonances that glow
 with the base-block 1s-2p coherence |rho_eg|. Right: the pulse and the populations vs time, revealed
-up to the current frame. All at the beam centre of one depth plane (default plane 1, 0.33 um in;
-plane 0 is never photoionised, see render_movie.py).
+up to the current frame. All at the beam centre of one depth plane (default plane 1, 0.33 um in).
 
 Satellite blocks are summed into single-spectator (3d+, 3d-, 3p+, 3p-) and double-spectator
 (3dx3dx) groups, each split into its 1s-hole and 2p-hole (L3 + L2) manifolds.
 
     python scripts/render_level_diagram.py --still 9      # one PNG
-    python scripts/render_level_diagram.py --gif          # figs/xlo_levels.mp4 + .gif
+    python scripts/render_level_diagram.py --gif          # figs/levels.mp4 + .gif
 """
 
 import argparse
@@ -28,7 +27,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib import animation  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from render_movie import BG, FG, REPO_ROOT, to_gif  # noqa: E402
+from render_movie import BG, FG, REPO_ROOT, newest_movie, to_gif  # noqa: E402
 
 PANEL_BG = "#04050a"
 MUTED = "#8fa0bb"
@@ -233,9 +232,9 @@ def build(data, args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--h5", default=os.path.join(REPO_ROOT, "data/movie_24699095/movie.h5"))
+    p.add_argument("--h5", default=newest_movie())
     p.add_argument("--plane", type=int, default=1)
-    p.add_argument("--out", default=os.path.join(REPO_ROOT, "figs/xlo_levels.mp4"))
+    p.add_argument("--out", default=os.path.join(REPO_ROOT, "figs/levels.mp4"))
     p.add_argument("--frames", type=int, default=240)
     p.add_argument("--fps", type=int, default=30)
     p.add_argument("--t-start", type=float, default=2.0)

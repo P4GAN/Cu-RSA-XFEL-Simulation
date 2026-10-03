@@ -15,7 +15,7 @@ Layout (every (t, x, y) array is indexed [z, ..., t, x, y]):
   field           complex64 (z, 2, 2, t, x, y)  Omega_pstxy driving plane z (Omega_pstxyz[..., iz]
                                                of the full-history path; index 0 is the seed)
   flux            float32   (z, t, x, y)        photon flux of that field, photons nm^-2 fs^-1
-  field_exit      complex64 (2, 2, t, x, y)     field leaving the last plane (not kept by full/lean)
+  field_exit      complex64 (2, 2, t, x, y)     field leaving the last plane
   pop/ground, pop/other, pop/2s, pop/middlemen  float32 (z, t, x, y)
   pop/base        float32   (z, nlevel, t, x, y)        base-block diagonal, per sublevel
   pop/satellite   float32   (z, n_sat, 3, t, x, y)      each satellite block summed per manifold

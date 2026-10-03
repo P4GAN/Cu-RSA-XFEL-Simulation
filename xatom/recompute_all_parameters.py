@@ -1,20 +1,9 @@
 """
-Recompute, fresh, every XATOM-derived parameter needed for the 7 requested run configs
-(5 SASE variants + 2 monochromator variants; see conversation / commit message for the mapping):
-
-  base cross sections (sigma1_Ka1_{2s,2p3,2p1,other}, sigma2_Ka1_{1s,2s,2p3,2p1,other})
-  satellite_channels (3d+, 3d-, 3p+, 3p-): detuning/Gamma_A_2s/Gamma_L/Gamma_K/sigma_Ka1_*/sigma_ion_*
-    + the KLM-feed additions (Gamma_A_K_eV, Gamma_A_K_to_L2_eV) that print_satellite_parameters.py's
-    CLI does not compute but the committed config/base/*.yaml files carry
-  l2_satellite_channel_parameters per channel (Kalpha2-satellite extension)
-  l2_pathway_parameters (base sigma1/2_Ka1_2p1 -- cross-checked against the base-cross-section stage)
-  double_satellite_channels (3d+3d+, 3d-3d+, 3d-3d-) with feed_from at manifolds lower/upper/L2
-
-Writes results/checkpoints incrementally to recomputed_parameters.json so a crash or interrupt
-doesn't lose already-completed (and XATOM-cached-but-expensive) stages -- rerun the script and it
-picks up where it left off.
-
-Usage: python xatom/recompute_all_parameters.py [--Ka1-energy-eV 8047.91] [--skip-double-satellite]
+Recompute every XATOM-derived parameter of the configs (base cross sections, satellite channels with their
+2p1/2 extension and KLM feeds, the 2p1/2 pathway, the double-spectator channels) and write them to
+recomputed_parameters.json, checkpointing as it goes so an interrupted run resumes. The committed json
+holds the values in config/mono/*.yaml; the widths of the 3p channels there are the totals that include
+their feeds into the double-spectator channels.
 """
 
 import argparse

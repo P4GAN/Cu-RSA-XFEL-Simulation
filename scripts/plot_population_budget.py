@@ -1,22 +1,22 @@
 """Population budget plots: where the atoms and electrons are during the pulse.
 
-Reads the families written by scripts/submit_population_budget.sh
-(data/population_budget_{mono,sase}_<jobid>/<variant>/*.npz, recorder layout in
-XLO_sim/population_budget.py) and writes into figs/:
+Reads the runs of scripts/generate_population_budget.sh
+(data/population_budget_{mono,sase}_<job id>/5-electrons/*.npz, recorder layout in scripts/population_budget.py)
+and writes into figs/:
 
   budget_timeline_mono, budget_timeline_sase
-        R, beam- and foil-averaged populations vs time for each pulse energy: everything that left the
+        beam- and foil-averaged populations vs time for each pulse energy: everything that left the
         ground state, the middleman pool, 2p3/2 / 1s / 2p1/2 / 2s holes (base + every satellite block),
         and the free electrons still hot vs already below the ladder (too slow to ionise). Grey band: incident pulse FWHM.
   budget_vs_fluence
         end-of-pulse ionised fraction, middlemen, free electrons, and the peak 2p3/2-hole and 1s-hole
-        populations vs pulse energy; R solid, raman10 dashed; mono on Kalpha1 / on the wing, SASE
+        populations vs pulse energy; mono on Kalpha1 / on the wing, SASE
   budget_depth
-        end-of-pulse middlemen and free electrons vs depth in the foil (R, beam average)
+        end-of-pulse middlemen and free electrons vs depth in the foil (beam average)
   budget_electron_spectrum
-        electrons per atom in each energy group at the end of the pulse (R, beam and foil average)
+        electrons per atom in each energy group at the end of the pulse (beam and foil average)
   budget_blocks
-        time-integrated hole population (fs) carried by the base block and by each satellite block (R)
+        time-integrated hole population (fs) carried by the base block and by each satellite block
 
 "Beam" = incident-fluence-weighted (x, y) average; "foil average" = mean over planes 1..zgrid-1 (plane 0
 repeats plane 1's depth, see the recorder docstring).
@@ -52,7 +52,7 @@ ATOM_SERIES = [  # (key, label, colour) in fixed order
     ("2s", "2s holes", SLOTS[4]),
     ("other", "other", SLOTS[5]),
 ]
-VARIANT_LS = {"R": "-", "raman10": "--"}
+MODEL = "5-electrons"   # the variant folder the runs are in
 
 plt.rcParams.update({
     "font.size": 9, "axes.titlesize": 9.5, "axes.labelsize": 9, "axes.edgecolor": MUTED,
@@ -204,12 +204,10 @@ def fig_vs_fluence(mono, sase):
         for row, (ylabel, series, how) in enumerate(rows):
             ax = axes[row][col]
             for key, label, colour in series:
-                for variant, runs in fam.items():
-                    if not runs:
-                        continue
+                runs = fam.get(MODEL)
+                if runs:
                     E, y = _end_and_peak(runs, key, how)
-                    ax.plot(E, y, color=colour, ls=VARIANT_LS.get(variant, "-."), marker="o", ms=3.2, lw=1.4,
-                            label=label if variant == "R" else None)
+                    ax.plot(E, y, color=colour, marker="o", ms=3.2, lw=1.4, label=label)
             ax.set_xscale("log")
             E_ticks = sorted({r.E_seed for runs in fam.values() for r in runs})
             ax.xaxis.set_major_locator(FixedLocator(E_ticks))
@@ -223,17 +221,16 @@ def fig_vs_fluence(mono, sase):
                 ax.set_xlabel("Pulse energy (µJ)")
             if col == 0:
                 ax.legend(frameon=False, fontsize=6.8)
-    fig.suptitle("Population budget vs pulse energy (beam- and foil-averaged). Solid R, dashed raman10",
-                 fontsize=10.5)
+    fig.suptitle("Population budget vs pulse energy (beam- and foil-averaged)", fontsize=10.5)
     _save(fig, "budget_vs_fluence")
 
 
 def fig_depth(mono, sase, mono_energy=8048.0):
     cases = []
-    if mono and "R" in mono:
-        cases.append((f"self-seeded, {mono_energy:.0f} eV", [r for r in mono["R"] if np.isclose(r.energy, mono_energy)]))
-    if sase and "R" in sase:
-        cases.append(("SASE", sase["R"]))
+    if mono and MODEL in mono:
+        cases.append((f"self-seeded, {mono_energy:.0f} eV", [r for r in mono[MODEL] if np.isclose(r.energy, mono_energy)]))
+    if sase and MODEL in sase:
+        cases.append(("SASE", sase[MODEL]))
     cases = [c for c in cases if c[1]]
     if not cases:
         return
@@ -257,10 +254,10 @@ def fig_depth(mono, sase, mono_energy=8048.0):
 
 def fig_electron_spectrum(mono, sase, mono_energy=8048.0):
     cases = []
-    if mono and "R" in mono:
-        cases.append((f"self-seeded, {mono_energy:.0f} eV", [r for r in mono["R"] if np.isclose(r.energy, mono_energy)]))
-    if sase and "R" in sase:
-        cases.append(("SASE", sase["R"]))
+    if mono and MODEL in mono:
+        cases.append((f"self-seeded, {mono_energy:.0f} eV", [r for r in mono[MODEL] if np.isclose(r.energy, mono_energy)]))
+    if sase and MODEL in sase:
+        cases.append(("SASE", sase[MODEL]))
     cases = [c for c in cases if c[1] and len(c[1][0].E_edges)]
     if not cases:
         return
@@ -269,7 +266,7 @@ def fig_electron_spectrum(mono, sase, mono_energy=8048.0):
         for i, r in enumerate(sorted(runs, key=lambda r: r.E_seed)):
             groups = [n for n in r.names if n.startswith("electrons/")]
             hot = np.array([r.foil(n)[-1] for n in groups[:-1]])
-            # groups run from the highest energy down (XLO_sim/eii.py build_ladder); stairs wants rising edges
+            # groups run from the highest energy down (xraymb_sim/eii.py build_ladder); stairs wants rising edges
             ax.stairs(hot[::-1], r.E_edges[::-1], baseline=None, color=RAMP[min(i, len(RAMP) - 1)], lw=1.6,
                       label=f"{r.E_seed:g} µJ (+{r.foil(groups[-1])[-1]:.3f} below {r.E_edges[-1]:g} eV)")
         ax.set_xscale("log")
@@ -285,10 +282,10 @@ def fig_electron_spectrum(mono, sase, mono_energy=8048.0):
 
 def fig_blocks(mono, sase, mono_energy=8048.0):
     columns = []
-    if mono and "R" in mono:
-        columns += [(f"mono {r.E_seed:g} µJ", r) for r in mono["R"] if np.isclose(r.energy, mono_energy)]
-    if sase and "R" in sase:
-        columns += [(f"SASE {r.E_seed:g} µJ", r) for r in sase["R"]]
+    if mono and MODEL in mono:
+        columns += [(f"mono {r.E_seed:g} µJ", r) for r in mono[MODEL] if np.isclose(r.energy, mono_energy)]
+    if sase and MODEL in sase:
+        columns += [(f"SASE {r.E_seed:g} µJ", r) for r in sase[MODEL]]
     if not columns:
         return
     blocks = ["base"] + columns[0][1].sat_names
@@ -304,7 +301,7 @@ def fig_blocks(mono, sase, mono_energy=8048.0):
     ax.set_yticks(range(len(blocks)))
     ax.set_yticklabels(blocks, fontsize=8)
     ax.grid(False)
-    ax.set_title("Time-integrated core-hole population per block (fs per atom; R, beam and foil average)")
+    ax.set_title("Time-integrated core-hole population per block (fs per atom; beam and foil average)")
     _save(fig, "budget_blocks")
 
 
@@ -331,10 +328,10 @@ if __name__ == "__main__":
     mono, sase = load_family(args.mono), load_family(args.sase)
     if not mono and not sase:
         raise SystemExit(f"no population budget data under {args.mono} / {args.sase}")
-    if mono and "R" in mono:
-        fig_timeline(mono["R"], "mono", 8048.0)
-    if sase and "R" in sase:
-        fig_timeline(sase["R"], "sase")
+    if mono and MODEL in mono:
+        fig_timeline(mono[MODEL], "mono", 8048.0)
+    if sase and MODEL in sase:
+        fig_timeline(sase[MODEL], "sase")
     fig_vs_fluence(mono, sase)
     fig_depth(mono, sase)
     fig_electron_spectrum(mono, sase)

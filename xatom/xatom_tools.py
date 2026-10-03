@@ -1,25 +1,18 @@
 """
-Tools for calling XATOM and extracting the atomic-structure parameters needed for the Cu Kalpha1
-2s-hole satellite pathways in docs/theory-and-2s-satellite-pathways.md (Part II, section 13's
-parameter inventory: detunings, Auger branching, spectator photoionization cross sections, widths,
-and further-ionization loss cross sections).
+Run XATOM and extract the atomic parameters of the satellite channels and of the 2p1/2 (Kalpha2) pathway:
+detunings, Auger and Coster-Kronig branching, spectator photoionisation cross sections, widths and
+further-ionisation cross sections. The top-level functions (satellite_channel_parameters,
+l2_satellite_channel_parameters, double_spectator_channel_parameters, l2_pathway_parameters,
+other_state_parameters) return dicts in the config schema of config/mono/*.yaml.
 
-Generalizes the ad hoc `run_xatom(...)` + hand-read-off-the-printout workflow in
-../../v_XATOM_current/calculating_parameters.ipynb, and the regex-based total-energy-difference
-approach in ../../v_XATOM_current/calculating_energies.ipynb, into reusable parsing functions plus
-one top-level `satellite_channel_parameters(...)` that returns a dict matching the
-`satellite_channels` YAML schema in config/base/Cu-seed-SASE.yaml directly.
+XATOM is not distributed here: set XATOM_PATH to the folder holding the xatom binary.
 
-XATOM's "nl<n_->,<n_+>" hole-count notation, confirmed against calculating_energies.ipynb's
-paired probe calls (e.g. "2p0,1" vs "2p1,0" both tried, "1s1_3d0,1"/"2p0,1_3d0,1" used together):
-"3d0,1" = 0 holes in 3d- (j=3/2) + 1 hole in 3d+ (j=5/2) -> a hole specifically in 3d+, and
-"3d1,0" = a hole specifically in 3d-. This module always uses the explicit "0,1"/"1,0" single-hole
-form, never the ambiguous "3d0,1"-with-larger-counts forms the notebook was still probing.
+Hole configurations use XATOM's "nl<n_->,<n_+>" notation: "3d0,1" is one hole in 3d5/2 (3d+), "3d1,0" one
+hole in 3d3/2 (3d-); this module always uses these explicit single-hole forms.
 
-Pump-driven terms (theory doc's sigma_P * J_P in Eq. S3/S4) are intentionally NOT computed here:
-there is currently no per-(t,z) pump photon flux threaded through Model.py's RK4 functions for any
-block (base or satellite) to multiply such a cross section by, so a pump-only cross section would
-be dead data. Only the seed/Kalpha1-field-driven terms XLO_sim.py actually consumes are produced.
+Section references in the comments ("theory doc section 12.7", "Part III") are to the development notes
+theory-and-2s-satellite-pathways.md and double-spectator-satellite-implementation-plan.md, which are kept
+outside the repository; the technical write-up covers the same physics.
 """
 
 import os
@@ -28,7 +21,7 @@ import subprocess
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-XATOM_PATH = os.environ.get('XATOM_PATH', '/Users/parkinpham/Programming/xraypac/xatom/src')
+XATOM_PATH = os.environ.get('XATOM_PATH', '')
 HARTREE_TO_EV = 27.211386245988  # CODATA 2018
 
 # Spectator-shell hole-config fragments for the four satellite channels (theory doc, S10/S12, plus
@@ -76,6 +69,8 @@ def run_xatom(hole_config='', photon_energy=None, decay=False, pcs=False, extra_
         Raw stdout of the xatom run.
     """
 
+    if not XATOM_PATH:
+        raise RuntimeError('set the XATOM_PATH environment variable to the folder holding the xatom binary')
     args = [f'{XATOM_PATH}/xatom', '-s', 'Cu', '-relativity']
     if hole_config:
         args += ['-hole', hole_config]
@@ -398,7 +393,7 @@ def satellite_detuning_eV(spectator, reference_transition=(BASE_UPPER_HOLE, BASE
     Returns
     -------
     float
-        Delta_k in eV. Divide by hbar (as XLO_sim.py does for `detuning_eV`) to get the fs^-1
+        Delta_k in eV. Divide by hbar (as simulation.py does for `detuning_eV`) to get the fs^-1
         angular-frequency value the satellite_channels YAML schema expects.
     """
     spectator_config = SPECTATOR_HOLE.get(spectator, spectator)
@@ -440,12 +435,12 @@ def auger_partial_rate_eV(spectator, parent_hole_config='2s1', initial_label='2s
     initial_label/final1_label default to the 2s-hole route's own labels ('2s0'/'2p+'), preserving
     every existing call site's behavior exactly. Pass initial_label='1s0' (with
     parent_hole_config='1s1') to instead read off the K-hole's own "KLM-type" Auger table (the
-    direct feed added 2026-08-27 -- Gamma_A_K_eV in config/base/*.yaml, XLO_sim.py, Model.py's
+    direct feed added 2026-08-27 -- Gamma_A_K_eV in config/mono/*.yaml, simulation.py, model.py's
     feed_diag_satellite_block); final1_label='2p-' selects the L2k-manifold sibling
     (Gamma_A_K_to_L2_eV), mirroring auger_partial_rate_L2_eV's own final1='2p-' convention below.
     Confirmed against a live `xatom -hole 1s1 -decay` run (2026-08-27): the '1s0' initial label
     for a bare 1s1 parent is exactly analogous to the confirmed '2s1'->'2s0' pattern (see e.g. the
-    "1s0 - 2p+ 3d+ :" row XATOM actually prints) -- the values currently in config/base/*.yaml's
+    "1s0 - 2p+ 3d+ :" row XATOM actually prints) -- the values currently in config/mono/*.yaml's
     Gamma_A_K_eV/Gamma_A_K_to_L2_eV were read off this way, not guessed.
     """
     spectator_config = SPECTATOR_HOLE.get(spectator, spectator)
@@ -486,7 +481,7 @@ def spectator_ionization_cross_section_nm2(parent_hole_config, spectator, photon
     parent ion -- this is sigma^(2p->Lk) when parent_hole_config=BASE_LOWER_HOLE ('2p0,1', theory
     doc Eq. S3), or sigma^(1s->Uk) when parent_hole_config=BASE_UPPER_HOLE ('1s1', Eq. S4). XATOM
     reports cross sections in Mb (1 Mb = 1e-22 m^2 = 1e-4 nm^2), matching this repo's config
-    convention (see config/base/Cu-seed.yaml's sigma1_*/sigma2_* values, all in nm^2).
+    convention (see config/mono/5-electrons.yaml's sigma1_*/sigma2_* values, all in nm^2).
     """
     spectator_label = spectator if spectator in SPECTATOR_HOLE else _label_from_hole_fragment(spectator)
     pa = parse_photoabsorption(run_xatom_cached(parent_hole_config, photon_energy=photon_energy_eV, pcs=True))
@@ -519,7 +514,7 @@ def total_photoionization_cross_section_nm2(hole_config, photon_energy_eV):
 
 def satellite_channel_parameters(name, spectator, Ka1_energy_eV=8047.91):
     """
-    Assemble one full entry for the `satellite_channels` list in config/base/*.yaml (theory doc
+    Assemble one full entry for the `satellite_channels` list in config/mono/*.yaml (theory doc
     section 13's parameter inventory), for a single channel identified by its spectator shell.
 
     Parameters
@@ -531,7 +526,7 @@ def satellite_channel_parameters(name, spectator, Ka1_energy_eV=8047.91):
     Ka1_energy_eV: float
         Reference (experimental) Kalpha1 diagram-line energy (eV), used both as the photon energy
         for the seed-field-driven photoionization cross-section lookups and as the calibration
-        anchor for the detuning (default 8047.91 eV, matching hwKalpha1N in config/base/*.yaml).
+        anchor for the detuning (default 8047.91 eV, matching hwKalpha1N in config/mono/*.yaml).
 
     Returns
     -------
@@ -571,7 +566,7 @@ def build_all_satellite_channels(Ka1_energy_eV=8047.91):
 
 # ---------------------------------------------------------------------------
 # Top-level: 2p1/2 (L2, Kalpha2) pathway ground-state/further-ionization cross sections
-# (docs/theory-and-2s-satellite-pathways.md, Part III section 20's parameter table)
+# (theory doc, Part III section 20's parameter table)
 # ---------------------------------------------------------------------------
 
 L2_HOLE = '2p1,0'  # bare 2p1/2 (L2) hole, no spectator
@@ -579,9 +574,9 @@ L2_HOLE = '2p1,0'  # bare 2p1/2 (L2) hole, no spectator
 
 def l2_pathway_parameters(Ka1_energy_eV=8047.91):
     """
-    The two new config keys XLO_sim.py reads when `use_L2_pathway: True` and that have no
+    The two new config keys simulation.py reads when `use_L2_pathway: True` and that have no
     literature/base-config analogue (unlike GammaL2eVN, which is a literature natural width
-    already present in config/base/*.yaml the same way GammaL3eVN/GammaKeVN are, and is left
+    already present in config/mono/*.yaml the same way GammaL3eVN/GammaKeVN are, and is left
     alone here): the ground-state photoionization cross section directly into the 2p1/2 hole
     (`sigma1_Ka1_2p1`, mirrors `sigma1_Ka1_2p3`), and the total further-ionization cross section
     of an already-2p1/2-holed ion (`sigma2_Ka1_2p1`, mirrors `sigma2_Ka1_2p3`).
@@ -630,7 +625,7 @@ def other_state_parameters(Ka1_energy_eV=8047.91):
       branches additively into distinct final holes, so one XATOM `-pcs` run on the neutral atom
       gives every subshell's share directly, and the total for "other" is just the sum over the 6
       subshells not already claimed by 1s/2s/2p3/2p1 -- no averaging involved. (This reproduces
-      config/base/*.yaml's `sigma1_Ka1_other: 6.4434e-8 # ... sum of 3s+3p+3d+4s subshells`
+      config/mono/*.yaml's `sigma1_Ka1_other: 6.4434e-8 # ... sum of 3s+3p+3d+4s subshells`
       comment exactly, now done programmatically instead of by hand.)
     - `sigma2_Ka1_other` (other's own further-ionization rate) is *not* a branching decomposition
       of one process -- it's a single effective rate applied to a population that mixes 6
@@ -669,7 +664,7 @@ def other_state_parameters(Ka1_energy_eV=8047.91):
 
 # ---------------------------------------------------------------------------
 # Top-level: 2p1/2-spectator ("Kalpha2-satellite") extension of each existing satellite channel
-# (docs/theory-and-2s-satellite-pathways.md Part II + Part III combined: each satellite channel's
+# (theory doc Part II + Part III combined: each satellite channel's
 # local block gains its own 2p1/2+X_k manifold, exactly as use_L2_pathway extends the base block).
 # Computes the same class of parameters l2_pathway_parameters() computes for the base block, but
 # per spectator configuration: the Ka1/Ka2-satellite splitting, Gamma_L2_eV (this double-hole
@@ -728,7 +723,7 @@ def l2_satellite_channel_parameters(spectator, Ka1_energy_eV=8047.91):
     keys from satellite_channel_parameters), enabling that channel's 2p1/2+spectator
     (Kalpha2-satellite) branch. Only meaningful when use_L2_pathway: True is also set (the
     sigma_Ka1_from_2p1 feed draws from the base block's own 2p1/2-hole population, which is zero
-    otherwise) -- XLO_sim.py enforces this and auto-enables the extension whenever both
+    otherwise) -- simulation.py enforces this and auto-enables the extension whenever both
     use_L2_pathway and satellite_channels are present, no separate YAML flag.
 
     Returns
@@ -763,7 +758,7 @@ def build_all_satellite_channels_with_L2(Ka1_energy_eV=8047.91):
 
 # ---------------------------------------------------------------------------
 # Top-level: double-M-shell-spectator ("double-satellite") channels
-# (docs/double-spectator-satellite-implementation-plan.md)
+# (double-satellite plan)
 #
 # Physical picture: a single-spectator channel's own spectator hole can itself Auger-decay a
 # second time (an M-shell Coster-Kronig process), landing on a double-spectator configuration while
@@ -801,7 +796,7 @@ def double_spectator_channel_parameters(name, spectator_pair, Ka1_energy_eV=8047
     Assemble the {'name', 'detuning_eV', 'Gamma_L_eV', 'Gamma_K_eV', 'sigma_ion_from_2p',
     'sigma_ion_from_1s'} entry for one double-spectator satellite channel (e.g.
     spectator_pair=('3d-','3d+') for the mixed channel), for the `double_satellite_channels` YAML
-    list (docs/double-spectator-satellite-implementation-plan.md section 3). Mirrors
+    list (double-satellite plan section 3). Mirrors
     satellite_channel_parameters, minus the cross-section-driven *feed* keys (sigma_Ka1_from_2p/1s,
     Gamma_A_2s_eV) -- this channel's feed instead comes entirely from `feed_from` entries built by
     spectator_self_auger_feed_eV below, since the production mechanism here is a redirected Auger
@@ -834,7 +829,7 @@ def double_spectator_L2_parameters(spectator_pair, Ka1_energy_eV=8047.91):
     extension -- one tier deeper than l2_satellite_channel_parameters, mirroring it exactly but
     for a double-hole XATOM fragment instead of a single-hole one. Only meaningful together with
     feed_from entries carrying manifold='L2' (built by spectator_self_auger_feed_eV with
-    manifold='L2') and use_L2_pathway: True (docs/double-spectator-satellite-implementation-plan.md
+    manifold='L2') and use_L2_pathway: True (double-satellite plan
     section 9) -- unlike l2_satellite_channel_parameters, there is no Gamma_A_2s_to_L2_eV or
     sigma_Ka1_from_2p1 key here, since (exactly as for this channel's regular Lk/Uk feed) the L2k
     feed comes from a parent channel's own L2k population self-Auger-decaying, not from a 2s-Auger
@@ -861,7 +856,7 @@ def spectator_self_auger_feed_eV(parent_spectator, target_pair, manifold='lower'
     (2p0,1_{parent_spectator}, manifold='lower') or U_k (1s1_{parent_spectator},
     manifold='upper') -- decays via its *spectator* hole (not its 2p+/1s core hole) Auger-decaying
     a second time into target_pair -- the dominant double-spectator production mechanism (see
-    module docstring above and docs/double-spectator-satellite-implementation-plan.md sections
+    module docstring above and double-satellite plan sections
     1-2 for manifold='lower'; manifold='upper' is the analogous feed into a double-satellite
     channel's own upper/1sXX manifold, from a parent channel's 1sX state instead of its 2p+X
     state -- same physics, the spectator hole doesn't know whether the *other* hole in the ion is
@@ -884,8 +879,7 @@ def spectator_self_auger_feed_eV(parent_spectator, target_pair, manifold='lower'
         'lower' (default, L_k = 2p+X, feeds a double-satellite channel's own lower/2p+XX
         manifold), 'upper' (U_k = 1sX, feeds the upper/1sXX manifold), or 'L2' (L2_k = 2p1/2+X,
         feeds the double-satellite channel's own L2k/2p1/2+XX manifold -- only meaningful together
-        with use_L2_pathway: True and double_spectator_L2_parameters, docs/double-spectator-
-        satellite-implementation-plan.md section 9).
+        with use_L2_pathway: True and double_spectator_L2_parameters, double-satellite         satellite-implementation-plan.md section 9).
 
     Returns
     -------
@@ -914,7 +908,7 @@ def build_double_satellite_channels(parent_spectators=('3p+', '3p-'), Ka1_energy
     parent_spectators (default: both 3p+ and 3p-, the only two channels with an open Auger channel
     into a second 3d hole -- see module docstring) and every entry in `manifolds`: 'lower' feeds
     the double-satellite channel's own L_k (2p+XX) manifold from the parent's L_k (2p+X) state
-    (docs/double-spectator-satellite-implementation-plan.md sections 1-3); 'upper' feeds its U_k
+    (double-satellite plan sections 1-3); 'upper' feeds its U_k
     (1sXX) manifold from the parent's U_k (1sX) state -- the analogous mechanism, verified present
     (though somewhat smaller-branching, since the 1s core hole's own decay is a faster competing
     channel than 2p+'s) via the same spectator-self-Auger-decay physics. 'L2' additionally builds
@@ -947,8 +941,8 @@ def build_double_satellite_channels(parent_spectators=('3p+', '3p-'), Ka1_energy
     for name, pair in targets.items():
         params = double_spectator_channel_parameters(name, pair, Ka1_energy_eV)
         if 'L2' in manifolds:
-            # This channel's own 2p1/2-satellite extension (docs/double-spectator-satellite-
-            # implementation-plan.md section 9) -- detuning_eV_L2_split/Gamma_L2_eV describe the
+            # This channel's own 2p1/2-satellite extension (double-satellite plan,
+            # section 9) -- detuning_eV_L2_split/Gamma_L2_eV describe the
             # channel itself (needed regardless of how it's fed), independent of the feed_from
             # loop below which builds the manifold='L2' entries that actually populate it.
             params.update(double_spectator_L2_parameters(pair, Ka1_energy_eV))

@@ -3,8 +3,10 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cu-rsa-xfel-sim"
-version = "0.1.0"
+name = "xraymb-sim"
+version = "1.0.0"
+description = "Maxwell-Bloch simulation of reverse saturable absorption of intense X-ray pulses in copper"
+readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "numpy<2",
@@ -13,8 +15,8 @@ dependencies = [
   "pyyaml",
   "h5py",
   "numba",
-  "ocelot-collab"
+  "ocelot-collab",
 ]
 
 [tool.setuptools]
-packages = ["XLO_sim"]
+packages = ["xraymb_sim"]

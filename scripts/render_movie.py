@@ -14,11 +14,12 @@ long-lived populations rather than decaying them.
 
 Examples:
     python scripts/render_movie.py --still 40                 # one PNG, for checking the look
-    python scripts/render_movie.py --gif                      # figs/xlo_hero.mp4 + .gif
-    python scripts/render_movie.py --frames 400 --fps 30 --out figs/xlo_hero_long.mp4
+    python scripts/render_movie.py --gif                      # figs/hero.mp4 + .gif
+    python scripts/render_movie.py --frames 400 --fps 30 --out figs/hero_long.mp4
 """
 
 import argparse
+import glob
 import os
 import subprocess
 import sys
@@ -40,6 +41,12 @@ BG = "#07080c"
 FG = "#c9d2e0"
 PULSE_CMAP = LinearSegmentedColormap.from_list("pulse", ["#2a0a3f", "#b02a5b", "#f97d2a", "#ffe7a8", "#ffffff"])
 TRAIL_CMAP = LinearSegmentedColormap.from_list("trail", ["#050814", "#123a6b", "#1f8ab0", "#63e0d0"])
+
+
+def newest_movie():
+    """The most recent data/movie_*/movie.h5 (scripts/submit_movie.sh), or None."""
+    found = sorted(glob.glob(os.path.join(REPO_ROOT, "data", "movie_*", "movie.h5")), key=os.path.getmtime)
+    return found[-1] if found else None
 
 
 def load_slices(h5_path, refresh=False):
@@ -75,9 +82,9 @@ class LabFrame:
     """Resamples the stored (z, t, x) arrays onto a fine depth axis at a given lab time."""
 
     def __init__(self, data, n_zfine=800, skip_first_plane=True):
-        # The stored z = 0 plane is never photoionised (the flux arrays that drive photoionisation
-        # start at zero, so plane 0 sees no flux), which would show up as a hard edge at the front
-        # face. Start the render one plane in; the 0.33 um shift is 1.7% of the foil.
+        # Start one plane in: movie files written before the plane-0 photoionisation fix have an
+        # un-ionised plane 0, which shows as a hard edge at the front face. The 0.33 um shift is 1.7%
+        # of the foil.
         self.i0 = 1 if skip_first_plane else 0
         self.d = {k: (v[self.i0:] if getattr(v, "ndim", 0) == 3 else v) for k, v in data.items()}
         self.dt = data["t"][1] - data["t"][0]
@@ -184,8 +191,8 @@ def to_gif(mp4_path, gif_path, fps, width):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--h5", default=os.path.join(REPO_ROOT, "data/movie_24699095/movie.h5"))
-    p.add_argument("--out", default=os.path.join(REPO_ROOT, "figs/xlo_hero.mp4"))
+    p.add_argument("--h5", default=newest_movie())
+    p.add_argument("--out", default=os.path.join(REPO_ROOT, "figs/hero.mp4"))
     p.add_argument("--frames", type=int, default=260)
     p.add_argument("--fps", type=int, default=30)
     p.add_argument("--t-start", type=float, default=2.0, help="first lab time (fs)")

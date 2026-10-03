@@ -1,0 +1,61 @@
+# Step 1 of the final model: the 2p3/2, 1s and 2p1/2 holes of the bare ion in one density matrix
+# (Kalpha1 and Kalpha2). No 2s hole, no satellites.
+# Units: nm, fs, eV; cross sections in nm^2. Every key is described in docs/usage.md.
+
+# --- Sample ---
+n: 82.509                          # Cu atoms per nm^3
+zmax: 20000.0                      # foil thickness (nm)
+
+# --- Kalpha lines (eV) ---
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+# --- Core-hole widths and decay rates (eV) ---
+GammaKeVN: 1.49                    # 1s hole
+GammaL3eVN: 0.61                   # 2p3/2 hole
+GammaL2eVN: 1.04                   # 2p1/2 hole
+GammaL1eVN: 0                      # 2s hole
+GammarKalpha1eVN: 0.39375          # radiative Kalpha1 width
+GammarKalpha2eVN: 0.202668         # radiative Kalpha2 width
+GammaA_L1_to_L3M45eVN: 0.0         # 2s hole -> bare 2p3/2 hole
+
+# --- Photoionisation cross sections at the Kalpha energy (nm^2) ---
+# of the neutral atom, leaving a hole in
+sigma1_Ka1_2p3: 1.52e-07
+sigma1_Ka1_2p1: 6.89383e-08
+sigma1_Ka1_2s: 2.45e-07
+sigma1_Ka1_other: 3.650617e-07     # every other subshell
+# further photoionisation of an ion with a hole in
+sigma2_Ka1_1s: 6.53e-07
+sigma2_Ka1_2p3: 4.15e-07
+sigma2_Ka1_2p1: 4.98609e-07
+sigma2_Ka1_2s: 0
+sigma2_Ka1_other: 4.58e-07
+
+# --- Pathways ---
+use_2s_pathway: false              # track the 2s hole
+
+# --- Pulse ---
+pulse: sase_dcm                    # SASE pulse through the Si(111) double-crystal monochromator
+E_seed_uJ: 20.0                    # pulse energy
+monochromator_target_energy_eV: 8048.0 # photon energy the monochromator selects
+seed_center_E: 8045                # SASE centre photon energy (eV)
+seed_FEL_bandwidth: 0.0015         # SASE relative bandwidth
+seed_duration_FWHM_t: 6.0          # fs
+t_peak: 10                         # pulse centre in the time window (fs)
+seed_width_FWHM_x: 100             # focal spot (nm)
+seed_width_FWHM_y: 170
+seed_delay: 0                      # fs
+random_seed: -1                    # -1: new SASE noise every run (sweeps set it per repetition)
+
+# --- Grid (as in the final sweep) ---
+tgrid: 12000
+tmax: 45.0                         # time window (fs)
+xgrid: 5
+xmax: 200.0                        # transverse half-width (nm)
+ygrid: 5
+ymax: 200.0
+zgrid: 15                          # planes through the foil
+xpad: 60                           # zero padding for the diffraction FFT
+ypad: 60
+tpad: 0

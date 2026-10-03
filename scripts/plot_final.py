@@ -1,70 +1,134 @@
-"""Presentation figures for the final family (scripts/generate_final_sweeps.sh): self-seeded absorbance spectra
-of the model built up step by step, and of the final experiments, against the measured spectra.
+"""Figures of the final sweep (scripts/generate_final_sweep.sh): the self-seeded absorbance spectrum of the model,
+built up step by step, against the measured one.
 
-Reads data/final_sweep_mono_<id>/<variant>/ (default: the newest such folder) with variants
-  1-bare, 2-single, 3-double, 4-middlemen, 5-electrons   the model steps (docs/final-model-progression.md)
-  E1-deph, E2-core, E3-exchange                          final experiments on top of step 5
-and writes into figs/ (PNG for slides, PDF alongside):
-  final_steps                 2x2: 1/5/20/30 uJ, every model step + experiment
-  final_buildup_20uJ_<k>      one panel at 20 uJ per step k: steps 1..k (k highlighted) + experiment, for a
-                              slide-by-slide build-up
-  final_experiments           2x2: step 5 and the final experiments + experiment
-Variants that are not (yet) in the folder are left out, so a partially finished run can be plotted.
+Reads data/final_sweep_mono_<job id>/<step>/ (default: the newest such folder) and writes into figs/:
+  final_steps              2x2 panels at 1/5/20/30 uJ, every model step and the experiment
+  final_buildup_20uJ_<k>   one panel at 20 uJ per step k: steps 1..k (k highlighted) and the experiment
+It also prints the peak absorbance in the Kalpha1 and Kalpha2 windows and the area under each spectrum.
+Steps that have not finished are left out, so a sweep can be plotted while it runs.
 
-Absorbance A(E) = ln(T_wing / T(E)): T_wing = T(8000 eV) for the model (a true 20 um Cu foil, every absorption
-step counted) and the mean of 8000/8005 eV for the experiment (the slide-9 scatter-panel bins of
-../RSA-derivation-bloch/data/exp_mono_scatter_slide9bins.csv, error bars = bin standard error). The model runs on
-the measured photon energies.
+Absorbance A(E) = ln(T_wing / T(E)), with T_wing the transmittance at 8000 eV (model) or the mean of 8000 and
+8005 eV (experiment), so the cold, non-resonant absorption drops out.
 
-Run from the repo root:  python scripts/plot_final.py [--data DIR]
+Run from the repo root:  python scripts/plot_final.py [--data DIR] [--exp CSV]
 """
 
-import os
-import glob
 import argparse
+import csv
+import glob
+import os
+import re
 
-import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 
-import plot_pathway_sweep as pps
-import plot_bracket_sweep as pbs
-import plot_coherence_sweep as pcs
-import plot_population_budget as ppb
+REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+DATA = os.path.join(REPO, "data")
+FIGS = os.path.join(REPO, "figs")
+EXP_CSV = os.path.join(DATA, "experiment", "cu_20um_self_seeded_transmittance.csv")
 
-DATA, FIGS = pps.DATA, pps.FIGS
 STEPS = ["1-bare", "2-single", "3-double", "4-middlemen", "5-electrons"]
-EXPERIMENTS = ["E1-deph", "E2-core", "E3-exchange"]
-# validated categorical slots 1-8 in fixed order: a variant keeps its colour in every figure
-COLOUR = dict(zip(STEPS + EXPERIMENTS, ppb.SLOTS[:8]))
-MARKER = dict(zip(STEPS + EXPERIMENTS, ["o", "^", "D", "v", "P", "h", "X", "s"]))
 LABEL = {
     "1-bare": "1  2p and 1s holes (Kα1, Kα2)",
     "2-single": "2  + 2s holes, single satellites",
     "3-double": "3  + double satellites",
     "4-middlemen": "4  + middlemen, metal Coster–Kronig",
     "5-electrons": "5  + free electrons (EII)",
-    "E1-deph": "E1  + collisional dephasing",
-    "E2-core": "E2  + EII of core-holed ions",
-    "E3-exchange": "E3  + 2p–3d exchange mixing",
 }
-EXP_LABEL = "experiment"
-INK, INK_2, MUTED, GRIDC = ppb.INK, ppb.INK_2, ppb.MUTED, ppb.GRIDC
+COLOUR = dict(zip(STEPS, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]))
+MARKER = dict(zip(STEPS, ["o", "^", "D", "v", "P"]))
+INK, INK_2, MUTED, GRIDC = "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
+
 UJ = [1.0, 5.0, 20.0, 30.0]
+N_ENERGIES = 25                       # photon energies per pulse energy in generate_final_sweep.sh
 XLIM = (8000, 8070)
-N_ENERGIES = 25   # photon energies per pulse energy in generate_final_sweeps.sh
+KA1_EV, KA2_EV = 8047.91, 8027.98
+KA1_WINDOW = (8040.0, 8054.0)
+KA2_WINDOW = (8022.0, 8032.0)
+AREA_BAND = (8012.0, 8072.0)
 FOOTNOTE = ("Model: 20 µm Cu foil, self-seeded pulse, 10 shots per point, on the measured photon energies. "
-            "Experiment: scatter-panel bins, ±1 standard error.")
+            "Experiment: median of the single shots in each pulse-energy bin, ±1 standard error.")
 
 plt.rcParams.update({"font.size": 12, "axes.titlesize": 13, "axes.labelsize": 12.5, "xtick.labelsize": 11,
-                     "ytick.labelsize": 11, "legend.fontsize": 10.5, "axes.linewidth": 1.0, "lines.linewidth": 2.2})
+                     "ytick.labelsize": 11, "legend.fontsize": 10.5, "axes.linewidth": 1.0, "lines.linewidth": 2.2,
+                     "grid.color": GRIDC, "axes.edgecolor": MUTED, "xtick.color": INK_2, "ytick.color": INK_2})
 
 
-def newest_family():
-    dirs = sorted(glob.glob(os.path.join(DATA, "final_sweep_mono_*")), key=os.path.getmtime)
-    return dirs[-1] if dirs else None
+# ------------------------------------------------------------------------------------------------ loading
 
+def mean_output(run_dir, key):
+    """Shot-averaged output `key` over the chunk files of one run folder (sums and counts pooled). A
+    '.partial.npz' checkpoint is used only when the folder has no finished chunk, and unreadable files
+    (copied while being written) are skipped."""
+    paths = glob.glob(os.path.join(run_dir, "*.npz"))
+    final = [p for p in paths if not p.endswith(".partial.npz")]
+    total = count = None
+    for path in final or paths:
+        try:
+            with np.load(path) as d:
+                if key + "_sum" not in d.files:
+                    continue
+                s, c = np.real(d[key + "_sum"]), d[key + "_count"]
+        except Exception:
+            continue
+        total, count = (s, c) if total is None else (total + s, count + c)
+    return None if total is None else total / np.maximum(count, 1)
+
+
+def load_family(root):
+    """{step: {E_seed: {photon energy: T}}}, T the transmitted over the incident pulse energy."""
+    out = {}
+    for vdir in sorted(glob.glob(os.path.join(root, "*"))):
+        for run in glob.glob(os.path.join(vdir, "runs_seed_*")):
+            m = re.search(r"runs_seed_([\d.]+)_uJ__energy_([\d.]+)_eV", os.path.basename(run))
+            if not m:
+                continue
+            I_out, I_in = mean_output(run, "I_int_thy_w_last"), mean_output(run, "I_int_thy_w_0")
+            if I_out is None or I_in is None:
+                continue
+            by_uJ = out.setdefault(os.path.basename(vdir), {}).setdefault(float(m.group(1)), {})
+            by_uJ[float(m.group(2))] = float(I_out.sum() / I_in.sum())
+    return out
+
+
+def load_experiment(path):
+    """{pulse-energy bin centre (uJ): (E, T, T_err)}."""
+    rows = {}
+    with open(path) as fh:
+        for r in csv.DictReader(line for line in fh if not line.startswith("#")):
+            uJ = round(0.5 * (float(r["E_lo"]) + float(r["E_hi"])), 3)
+            rows.setdefault(uJ, []).append((float(r["E_ph"]), float(r["T"]), float(r["T_err"])))
+    return {u: tuple(np.array(sorted(v)).T) for u, v in sorted(rows.items())}
+
+
+def model_absorbance(fam, step, uJ):
+    by_E = fam[step][uJ]
+    E = np.array(sorted(by_E))
+    T = np.array([by_E[e] for e in E])
+    return E, np.log(by_E[8000.0] / T)
+
+
+def experiment_absorbance(exp, uJ):
+    E, T, err = exp[uJ]
+    T_wing = float(np.mean(np.interp([8000.0, 8005.0], E, T)))
+    return E, np.log(T_wing / T), err / T
+
+
+def peak(E, A, window):
+    m = (E >= window[0]) & (E <= window[1])
+    return float(A[m].max())
+
+
+def area(E, A, grid):
+    """Trapezoid area over AREA_BAND after resampling onto the model's photon energies, so that model and
+    experiment are integrated with the same quadrature."""
+    grid = np.asarray([g for g in grid if AREA_BAND[0] <= g <= AREA_BAND[1]])
+    return float(np.trapz(np.interp(grid, E, A), grid))
+
+
+# ------------------------------------------------------------------------------------------------ figures
 
 def _save(fig, name):
     fig.savefig(os.path.join(FIGS, name + ".png"), dpi=200)
@@ -72,23 +136,23 @@ def _save(fig, name):
     plt.close(fig)
 
 
-def _model(ax, fam, v, uJ, ms=4.5, lw=2.2, faded=False, zorder=3):
-    E, A = pbs.absorbance_model(fam, v, uJ)
+def _model(ax, fam, step, uJ, ms=4.5, lw=2.2, faded=False, zorder=3):
+    E, A = model_absorbance(fam, step, uJ)
     if faded:
         ax.plot(E, A, color=MUTED, lw=1.2, alpha=0.8, zorder=2)
     else:
-        ax.plot(E, A, color=COLOUR[v], marker=MARKER[v], ms=ms, lw=lw, label=LABEL[v], zorder=zorder)
+        ax.plot(E, A, color=COLOUR[step], marker=MARKER[step], ms=ms, lw=lw, label=LABEL[step], zorder=zorder)
 
 
 def _experiment(ax, exp, uJ, ms=4.5):
-    E, A, sA = pcs.mono_exp_absorbance(exp, uJ)
+    E, A, sA = experiment_absorbance(exp, uJ)
     keep = E <= XLIM[1]
     ax.errorbar(E[keep], A[keep], yerr=sA[keep], color=INK, ls="--", marker="s", ms=ms, lw=1.4, elinewidth=1.0,
-                capsize=0, label=EXP_LABEL, zorder=5)
+                capsize=0, label="experiment", zorder=5)
 
 
 def _frame(ax, uJ, ylim):
-    for E_line, name in ((pps.KA2_EV, "Kα2"), (pps.KA1_EV, "Kα1")):
+    for E_line in (KA2_EV, KA1_EV):
         ax.axvline(E_line, color=MUTED, ls=":", lw=1.0, zorder=0)
     ax.axhline(0, color=MUTED, lw=0.8)
     ax.set_xlim(*XLIM)
@@ -97,18 +161,18 @@ def _frame(ax, uJ, ylim):
     ax.grid(True, color=GRIDC, lw=0.7)
 
 
-def _ylim(fam, exp, variants, uJs):
-    top = max(max(pbs.absorbance_model(fam, v, u)[1].max() for v in variants for u in uJs),
-              max(pcs.mono_exp_absorbance(exp, u)[1].max() for u in uJs))
+def _ylim(fam, exp, steps, uJs):
+    top = max(max(model_absorbance(fam, s, u)[1].max() for s in steps for u in uJs),
+              max(experiment_absorbance(exp, u)[1].max() for u in uJs))
     return (-0.03, 1.08 * top)
 
 
-def _grid(fam, exp, variants, name, title):
-    ylim = _ylim(fam, exp, variants, UJ)
+def fig_steps(fam, exp, steps):
+    ylim = _ylim(fam, exp, steps, UJ)
     fig, axes = plt.subplots(2, 2, figsize=(13, 8.6), sharex=True, sharey=True, layout="constrained")
     for ax, uJ in zip(axes.flat, UJ):
-        for v in variants:
-            _model(ax, fam, v, uJ)
+        for step in steps:
+            _model(ax, fam, step, uJ)
         _experiment(ax, exp, uJ)
         _frame(ax, uJ, ylim)
     for ax in axes[-1]:
@@ -119,68 +183,67 @@ def _grid(fam, exp, variants, name, title):
     leg = fig.legend(handles, labels, loc="outside lower center", ncol=3, frameon=False, title=FOOTNOTE,
                      title_fontsize=9)
     leg.get_title().set_color(INK_2)
-    fig.suptitle(title, fontsize=14)
-    _save(fig, name)
+    fig.suptitle("The model step by step against the measured self-seeded absorbance", fontsize=14)
+    _save(fig, "final_steps")
 
 
-def fig_buildup(fam, exp, uJ=20.0):
-    steps = [v for v in STEPS if v in fam]
+def fig_buildup(fam, exp, steps, uJ=20.0):
     ylim = _ylim(fam, exp, steps, [uJ])
-    for k, v in enumerate(steps, start=1):
+    for k, step in enumerate(steps, start=1):
         fig, ax = plt.subplots(figsize=(8.6, 5.6), layout="constrained")
         for earlier in steps[:k - 1]:
             _model(ax, fam, earlier, uJ, faded=True)
-        _model(ax, fam, v, uJ, ms=5.5, lw=2.8, zorder=4)
+        _model(ax, fam, step, uJ, ms=5.5, lw=2.8, zorder=4)
         _experiment(ax, exp, uJ, ms=5)
         _frame(ax, uJ, ylim)
-        ax.set_title(f"{LABEL[v]}   ({uJ:g} µJ; earlier steps in grey)", fontsize=13)
+        ax.set_title(f"{LABEL[step]}   ({uJ:g} µJ; earlier steps in grey)", fontsize=13)
         ax.set_xlabel("Photon energy (eV)")
         ax.set_ylabel(r"Absorbance  $\ln(T_{wing}/T)$")
         ax.legend(frameon=False, loc="upper left")
         _save(fig, f"final_buildup_{uJ:g}uJ_{k}")
 
 
-def print_report(fam, exp):
-    print("\npeak absorbance in Kalpha1 (8040-8054) / Kalpha2 (8022-8032) windows and area 8012-8072 eV, 1/5/20/30 uJ")
-    grid = sorted(fam[next(iter(fam))][20.0])
-    for v in [v for v in STEPS + EXPERIMENTS if v in fam]:
-        cs = [pbs.absorbance_model(fam, v, u) for u in UJ]
-        print(f"  {v:12s} Ka1 " + " ".join(f"{pcs.peak(E, A, pcs.KA1_WINDOW):.3f}" for E, A in cs)
-              + "   Ka2 " + " ".join(f"{pcs.peak(E, A, pcs.KA2_WINDOW):.3f}" for E, A in cs)
-              + "   area " + " ".join(f"{pbs.area(E, A, grid=grid):.2f}" for E, A in cs))
-    cs = [pcs.mono_exp_absorbance(exp, u)[:2] for u in UJ]
-    print(f"  {'experiment':12s} Ka1 " + " ".join(f"{pcs.peak(E, A, pcs.KA1_WINDOW):.3f}" for E, A in cs)
-          + "   Ka2 " + " ".join(f"{pcs.peak(E, A, pcs.KA2_WINDOW):.3f}" for E, A in cs)
-          + "   area " + " ".join(f"{pbs.area(E, A, grid=grid):.2f}" for E, A in cs))
+def print_report(fam, exp, steps):
+    print("\npeak absorbance in Kalpha1 (8040-8054 eV) and Kalpha2 (8022-8032 eV), and area over 8012-8072 eV,"
+          " at 1/5/20/30 uJ")
+    grid = sorted(fam[steps[0]][20.0])
+    curves = {s: [model_absorbance(fam, s, u) for u in UJ] for s in steps}
+    curves["experiment"] = [experiment_absorbance(exp, u)[:2] for u in UJ]
+    for name, cs in curves.items():
+        print(f"  {name:12s} Ka1 " + " ".join(f"{peak(E, A, KA1_WINDOW):.3f}" for E, A in cs)
+              + "   Ka2 " + " ".join(f"{peak(E, A, KA2_WINDOW):.3f}" for E, A in cs)
+              + "   area " + " ".join(f"{area(E, A, grid):.2f}" for E, A in cs))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--data", default=None, help="final_sweep_mono_<job id> folder (default: the newest)")
+    parser.add_argument("--exp", default=EXP_CSV, help="measured transmittance CSV")
+    args = parser.parse_args()
+
+    root = args.data
+    if root is None:
+        found = sorted(glob.glob(os.path.join(DATA, "final_sweep_mono_*")), key=os.path.getmtime)
+        if not found:
+            raise SystemExit("no data/final_sweep_mono_* folder; pass --data")
+        root = found[-1]
+    loaded = load_family(root)
+    fam = {s: d for s, d in loaded.items() if s in STEPS and all(len(d.get(u, {})) == N_ENERGIES for u in UJ)}
+    for s in STEPS:
+        if s not in fam:
+            done = sum(len(loaded.get(s, {}).get(u, {})) for u in UJ)
+            print(f"not plotted: {s} ({done}/{len(UJ) * N_ENERGIES} points finished)")
+    steps = [s for s in STEPS if s in fam]
+    if not steps:
+        raise SystemExit(f"no complete step in {root}")
+
+    exp = load_experiment(args.exp)
+    os.makedirs(FIGS, exist_ok=True)
+    fig_steps(fam, exp, steps)
+    fig_buildup(fam, exp, steps)
+    print_report(fam, exp, steps)
+    print(f"\nread {root}; wrote figures to {FIGS}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--data", default=None, help="final_sweep_mono_<id> folder (default: the newest)")
-    parser.add_argument("--exp-mono", default=pcs.EXP_MONO_SCATTER)
-    args = parser.parse_args()
-    root = args.data or newest_family()
-    if not root:
-        raise SystemExit("no data/final_sweep_mono_* folder; pass --data")
-    loaded = pbs.load_mono_family(root)
-    n_points = N_ENERGIES
-    # a variant is plotted once every pulse energy has the full photon-energy grid
-    fam = {v: d for v, d in loaded.items()
-           if v in STEPS + EXPERIMENTS and all(len(d.get(u, {})) == n_points for u in UJ)}
-    for v in STEPS + EXPERIMENTS:
-        if v not in fam:
-            done = sum(len(loaded.get(v, {}).get(u, {})) for u in UJ)
-            print(f"not plotted: {v} ({done}/{len(UJ) * n_points} points finished)")
-    if not fam:
-        raise SystemExit(f"no complete variant in {root} (still running, or copied mid-run?)")
-    exp = pcs.exp_mono(args.exp_mono)
-    os.makedirs(FIGS, exist_ok=True)
-    steps = [v for v in STEPS if v in fam]
-    if steps:
-        _grid(fam, exp, steps, "final_steps", "The model step by step against the measured self-seeded absorbance")
-        fig_buildup(fam, exp)
-    exps = [v for v in ["5-electrons"] + EXPERIMENTS if v in fam]
-    if len(exps) > 1:
-        _grid(fam, exp, exps, "final_experiments", "Final experiments on the full model (step 5)")
-    print_report(fam, exp)
-    print(f"\nread {root}; wrote figures to {FIGS}")
+    main()

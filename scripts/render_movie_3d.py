@@ -12,7 +12,7 @@ Transverse axes are stretched (--stretch, default x10) or the 0.5 um wide beam w
 20 um foil. The wireframe box is the simulated volume.
 
     python scripts/render_movie_3d.py --still 40      # one PNG
-    python scripts/render_movie_3d.py --gif           # figs/xlo_hero_3d.mp4 + .gif (~15 min)
+    python scripts/render_movie_3d.py --gif           # figs/hero_3d.mp4 + .gif (~15 min)
 """
 
 import argparse
@@ -30,11 +30,11 @@ from matplotlib import animation  # noqa: E402
 from scipy.ndimage import gaussian_filter, map_coordinates  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from render_movie import BG, C_NM_FS, PULSE_CMAP, REPO_ROOT, TRAIL_CMAP, to_gif  # noqa: E402
+from render_movie import BG, C_NM_FS, PULSE_CMAP, REPO_ROOT, newest_movie, TRAIL_CMAP, to_gif  # noqa: E402
 
 
 def load_volume(h5_path):
-    """flux and ionised fraction over (z, t, x, y), skipping the never-ionised z = 0 plane."""
+    """flux and ionised fraction over (z, t, x, y), from plane 1 on (see render_movie.py)."""
     t0 = time.perf_counter()
     with h5py.File(h5_path, "r") as f:
         vol = {
@@ -180,8 +180,8 @@ def build_figure(renderer, args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--h5", default=os.path.join(REPO_ROOT, "data/movie_24699095/movie.h5"))
-    p.add_argument("--out", default=os.path.join(REPO_ROOT, "figs/xlo_hero_3d.mp4"))
+    p.add_argument("--h5", default=newest_movie())
+    p.add_argument("--out", default=os.path.join(REPO_ROOT, "figs/hero_3d.mp4"))
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--nz", type=int, default=720, help="lab-frame depth samples")

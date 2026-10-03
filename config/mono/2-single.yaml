@@ -1,0 +1,125 @@
+# Step 2 of the final model: step 1 + the 2s hole and the single-spectator satellites (3d+, 3d-,
+# 3p+, 3p- holes), fed by 2s Coster-Kronig decay, K-hole KLM decay and spectator photoionisation.
+# Units: nm, fs, eV; cross sections in nm^2. Every key is described in docs/usage.md.
+
+# --- Sample ---
+n: 82.509                          # Cu atoms per nm^3
+zmax: 20000.0                      # foil thickness (nm)
+
+# --- Kalpha lines (eV) ---
+hwKalpha1N: 8047.91
+hwKalpha2N: 8027.98
+
+# --- Core-hole widths and decay rates (eV) ---
+GammaKeVN: 1.49                    # 1s hole
+GammaL3eVN: 0.61                   # 2p3/2 hole
+GammaL2eVN: 1.04                   # 2p1/2 hole
+GammaL1eVN: 8.13                   # 2s hole
+GammarKalpha1eVN: 0.39375          # radiative Kalpha1 width
+GammarKalpha2eVN: 0.202668         # radiative Kalpha2 width
+GammaA_L1_to_L3M45eVN: 0.0         # 2s hole -> bare 2p3/2 hole
+
+# --- Photoionisation cross sections at the Kalpha energy (nm^2) ---
+# of the neutral atom, leaving a hole in
+sigma1_Ka1_2p3: 1.52e-07
+sigma1_Ka1_2p1: 6.89383e-08
+sigma1_Ka1_2s: 2.45e-07
+sigma1_Ka1_other: 1.2006e-07       # every other subshell
+# further photoionisation of an ion with a hole in
+sigma2_Ka1_1s: 6.53e-07
+sigma2_Ka1_2p3: 4.15e-07
+sigma2_Ka1_2p1: 4.98609e-07
+sigma2_Ka1_2s: 4.05e-07
+sigma2_Ka1_other: 5.0613e-07
+
+# --- Pathways ---
+use_2s_pathway: true               # track the 2s hole
+
+# Satellite channels: ions with spectator holes, each its own 8-level block with the base block's
+# layout, shifted by detuning_eV (Kalpha1) and detuning_eV_L2_split (Kalpha2 below Kalpha1).
+satellite_channels:
+- name: 3d+
+  detuning_eV: -0.8
+  detuning_eV_L2_split: 21.27
+  Gamma_L_eV: 0.607
+  Gamma_K_eV: 1.5447
+  Gamma_L2_eV: 0.655904
+  Gamma_A_2s_eV: 1.5733
+  Gamma_A_2s_to_L2_eV: 0.7136594214
+  Gamma_A_K_eV: 0.00259
+  Gamma_A_K_to_L2_eV: 0.002064
+  sigma_Ka1_from_2p: 7.41039e-10
+  sigma_Ka1_from_2p1: 7.41039e-10
+  sigma_Ka1_from_1s: 8.0409e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+- name: 3d-
+  detuning_eV: -0.8
+  detuning_eV_L2_split: 21.26
+  Gamma_L_eV: 0.6348
+  Gamma_K_eV: 1.5447
+  Gamma_L2_eV: 0.60921
+  Gamma_A_2s_eV: 1.3121
+  Gamma_A_2s_to_L2_eV: 0.5308669343
+  Gamma_A_K_eV: 0.003083
+  Gamma_A_K_to_L2_eV: 0.000637
+  sigma_Ka1_from_2p: 5.93e-10
+  sigma_Ka1_from_2p1: 5.93e-10
+  sigma_Ka1_from_1s: 6.4346e-10
+  sigma_ion_from_2p: 5.01453e-07
+  sigma_ion_from_1s: 5.71517e-07
+- name: 3p+
+  detuning_eV: 2.76
+  detuning_eV_L2_split: 21.31
+  Gamma_L_eV: 2.6325
+  Gamma_K_eV: 3.8524
+  Gamma_L2_eV: 2.72362
+  Gamma_A_2s_eV: 1.4535
+  Gamma_A_2s_to_L2_eV: 0.7901723972
+  Gamma_A_K_eV: 0.034001
+  Gamma_A_K_to_L2_eV: 0.028999
+  sigma_Ka1_from_2p: 1.88202e-08
+  sigma_Ka1_from_2p1: 1.88202e-08
+  sigma_Ka1_from_1s: 2.02344e-08
+  sigma_ion_from_2p: 4.97595e-07
+  sigma_ion_from_1s: 5.67499e-07
+- name: 3p-
+  detuning_eV: 2.93
+  detuning_eV_L2_split: 21.31
+  Gamma_L_eV: 3.1793
+  Gamma_K_eV: 4.3649
+  Gamma_L2_eV: 3.05808
+  Gamma_A_2s_eV: 0.6458
+  Gamma_A_2s_to_L2_eV: 0.5062406297
+  Gamma_A_K_eV: 0.028913
+  Gamma_A_K_to_L2_eV: 0.002563
+  sigma_Ka1_from_2p: 9.4244e-09
+  sigma_Ka1_from_2p1: 9.4244e-09
+  sigma_Ka1_from_1s: 1.01334e-08
+  sigma_ion_from_2p: 4.97588e-07
+  sigma_ion_from_1s: 5.67491e-07
+
+# --- Pulse ---
+pulse: sase_dcm                    # SASE pulse through the Si(111) double-crystal monochromator
+E_seed_uJ: 20.0                    # pulse energy
+monochromator_target_energy_eV: 8048.0 # photon energy the monochromator selects
+seed_center_E: 8045                # SASE centre photon energy (eV)
+seed_FEL_bandwidth: 0.0015         # SASE relative bandwidth
+seed_duration_FWHM_t: 6.0          # fs
+t_peak: 10                         # pulse centre in the time window (fs)
+seed_width_FWHM_x: 100             # focal spot (nm)
+seed_width_FWHM_y: 170
+seed_delay: 0                      # fs
+random_seed: -1                    # -1: new SASE noise every run (sweeps set it per repetition)
+
+# --- Grid (as in the final sweep) ---
+tgrid: 12000
+tmax: 45.0                         # time window (fs)
+xgrid: 5
+xmax: 200.0                        # transverse half-width (nm)
+ygrid: 5
+ymax: 200.0
+zgrid: 15                          # planes through the foil
+xpad: 60                           # zero padding for the diffraction FFT
+ypad: 60
+tpad: 0

@@ -1,54 +1,83 @@
 # Cu-RSA-XFEL-Simulation
 
-Numerical simulation of **Reverse Saturable Absorption (RSA)** in copper targets irradiated by ultra-intense **X-ray Free-Electron Laser (XFEL)** pulses — developed during a research internship at **DESY**.
+Simulation of **reverse saturable absorption** in copper hit by intense **X-ray free-electron-laser** pulses,
+built during a research internship at **DESY**. A femtosecond X-ray pulse tuned to the copper Kα line ionises
+the foil as it crosses it, and the ions it leaves behind absorb more strongly than neutral atoms, so the foil
+darkens the harder it is hit. The code follows the pulse and the atoms together: a Maxwell–Bloch model of the
+core-hole states of every ion, coupled to the propagation of the X-ray field through the foil in (t, x, y, z).
 
-## What this does
+![A SASE pulse crossing a 20 µm copper foil, with the ionised wake it leaves behind](docs/media/hero.gif)
 
-At XFEL intensities, X-ray pulses can ionize a copper target fast enough to change their *own* absorption as they propagate through it — a nonlinear, self-modifying interaction rather than simple linear attenuation. This project solves that problem numerically by coupling:
+**[Interactive write-up with the full animations →](https://p4gan.github.io/Cu-RSA-XFEL-Simulation/)**  ·  **[Usage guide](docs/usage.md)**
 
-- A **multilevel density-matrix (Maxwell–Bloch) model** of the Cu atomic populations, tracking photoionization, spontaneous decay, and K-shell fluorescence across `nlevel` atomic states.
-- A **3D (transverse + longitudinal + time) optical propagation solver**, handling Gaussian/SASE pulse profiles, beam geometry, and auto-gridding based on diffraction angle.
-- Support for both **seeded** and **SASE** (Self-Amplified Spontaneous Emission) XFEL pulses.
+## What the model contains
 
-The result is a first-principles prediction of how a copper target's transmittance evolves under intense, ultrafast X-ray exposure — directly relevant to XFEL beam diagnostics and sample damage studies at facilities like European XFEL.
+- **Maxwell–Bloch core**: the 2p₃/₂, 2p₁/₂ and 1s holes of each ion in one sublevel-resolved density matrix, so
+  Kα1 and Kα2 absorption and stimulated emission come out of the same equations, driven by the local field.
+- **Field propagation**: split-step Fresnel diffraction and photoabsorption between z planes, plus the field the
+  atomic coherences radiate. SASE pulses from [OCELOT](https://github.com/ocelot-collab/ocelot), optionally
+  filtered through the Si(111) monochromator of the self-seeded experiment.
+- **Satellite ions**: ions with one or two spectator 3d/3p holes, each a detuned density-matrix block fed by
+  Coster–Kronig and Auger decay; a pool of valence-ionised "middleman" ions that keep absorbing; and the free
+  electrons, which slow down through an energy ladder and ionise more atoms (electron-impact ionisation).
+- **Numerics**: RK4 in time and a z-marching loop, with the density-matrix kernel JIT-compiled by Numba; batch
+  sweeps run as SLURM array jobs on DESY's Maxwell cluster.
 
-## Highlights
+The five model steps against the measured self-seeded absorbance (I. Inoue et al.):
 
-- **Physics**: multilevel atomic Bloch equations × nonlinear pulse propagation, coupled self-consistently.
-- **Performance**: core density-matrix kernels are JIT-compiled with `numba` for large 3D (t, x, y) grids.
-- **Configurable**: simulation parameters (cross-sections, pulse shape, geometry, grid resolution) are defined declaratively in YAML (see [`config/`](config/)), enabling sweeps like the pulse-energy scans in [`config/Cu-seed-SASE_*.yaml`](config/).
-- **Reproducible**: results and figures for varying cross-sections and pulse durations in [`figs/`](figs/) and [`notebooks/`](notebooks/).
-
-## Project structure
-
-```
-XLO_sim/        Core simulation package (Maxwell-Bloch solver, optics, sample physics)
-config/         YAML configs for seeded / SASE runs, pulse-energy sweeps
-notebooks/      Analysis notebooks (transmittance, SASE runs)
-data/           Simulation outputs (HDF5)
-figs/           Result plots
-```
+![Absorbance spectra of the five model steps against experiment at 1, 5, 20 and 30 µJ](docs/media/final_steps.png)
 
 ## Quick start
 
-Install the package once, in editable mode, so `import XLO_sim` works from anywhere in the repo (including `notebooks/`), regardless of your terminal's current directory:
-
 ```bash
 pip install -e .
-
-python example_script.py
+python scripts/example.py      # one shot on a coarse grid, about two minutes on a laptop
 ```
 
 ```python
-from XLO_sim.XLO_sim import XLO_sim
-from XLO_sim import tools
+from xraymb_sim import Simulation
 
-sim = XLO_sim("config/Cu-seed.yaml")
-seed_field = tools.Gaussian_pulse_aniso_seed(sim)
-sim.configure(seed_field)
-sim.run_3D()
+sim = Simulation("config/mono/5-electrons.yaml")
+sim.configure()      # the incident pulse named in the config (gaussian, sase or sase_dcm)
+sim.run()            # results: sim.Omega_pstxyz (field), sim.rho_ijtxyz (density matrix), ...
 ```
+
+## Layout
+
+```
+xraymb_sim/   the package
+  simulation.py   Simulation: config, grids, coupling tensors of the atomic model
+  sample.py       the z-marching loop (full and memory-lean versions) and the RK4 step
+  model.py        right-hand sides of the Maxwell–Bloch equations (Numba kernel), feeds, absorption
+  optics.py       Fresnel propagation between z planes
+  eii.py          free-electron slowing-down ladder and electron-impact cross sections
+  pulses.py       Gaussian, SASE and monochromated SASE pulses
+  analysis.py     spectra, per-shot sweep outputs, loading a finished sweep
+  sweep.py        running many shots of one config on a cluster node
+  plot.py         plots of one run
+config/       mono/1-bare.yaml .. 5-electrons.yaml (the five model steps), sase/, movie.yaml, example.yaml
+scripts/      sweep pipeline (generate_*_sweep.sh -> submit_sweep.sh -> run_sweep.py -> plot_*.py),
+              movie and population-budget runs, example.py
+xatom/        XATOM runs that produce the atomic parameters in the configs
+data/experiment/  the measured self-seeded transmittance the model is compared with
+notebooks/    plotting notebooks for earlier sweeps
+```
+
+## Running sweeps on the Maxwell cluster
+
+From the repo root on a login node:
+
+```bash
+bash scripts/generate_final_sweep.sh     # writes the configs and prints the sbatch command
+mkdir -p logs && sbatch --array=... scripts/submit_sweep.sh config/generated/final_sweep_mono
+python scripts/plot_final.py             # once data/final_sweep_mono_<job id>/ is complete
+```
+
+`generate_sase_sweep.sh`, `generate_convergence_sweep.sh` and `generate_population_budget.sh` follow the same
+pattern. Every output folder carries a copy of its config and the git commit it ran with.
+[docs/usage.md](docs/usage.md) covers the config keys, the sweep families and reading the results.
 
 ## Requirements
 
-Python ≥ 3.9, `numpy`, `scipy`, `matplotlib`, `pyyaml`, `h5py`, `numba`.
+Python ≥ 3.9 with numpy (< 2), scipy, matplotlib, pyyaml, h5py, numba and ocelot-collab, installed by
+`pip install -e .`.

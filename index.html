@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Burning Through Copper</title>
+<meta name="description" content="Simulated X-ray free-electron-laser pulses ionising a copper foil: animations, a 3D volume render and the physics behind them.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+  /* One visual world on purpose: the page ground is the renders' own background, so the videos
+     sit in the page without a frame. Gold is the X-ray light, teal is ionised matter, as in the figures. */
+  :root {
+    color-scheme: dark;
+    --ground: #07080c;
+    --plate: #0c0f16;
+    --rule: #1b2130;
+    --ink: #e9edf3;
+    --body: #cfd6e1;
+    --muted: #8391a8;
+    --gold: #ffd27a;
+    --teal: #63e0d0;
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --gutter: clamp(16px, 4.5vw, 56px);
+  }
+
+  html { background: var(--ground); }
+  body {
+    background: var(--ground);
+    color: var(--body);
+    font-family: var(--serif);
+    font-size: 19px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1240px;
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+    padding-block: clamp(40px, 7vw, 88px) 48px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(72px, 11vw, 140px);
+  }
+
+  a { color: var(--gold); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+  .label {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  /* ---------- hero ---------- */
+  .hero { display: flex; flex-direction: column; gap: 28px; }
+  .hero h1 {
+    font-family: var(--display);
+    font-stretch: 125%;
+    font-weight: 750;
+    font-size: clamp(42px, 8.6vw, 118px);
+    line-height: 0.92;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    margin: 0;
+    text-wrap: balance;
+  }
+  .hero h1 .light { color: var(--gold); }
+  .dek {
+    font-size: clamp(20px, 2.2vw, 25px);
+    line-height: 1.45;
+    color: var(--body);
+    max-width: 40ch;
+    margin: 0;
+    text-wrap: pretty;
+  }
+  .params {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px 32px;
+    padding-block: 14px;
+    border-block: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .params ul { display: flex; flex-wrap: wrap; gap: 6px 22px; list-style: none; margin: 0; padding: 0; }
+  .params li b { color: var(--ink); font-weight: 500; }
+  .readout { color: var(--ink); white-space: nowrap; }
+  .readout .where { color: var(--gold); }
+
+  /* ---------- figures ---------- */
+  figure { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  .frame { position: relative; background: var(--ground); }
+  .frame video, .frame img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    background: var(--ground);
+  }
+  .frame video.hero-video { aspect-ratio: 1320 / 704; }
+  .frame img.portrait { aspect-ratio: 1500 / 1640; }
+  figcaption {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  figcaption p { margin: 0; max-width: 88ch; }
+  figcaption .key-gold { color: var(--gold); }
+  figcaption .key-teal { color: var(--teal); }
+  .toggle {
+    flex: none;
+    font: 500 12px/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  .toggle:hover { border-color: var(--muted); }
+
+  /* ---------- sections ---------- */
+  section { display: flex; flex-direction: column; gap: 32px; }
+  .head { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+  .scale { font-family: var(--mono); font-size: 13px; color: var(--muted); margin: 0; font-variant-numeric: tabular-nums; }
+  .scale span { color: var(--gold); letter-spacing: 0.1em; text-transform: uppercase; margin-right: 10px; }
+  h2 {
+    font-family: var(--display);
+    font-stretch: 112%;
+    font-weight: 680;
+    font-size: clamp(30px, 3.8vw, 46px);
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  /* prose with margin notes, like the side notes of a lab notebook */
+  .text {
+    display: grid;
+    grid-template-columns: minmax(0, 64ch) minmax(0, 1fr);
+    gap: 24px clamp(32px, 5vw, 80px);
+    align-items: start;
+  }
+  .prose { display: flex; flex-direction: column; gap: 1em; }
+  .prose p { margin: 0; text-wrap: pretty; }
+  .prose em { color: var(--ink); }
+  .gold { color: var(--gold); }
+  .teal { color: var(--teal); }
+  .notes {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0 0 20px;
+    border-left: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .notes b { display: block; color: var(--ink); font-weight: 500; font-size: 15px; }
+
+  /* ridgeline: figure beside the text */
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: clamp(32px, 5vw, 72px);
+    align-items: center;
+  }
+  .split .text { grid-template-columns: minmax(0, 1fr); }
+
+  /* ---------- method ---------- */
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    counter-reset: step;
+  }
+  .steps li {
+    counter-increment: step;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px 22px 20px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .steps li + li { padding-left: 22px; border-left: 1px solid var(--rule); }
+  .steps li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--gold);
+  }
+  .steps h3 {
+    font-family: var(--display);
+    font-stretch: 100%;
+    font-weight: 620;
+    font-size: 19px;
+    line-height: 1.2;
+    color: var(--ink);
+    margin: 0;
+  }
+  .steps p { margin: 0; font-size: 16.5px; line-height: 1.55; }
+  .loop {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--teal);
+    margin: 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .specs {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 0;
+    background: var(--plate);
+    border-block: 1px solid var(--rule);
+  }
+  .specs div { padding: 18px 22px; display: flex; flex-direction: column; gap: 6px; box-shadow: inset -1px -1px 0 var(--rule); }
+  .specs dt { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .specs dd { margin: 0; font-family: var(--mono); font-size: 16px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px 32px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  footer p { margin: 0; max-width: 70ch; }
+
+  @media (max-width: 960px) {
+    .text { grid-template-columns: minmax(0, 1fr); }
+    .notes { flex-direction: row; flex-wrap: wrap; gap: 14px 28px; padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--rule); }
+    .split { grid-template-columns: minmax(0, 1fr); }
+    .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .steps li:nth-child(3) { padding-left: 0; border-left: 0; }
+  }
+  @media (max-width: 560px) {
+    body { font-size: 17.5px; }
+    .steps { grid-template-columns: minmax(0, 1fr); }
+    .steps li + li { padding-left: 0; border-left: 0; }
+    figcaption { flex-direction: column; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<main class="page">
+
+  <header class="hero">
+    <p class="label">Simulation · DESY internship project</p>
+    <h1>Burning through <span class="light">copper</span></h1>
+    <p class="dek">A six-femtosecond X-ray laser pulse crosses a 20&nbsp;µm copper foil. The simulation follows the atoms it ionises, and shows the metal getting darker the harder it is hit.</p>
+    <div class="params">
+      <ul>
+        <li><b>8.05 keV</b> photons</li>
+        <li><b>40 µJ</b> SASE pulse</li>
+        <li><b>6 fs</b> FWHM</li>
+        <li>focused to <b>180 × 220 nm</b></li>
+      </ul>
+      <span class="readout" id="readout" aria-live="off">t = 48.0 fs · <span class="where">pulse 11.4 µm deep</span></span>
+    </div>
+    <figure>
+      <div class="frame">
+        <video id="hero-video" class="hero-video" src="media/hero.mp4" poster="media/hero.png" autoplay muted loop playsinline preload="auto"
+               aria-label="Side view of the simulated X-ray pulse crossing the copper foil and leaving a trail of ionised atoms"></video>
+      </div>
+      <figcaption>
+        <p>Side view of one simulated shot. <span class="key-gold">Gold</span> is the X-ray pulse; its spiky texture is the shot noise of a real free-electron laser. <span class="key-teal">Teal</span> is the share of atoms ionised behind it. Depth runs left to right; the transverse axis is stretched 40×.</p>
+        <button class="toggle" type="button" data-video="hero-video">Pause</button>
+      </figcaption>
+    </figure>
+  </header>
+
+  <section aria-labelledby="wake">
+    <div class="head">
+      <p class="scale"><span>Scale</span>20 µm of copper · 67 fs of travel</p>
+      <h2 id="wake">Light that leaves a wake</h2>
+    </div>
+    <div class="text">
+      <div class="prose">
+        <p>An X-ray free-electron laser packs about 3&nbsp;×&nbsp;10¹⁰ photons into a few femtoseconds. Focused onto copper, a photon can knock a deep core electron out of an atom and leave a hole in its 1s or 2p shell. The holes don’t last: in about a femtosecond an Auger decay fills them, throws out another electron, and leaves the atom more ionised.</p>
+        <p>The interesting part is what those ions do to the rest of the pulse. An atom with a 2p hole can absorb a photon at the copper K<span>α</span> energy, which is exactly where this pulse is tuned, by lifting a 1s electron into the hole. A neutral atom can’t. So the front of the pulse creates 2p holes, and the back of the pulse meets a foil that absorbs more than it did a moment ago. This is <em>reverse saturable absorption</em>: instead of bleaching, the material gets more opaque as the intensity rises.</p>
+        <p>In the animation the <span class="gold">pulse</span> dims as it goes deeper, and the <span class="teal">ionised wake</span> fades with it: up to 36% of the atoms near the front surface, far fewer at the back. About a third of the pulse energy makes it out.</p>
+      </div>
+      <ul class="notes">
+        <li><b>0.44 fs</b>lifetime of a 1s hole</li>
+        <li><b>8047.9 eV</b>copper Kα₁ line</li>
+        <li><b>1.8 µm</b>length of the pulse inside the foil, ten times its width</li>
+      </ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="round">
+    <div class="head">
+      <p class="scale"><span>Scale</span>20 × 0.44 × 0.44 µm, sideways stretched 10×</p>
+      <h2 id="round">The same shot, in the round</h2>
+    </div>
+    <figure>
+      <div class="frame">
+        <video id="volume-video" src="media/volume.mp4" poster="media/volume.png" autoplay muted loop playsinline preload="metadata"
+               aria-label="3D volume render of the pulse travelling through the simulated copper volume, seen by an orbiting camera"></video>
+      </div>
+      <figcaption>
+        <p>Volume render of the full x–y–z grid from a slowly orbiting camera. The wireframe is the simulated volume. Each point glows with the light or ionisation it holds, and the glow adds up along every line of sight.</p>
+        <button class="toggle" type="button" data-video="volume-video">Pause</button>
+      </figcaption>
+    </figure>
+    <div class="text">
+      <div class="prose">
+        <p>At true proportions the beam would be a hair-thin needle: the pulse is about ten times longer than it is wide, and the foil is a hundred times thicker than the beam is wide. Stretching the two sideways axes makes it visible, along with the ionised channel it drills through the metal.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="atoms">
+    <div class="head">
+      <p class="scale"><span>Scale</span>one point in the beam · 9 keV of atomic levels</p>
+      <h2 id="atoms">Inside the atoms</h2>
+    </div>
+    <figure>
+      <div class="frame">
+        <video id="levels-video" src="media/levels.mp4" poster="media/levels.png" autoplay muted loop playsinline preload="metadata"
+               aria-label="Animated level diagram of copper showing core-hole populations, Kα transitions and free electrons during the pulse"></video>
+      </div>
+      <figcaption>
+        <p>Populations at the beam centre, 0.33 µm into the foil. Each level glows with the share of atoms in that state (log scale). The photoionisation arrows glow with the pulse; the Kα lines glow with the quantum coherence between the 1s and 2p holes.</p>
+        <button class="toggle" type="button" data-video="levels-video">Pause</button>
+      </figcaption>
+    </figure>
+    <div class="text">
+      <div class="prose">
+        <p>The model tracks the density matrix of each ion, not just how many atoms sit in each state. Core-hole populations and the coherences between them evolve together with the X-ray field, so stimulated emission and resonant absorption at Kα come out of the same equations.</p>
+        <p>Around the main levels sit satellite copies: atoms that have already lost a 3d or 3p electron, whose Kα line is shifted by one to three electronvolts, still well inside the pulse’s 12&nbsp;eV bandwidth. By the time the pulse has passed, 64% of the atoms at this spot are still neutral and 36% are ionised. The electrons freed along the way slow down through the metal and ionise more atoms as they go.</p>
+      </div>
+      <ul class="notes">
+        <li><b>8 levels</b>in the main density matrix: 1s, 2p₃/₂ and 2p₁/₂ hole sublevels</li>
+        <li><b>7 satellite blocks</b>for ions with one or two spectator holes</li>
+        <li><b>7 keV → 30 eV</b>energy ladder of the free electrons</li>
+      </ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="harder">
+    <div class="split">
+      <figure>
+        <div class="frame">
+          <img class="portrait" src="media/ridgeline.png" width="1500" height="1640" loading="lazy"
+               alt="Stacked absorbance spectra for pulse energies from 2 to 80 µJ, with the peak at the Kα1 line growing and broadening as pulse energy rises">
+        </div>
+        <figcaption>
+          <p>Absorbance across the pulse spectrum, averaged over 200 random SASE shots per pulse energy, from 2 µJ (bottom) to 80 µJ (top). Ridges are offset vertically; zero on the energy axis is the Kα₁ line.</p>
+        </figcaption>
+      </figure>
+      <div class="text">
+        <div class="head">
+          <p class="scale"><span>Scale</span>7 pulse energies × 200 shots</p>
+          <h2 id="harder">The harder you hit it, the darker it gets</h2>
+        </div>
+        <div class="prose">
+          <p>Every free-electron-laser shot has its own spiky, random spectrum, so one shot on its own says little. Averaging 200 simulated shots per pulse energy leaves the trend underneath.</p>
+          <p>At low energy the foil absorbs a little more right at the Kα₁ line. As the pulse gets stronger it ionises more of the foil while it is still passing through, and that absorption peak grows and spreads out across the bandwidth.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="method">
+    <div class="head">
+      <p class="scale"><span>Scale</span>58.6 million grid points</p>
+      <h2 id="method">How a shot is computed</h2>
+    </div>
+    <div class="text">
+      <div class="prose">
+        <p>The foil is cut into 61 slices along the beam. For each slice in turn, the code steps through the whole pulse 0.025&nbsp;fs at a time, and at every step it does four things:</p>
+      </div>
+    </div>
+    <ol class="steps">
+      <li>
+        <h3>Evolve the atoms</h3>
+        <p>Integrate every ion’s density matrix forward one time step (RK4), driven by the local X-ray field.</p>
+      </li>
+      <li>
+        <h3>Update the absorption</h3>
+        <p>Turn the new populations into an absorption coefficient for the field.</p>
+      </li>
+      <li>
+        <h3>Propagate the field</h3>
+        <p>Carry the field 333 nm deeper with an FFT Fresnel step, including diffraction and absorption.</p>
+      </li>
+      <li>
+        <h3>Add what the atoms emit</h3>
+        <p>Add the field radiated by the atomic coherences. This is where stimulated Kα emission enters.</p>
+      </li>
+    </ol>
+    <p class="loop">↻ repeat for the next time step, then move to the next slice</p>
+
+    <dl class="specs" aria-label="The run behind the animations">
+      <div><dt>Grid · t × x × y × z</dt><dd>1000 × 31 × 31 × 61</dd></div>
+      <div><dt>Resolution</dt><dd>0.025 fs · 16.7 nm · 333 nm</dd></div>
+      <div><dt>Atomic model</dt><dd>8 coupled density matrices</dd></div>
+      <div><dt>Pulse</dt><dd>SASE, generated with OCELOT</dd></div>
+      <div><dt>Compute</dt><dd>86 min, one process</dd></div>
+      <div><dt>Output</dt><dd>14.6 GB → 6.1 GB HDF5</dd></div>
+    </dl>
+  </section>
+
+  <footer>
+    <p>Simulation code <a href="https://github.com/P4GAN/Cu-RSA-XFEL-Simulation">xraymb_sim on GitHub</a>: Python, NumPy, Numba and SciPy, run on DESY’s Maxwell cluster. Atomic cross sections from XATOM and GRASP. All animations are rendered straight from the simulation output.</p>
+    <p>Transverse axes are stretched in every view.</p>
+  </footer>
+</main>
+
+<script>
+  (function () {
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var videos = Array.prototype.slice.call(document.querySelectorAll("video"));
+    var userPaused = new WeakSet();
+
+    function setLabel(video) {
+      var button = document.querySelector('.toggle[data-video="' + video.id + '"]');
+      if (button) button.textContent = video.paused ? "Play" : "Pause";
+    }
+
+    videos.forEach(function (video) {
+      video.addEventListener("play", function () { setLabel(video); });
+      video.addEventListener("pause", function () { setLabel(video); });
+      if (reduce) {
+        video.removeAttribute("autoplay");
+        video.pause();
+        userPaused.add(video);
+      }
+      setLabel(video);
+    });
+
+    document.querySelectorAll(".toggle").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var video = document.getElementById(button.dataset.video);
+        if (!video) return;
+        if (video.paused) {
+          userPaused.delete(video);
+          var p = video.play();
+          if (p && p.catch) p.catch(function () {});
+        } else {
+          userPaused.add(video);
+          video.pause();
+        }
+      });
+    });
+
+    // Only play what is on screen; resume unless the viewer paused it.
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          var video = entry.target;
+          if (entry.isIntersecting) {
+            if (!userPaused.has(video)) {
+              var p = video.play();
+              if (p && p.catch) p.catch(function () {});
+            }
+          } else if (!video.paused) {
+            video.pause();
+          }
+        });
+      }, { threshold: 0.15 });
+      videos.forEach(function (video) { io.observe(video); });
+    }
+
+    // Hero readout: the video is 260 frames at 30 fps spanning lab time 2 -> 88 fs, then a hold.
+    // The pulse peak (t = 10 fs at the front face) sits at depth c (t - 10 fs).
+    var hero = document.getElementById("hero-video");
+    var readout = document.getElementById("readout");
+    var C_UM_PER_FS = 0.299792458;
+    function describe(tfs) {
+      var depth = C_UM_PER_FS * (tfs - 10);
+      var where = depth < 0 ? "pulse arriving" : depth > 20 ? "pulse has left the foil" : "pulse " + depth.toFixed(1) + " µm deep";
+      return "t = " + tfs.toFixed(1) + " fs · <span class=\"where\">" + where + "</span>";
+    }
+    function show(seconds) {
+      var frame = Math.floor(seconds * 30 + 1e-3);
+      readout.innerHTML = describe(frame < 260 ? 2 + 86 * frame / 259 : 88);
+    }
+    if ("requestVideoFrameCallback" in hero) {
+      // mediaTime is the frame actually on screen, so the readout can't drift from the picture
+      var onFrame = function (now, meta) { show(meta.mediaTime); hero.requestVideoFrameCallback(onFrame); };
+      hero.requestVideoFrameCallback(onFrame);
+    } else {
+      var tick = function () { show(hero.currentTime); if (!hero.paused) window.requestAnimationFrame(tick); };
+      hero.addEventListener("play", function () { window.requestAnimationFrame(tick); });
+      hero.addEventListener("seeked", tick);
+    }
+  })();
+</script>
+</body>
+</html>
